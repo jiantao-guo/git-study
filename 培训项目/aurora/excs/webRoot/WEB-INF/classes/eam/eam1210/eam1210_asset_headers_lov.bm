@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lenovo  
+    $Date: 2014-5-6 下午1:48:04  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.asset_book_id,
+                        h.asset_id,
+                        h.status,
+                        h.tag_number,
+                        h.description_id,
+                        (SELECT
+                            fd.description_text
+                        FROM
+                            fnd_descriptions fd
+                        WHERE
+                            fd.description_id = h.description_id AND
+                            LANGUAGE          = ${/session/@lang}
+                        ) asset_name,
+                        h.category_id,
+                        (SELECT DISTINCT
+                            v.DESCRIPTION
+                        FROM
+                            eam_asset_categories_vl v
+                        WHERE
+                            v.CATEGORY_ID = h.category_id
+                        ) category_desc,
+                        h.category_sec_id,
+                        (SELECT DISTINCT
+                            v.DESCRIPTION_SEC
+                        FROM
+                            eam_asset_categories_vl v
+                        WHERE
+                            v.CATEGORY_SEC_ID = h.category_sec_id
+                        ) category_sec_desc,
+                        h.fin_class_id,
+                        (SELECT DISTINCT
+                            v.DESCRIPTION
+                        FROM
+                            eam_asset_fin_classes_vl v
+                        WHERE
+                            v.class_id = h.fin_class_id
+                        ) fin_class_desc,
+                        h.entity_class_id,
+                        (SELECT DISTINCT
+                            v.DESCRIPTION
+                        FROM
+                            eam_asset_entity_classes_vl v
+                        WHERE
+                            v.class_id = h.entity_class_id
+                        ) entity_class_desc,
+                        h.using_unit_id,
+                        (SELECT
+                            v.description
+                        FROM
+                            exp_org_unit_vl v
+                        WHERE
+                            v.unit_id = h.using_unit_id
+                        ) using_unit_desc,
+                        f.life_in_month/12 depr_year,                              --原折旧年限
+                        (f.life_in_month - f.REMAINING_LIFE_IN_MONTH ) used_month, --已用月数
+                        f.life_in_month lifed_in_month,                            --使用月数
+                        f.REMAINING_LIFE_IN_MONTH remaining_life_in_month ,         --剩余月数
+                        nvl(f.current_cost, 0) current_cost,
+                        f.amortize_flag
+                    FROM
+                        eam_asset_headers h,
+                        eam_asset_finance_info f,
+                        eam_asset_categories c
+                    WHERE
+                        h.asset_id        = f.asset_id AND
+                        h.asset_book_id   = ${@asset_book_id} AND
+                        h.lock_flag       = 'N' AND
+                        h.status         IN ('USING', 'INSTORE', 'PARTIAL_SCRAPPED') AND
+                        h.post_status     = 'Y' AND
+                        h.category_id     = c.category_id AND
+                        h.category_sec_id = c.category_sec_id
+                        --and (c.category_code = '10' or c.category_code = '30')
+                        AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            eam_req_type_ref_asset_types ert
+                        WHERE
+                            ert.ast_requisition_type_id = ${/parameter/@ast_requisition_type_id} AND
+                            ert.entity_class_id         = h.entity_class_id
+                        ) AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            eam_asset_entity_classes t1,
+                            eam_asset_fin_classes t2,
+                            eam_asset_categories t3
+                        WHERE
+                            --t1.entity_man_unit_id = u.UNIT_ID and
+                            t1.fin_class_id          = t2.class_id AND
+                            t2.asset_category_sec_id = t3.category_sec_id AND
+                            t1.asset_category_id     = t3.category_id AND
+                            t1.enabled_flag          = upper('Y') AND
+                            t3.category_id           = h.category_id
+                        )
+                        /*)*/
+                        AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            eam_asset_companies_vl eacv
+                        WHERE
+                            eacv.parent_company_id      = ${/session/@company_id} AND
+                            h.responsibility_company_id = eacv.company_id
+                        )
+                    ) t #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="tag_number" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="120" forDisplay="true" forQuery="true" prompt="卡片号"/>
+        <bm:field name="asset_id"/>
+        <bm:field name="description_id"/>
+        <bm:field name="asset_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="120" forDisplay="true" prompt="资产名称"/>
+        <bm:field name="category_desc"/>
+        <bm:field name="category_id"/>
+        <bm:field name="category_sec_id"/>
+        <bm:field name="category_sec_desc"/>
+        <bm:field name="fin_class_id"/>
+        <bm:field name="fin_class_desc"/>
+        <bm:field name="entity_class_id"/>
+        <bm:field name="entity_class_desc"/>
+        <bm:field name="using_unit_id"/>
+        <bm:field name="using_unit_desc" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="120" forDisplay="true" prompt="折旧承担部门"/>
+        <bm:field name="depr_year"/>
+        <bm:field name="used_month"/>
+        <bm:field name="lifed_in_month"/>
+        <bm:field name="remaining_life_in_month"/>
+        <bm:field name="current_cost" databaseType="NUMBER" datatype="java.lang.Double" displayWidth="120" forDisplay="true" prompt="当前成本"/>
+        <bm:field name="amortize_flag"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="tag_number" queryOperator="like"/>
+        <bm:query-field field="asset_name" queryOperator="like"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="asset_book_id= ${@asset_book_id} "/>
+    </bm:data-filters>
+</bm:model>

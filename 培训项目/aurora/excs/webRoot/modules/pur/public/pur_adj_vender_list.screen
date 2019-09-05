@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: gaoyang  
+    $Date: 2011-10-10 下午4:28:44  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="pur.PUR5010.pur_adj_vender_list_item_type" rootPath="item_type"/>
+        <a:model-query model="pur.PUR5010.pur_adj_vender_list_precision" rootPath="precision"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="get_money_amount_link_1" model="pur.PUR5010.get_money_amount" modelaction="query"/>
+        <script><![CDATA[
+
+            var line_no = 10;
+            
+            
+            function doQuery() {
+                $('pur_adj_vender_list_result_ds').query();
+            }
+            
+            function doReset() {
+                $('pur_adj_vender_list_query_ds').reset();
+            }
+            
+            function beauty_price(value, record, name) {
+                if (record.get('price')) {
+                    record.set('price', ForDight(record.get('price'), '${/model/precision/record/@precision}'));
+                    return ForDight(record.get('price'), '${/model/precision/record/@precision}');
+                }
+            
+            }
+            
+            function ForDight(Dight, How) {
+                var Dight_one = Math.round(Dight * Math.pow(10, How)) / Math.pow(10, How);
+                return Dight_one;
+            }
+            
+            function new_line() {
+                var records = $('pur_adj_vender_list_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage("${l:PROMPT}", "${l:PROMPT.PLEASE_SELECT_ONE}");
+                    return;
+                } else {
+                    for (var i = 0;i < records.length;i++) {
+                        var record = records[i];
+                        if (record.get('amount') == null || record.get('amount') == '') {
+                            Aurora.showMessage("${l:PROMPT}", "${l:INPUT_QUANTITY}");
+                            return;
+                        } else {
+                            var para = record.data;
+                            copynewone(record);
+                        }
+                    }
+                }
+                $('pur_adj_vender_list_ds').close();
+            }
+            
+            function afteredit(ds, record, name, value) {
+                if (record.getField('amount')) {
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/pur.get_money_amount/query*/
+                        $('get_money_amount_link_1').getUrl(),
+                        para: {
+                            amount: record.get('amount'),
+                            vender_item_period_id: record.get('vender_item_period_id')
+                        },
+                        success: function(res) {
+                            var pluscols = res.result.record;
+                            if (pluscols.money) {
+                                record.set('money', ForDight(pluscols.money, '${/model/precision/record/@precision}'));
+                                record.set('true_price', ForDight(pluscols.true_price, '${/model/precision/record/@precision}'));
+                            } else {
+                                record.set('money', 0);
+                            }
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function copynewone(record) {
+                var selectRecord = $('pur_adj_vender_list_result_ds').getSelected();
+                var records = $('pur_purchase_requisition_create_result_ds').getAt(0);
+                if (!records) {
+                    records = new Aurora.Record({
+                        'period_num': '',
+                        'position_id': '',
+                        'position_id_display': ''
+                    });
+                }
+                var record_ = $('pur_purchase_requisition_create_query_ds').getAt(0);
+                var head_id = $('pur_purchase_requisition_create_query_ds').getCurrentRecord().get('head_id');
+                // alert(record.get('description'))
+                // for (i = 0;i < selectRecord.length;i++) {
+                    // var record = selectRecord[i];
+                    var data = {
+                        'head_id': head_id,
+                        'line_number': line_no,
+                        'description': record.get('description') + record.get('item_code')||'' + record.get('expense_description')||'',
+                        'item_name': record.get('description'),
+                        'item_id': record.get('item_id'),
+                        'expense_item_name': record.get('expense_description'),
+                        'expense_item_id': record.get('expense_item_id'),
+                        'primary_uom': record.get('primary_uom'),
+                        'unit_price': record.get('true_price'),
+                        'primary_quantity': record.get('amount'),
+                        'date_from': '${/parameter/@default_requisition_date_id}',
+                        'date_to': '${/parameter/@default_requisition_date_id}',
+                        'vender_name': record.get('venders_desc'),
+                        'vender_id': record.get('vender_id'),
+                        'payment_method': record.get('payment_method'),
+                        'contract_id': record.get('contract_number'),
+                        'contract_header_id': record.get('contract_header_id'),
+                        'buyer_name': record.get('buyer_desc'),
+                        'buyer_id': record.get('buyer_id'),
+                        'vender_item_list_id': record.get('vender_item_list_id'),
+                        'exchange_rate': record_.get('exchange_rate'),
+                        'company_code': emp_info.company_code || '',
+                        'responsibility_center_code': emp_info.responsibility_center_code || '',
+                        'unit_code': emp_info.unit_code || '',
+                        'employee_code': emp_info.employee_code || '',
+                        'company_id': emp_info.company_id || '',
+                        'responsibility_center_id': emp_info.responsibility_center_id || '',
+                        'unit_id': emp_info.unit_id || '',
+                        'employee_id': emp_info.employee_id || '',
+                        'period_num': records.get('period_name'),
+                        'position_id': records.get('position_id1'),
+                        'position_id_display': records.get('position_id1'),
+                        // modify@mys 2012-08-07
+                    	'quotation_price':record.get('true_price'),
+                    	'quotation_price_qty':record.get('amount'),
+                        'requisition_amount': record.get('true_price')*record.get('amount'),
+                        'requisition_functional_amount':record.get('true_price'),
+                        'from_adj':true,
+                        'vender_item_period_id':record.get('vender_item_period_id')
+            
+                    };
+                    var newdata = {};
+                    for (var name in data) {
+                        newdata[name] = data[name];
+                    }
+                    var recordnew = new Aurora.Record(newdata);
+                    line_no += 10;
+            
+                    var lo = [];
+                    var lineObjRecords = $('line_object_ds').getAll();
+                    if (lineObjRecords) {
+                        for (var i = 0;i < lineObjRecords.length;i++) {
+                            lo.push(lineObjRecords[i].data);
+                        }
+                        for (var j = 0;j < lo.length;j++) {
+                            //  recordnew.data([lo[j].expense_object_type_code], lo[j].default_object_desc || '');
+                            recordnew.data[lo[j].expense_object_type_code] = lo[j].default_object_desc || '';
+                            // recordnew.set('_' + lo[j].expense_object_type_code, lo[j].default_object_id || '');
+                            recordnew.data['_' + lo[j].expense_object_type_code] = lo[j].default_object_id || '';
+                        }
+                    }
+                    /*  for (var kk = 1;kk <= 10;kk++) {
+                     var  cmdata = 'D' + kk;
+                     var  cmvalue = 'E' + kk;
+                     if (records) {
+                     recordnew.data[cmdata] = record.get(cmdata) || '';
+                     recordnew.data[cmvalue]= record.get(cmvalue) || '';
+                     }
+                     }*/
+            
+                    if (recordnew) {
+                        $('pur_purchase_requisition_create_result_ds').add(recordnew);
+                        var s = $('pur_purchase_requisition_create_result_ds');
+                        var record=s.getAll();
+                    }
+                // }
+            }
+            
+            function priceFunction(record, name) {
+                //alert(record.get('price'));
+                if (record.get('price') == 'NaN') {
+                    record.set('price', '1');
+                    return '';
+                }
+                return '';
+            }
+            
+            function resultLoadFunction(dataSet) {
+                /*       var records = dataSet.getAll();
+                 for (var i = 0;i < records.length;i++) {
+                 var tempPrice = records[i].get('price');
+                 records[i].set('price', tempPrice == 'NaN' ? '' : tempPrice);
+                 }*/
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="item_type_ds">
+                <a:datas dataSource="/model/item_type"/>
+            </a:dataSet>
+            <a:dataSet id="pur_adj_vender_list_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="item_type_dis" displayField="vender_item_type" options="item_type_ds" returnField="item_type" valueField="item_type_id"/>
+                    <a:field name="item_code"/>
+                    <a:field name="description"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_adj_vender_list_result_ds" autoQuery="true" model="pur.PUR5010.pur_adj_vender_list_query" queryDataSet="pur_adj_vender_list_query_ds" queryUrl="${/request/@context_path}/autocrud/pur.PUR5010.pur_adj_vender_list_query/query?default_requisition_date_id=${/parameter/@default_requisition_date_id}&amp;currency_code=${/parameter/@currency_code}" selectable="true">
+                <a:fields>
+                    <a:field name="item_code"/>
+                    <a:field name="description"/>
+                    <a:field name="item_specs"/>
+                    <a:field name="item_model"/>
+                    <a:field name="venders_desc"/>
+                    <a:field name="price"/>
+                    <a:field name="amount"/>
+                    <a:field name="money"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="afteredit"/>
+                    <a:event name="load" handler="resultLoadFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form bindTarget="pur_adj_vender_list_query_ds" column="3" labelWidth="150" title="PUR_ADJ_VENDER_LIST.ITEM" width="800">
+                <a:comboBox name="item_type_dis" bindTarget="pur_adj_vender_list_query_ds" prompt="PUR_ADJ_VENDER_LIST.ITEM_TYPE"/>
+                <a:textField name="ITEM_CODE" bindTarget="pur_adj_vender_list_query_ds" prompt="ITEM_CODE"/>
+                <a:textField name="description" bindTarget="pur_adj_vender_list_query_ds" prompt="INV_SYSTEM_ITEMS.DESCRIPTION"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="doQuery" text="PROMPT.QUERY"/>
+                <a:button click="doReset" text="PROMPT.RESET"/>
+            </a:hBox>
+            <a:hBox>
+                <a:button click="new_line" text="CREATE_REQUESTION"/>
+            </a:hBox>
+            <a:grid id="pur_adj_vender_list_grid_ds" bindTarget="pur_adj_vender_list_result_ds" height="400" navBar="true" width="800">
+                <a:columns>
+                    <a:column name="item_code" prompt="ITEM_CODE" width="100"/>
+                    <a:column name="description" prompt="INV_SYSTEM_ITEMS.DESCRIPTION" width="100"/>
+                    <a:column name="item_specs" prompt="INV_SYSTEM_ITEMS.ITEM_SPECS" width="80"/>
+                    <a:column name="item_model" prompt="INV_SYSTEM_ITEMS.ITEM_MODEL" width="80"/>
+                    <a:column name="venders_desc" prompt="PUR_SYSTEM_VENDERS.VENDER_ID" width="80"/>
+                    <!--<a:column name="price" bindTarget="pur_adj_vender_list_result_ds" editorFunction="priceFunction" prompt="PUR_ORDER_LINES.PRICE" renderer="beauty_price" width="70"/>-->
+                    <a:column name="price" prompt="PUR_ORDER_LINES.PRICE" renderer="beauty_price" width="70"/>
+                    <a:column name="amount" editor="grid_tf" prompt="ACP_INVOICE_LINES.QUANTITY" width="80"/>
+                    <a:column name="money" prompt="ACP_ACP_REQUISITION_HDS.AMOUNT" width="80"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="grid_tf"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+            ]]></script>
+    </a:view>
+</a:screen>

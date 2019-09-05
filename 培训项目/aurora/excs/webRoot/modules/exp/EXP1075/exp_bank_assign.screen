@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="exists(select 1 from sys_user u where u.user_id=${/session/@user_id} and u.employee_id = ${/parameter/@employee_id})" model="exp.exp_employees" rootPath="employeeinfo"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur_sys_employee_bank_info_update_link" model="db.exp_employees_pkg.update_document_employee_info" modelaction="execute"/>
+        <script><![CDATA[
+        
+            function update_document(value, record, name) {
+                var employee_id = ${/parameter/@employee_id};
+                var enabled_flag = record.get('enabled_flag');
+                var line_number = record.get('line_number');
+                return '<a href="javascript:updateDocumentInfo(\'' + employee_id + '\',\'' + enabled_flag + '\',\'' + line_number + '\')">更新单据</a>';
+            }
+            
+            function updateDocumentInfo(employee_id, enabled_flag, line_number) {
+                if ($('exp_bank_assigns_ds').isModified()) {
+                    Aurora.showMessage('${l:PROMPT}', '有数据未保存！');
+                    return;
+                }
+                
+                if (enabled_flag != 'Y') {
+                    Aurora.showMessage('${l:PROMPT}', '银行账户启用状态为N，不允许更新单据！');
+                    return;
+                }
+                
+                Aurora.request({
+                    url: $('pur_sys_employee_bank_info_update_link').getUrl(),
+                    para: {
+                        employee_id: employee_id,
+                        line_number: line_number
+                    },
+                    success: function(args) {
+                        Aurora.showMessage('${l:PROMPT}', '更新成功！');
+                    },
+                    scope: this
+                });
+            
+            }
+            
+            function onBankAssignUpdate(ds, record, name, value) {
+                /* if (name == 'province_code') {
+                    // var field = record.getMeta().getField('city_name');
+                    // field.setLovPara('region_code',record.get('province_code'));
+            
+                    record.set("city_code", null);
+                    record.set("city_name", null);
+                }
+                if (name == 'bank_location_union') {
+                    //record.set("union_bank_number",null);
+                    if (value != '' && value != undefined && value != null) {
+                        record.set("bank_location", value);
+                    }
+                }
+                if (name == 'bank_location') {
+                    if (record.get('bank_location_union') != value) {
+                        record.set("bank_location_union", null);
+                        record.set("union_bank_number", null);
+                    }
+                } */
+                if(name=='bank_code'){
+                    record.set('sparticipantbankno',null);
+                    record.set('bank_location',null);
+                    record.set('city_name',null);
+                    record.set('city_code',null);
+                    record.set('province_code',null);
+                    record.set('province_name',null);
+                    
+                }
+                
+            }
+            
+            function onCellClick(grid, row, name, record) {
+                if (name == 'city_name') {
+                    var field = record.getMeta().getField('city_name');
+                    field.setLovPara('region_code', record.get('province_code'));
+            
+                }
+                else if(name== 'sparticipantbankno'){
+                    var f = record.getMeta().getField('sparticipantbankno');
+                    f.setLovPara('bank_code',record.get('bank_code'));
+                }
+            
+            }
+            
+            function beforesubmitForDs(ds) {
+                var length = ds.getAll().length;
+                var j = 0;
+                for (var i = 0;i < length;i++) {
+                    if (ds.getAt(i).get("primary_flag") == "Y") {
+                        j++;
+                    }
+                }
+                if (j == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:EXP_EMPLOYEE_ACCOUNTS.CHANGE_MAIN_ACCOUNT}', null, 250, 100);
+                    return false;
+                } else if (j > 1) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:EXP_EMPLOYEE_ACCOUNTS.CHANGE_ONE}', null, 250, 100);
+                    return false;
+                }
+            
+                for (var n = 0;n < length;n++) {
+                    for (var k = n + 1;k < length;k++) {
+                        var num_pre = ds.getAt(n).get("line_number");
+                        var num_next = ds.getAt(k).get("line_number");
+                        if (num_pre == num_next) {
+                            Aurora.showInfoMessage('${l:PROMPT}', '${l:EXP_EMPLOYEE_ACCOUNTS.LINE_NUMBER_REPEAT}', null, 250, 100);
+                            return false;
+                        }
+                    }
+                }
+            }
+            
+            function addForDs(ds, record, index) {
+                //var line=${/model/line/record/@line_number};
+                var name = "${/model/employeeinfo/record/@name}";
+                record.set("line_number", 10 * index);
+                record.set("account_name", name);
+            }
+            
+            function contextMenuListener(evt, obj) {
+                evt.stopEvent();
+            }
+            
+            
+            function keypressListener(evt, obj) {
+                if (evt.ctrlKey) {
+                    evt.stopEvent();
+                }
+            }
+            
+            function beforecreate(dataSet) {
+                if (dataSet.getAll().length > 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:EXP_BANK_EXISTING_BANKING_INFORMATION}', null, 250, 100);
+                    //Existing banking information, is not allowed to add
+                    return false;
+                }
+            }
+            function emp_check(){
+                if($('employee_info_ds').getAll().length==0){
+                    $('ebs_add').disable();
+                    $('ebs_delete').disable();
+                    $('ebs_save').disable();
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="account_flag_ds" lookupCode="ACCOUNT_FLAG"/>
+            <a:dataSet id="employee_info_ds">
+                <a:datas dataSource="/model/employeeinfo"/>
+                <a:fields>
+                    <a:field name="employee_code" readOnly="true"/>
+                    <a:field name="name" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exp_bank_assigns_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="exp.EXP1075.exp_employee_accounts" queryUrl="${/request/@context_path}/autocrud/exp.EXP1075.exp_employee_accounts/query?employee_id=${/parameter/@employee_id}" selectable="true" submitUrl="${/request/@context_path}/modules/exp/EXP1050/exp_bank_assign.svc?employee_id=${/parameter/@employee_id}">
+                <a:fields>
+                    <!-- <a:field name="line_number" required="true"/> -->
+                    <a:field name="bank_code" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="csh.csh_cux_bank_code_lov" lovWidth="500" lovlabelWidth="100" required="true" title="CSH_BANKS.BANK_CODE">
+                        <a:mapping>
+                            <a:map from="bank_code" to="bank_code"/>
+                            <a:map from="bank_name" to="bank_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bank_name"/>
+                    <a:field name="bank_location"/>
+                    <a:field name="province_code"/>
+                    <a:field name="sparticipantbankno" autoComplete="true" lovGridHeight="320" lovHeight="500" lovService="fnd.cux_banks_lov" lovWidth="600" required="true" requiredMessage="请填写联行号" title="CUX_BANKS.SPARTICIPANTBANKNO">
+                        <a:mapping>
+                            <a:map from="sparticipantbankno" to="sparticipantbankno"/>
+                            <a:map from="province" to="province_name"/>
+                            <a:map from="sparticipantfullname" to="bank_location"/>
+                            <a:map from="sparticipantbankno" to="bank_location_code"/>
+                            <a:map from="city" to="city_name"/>
+                            <a:map from="province_code" to="province_code"/>
+                            <a:map from="city_code" to="city_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_flag_desc" defaultValue="对私" displayField="code_value_name" options="account_flag_ds" returnField="account_flag" valueField="code_value"/>
+                    <a:field name="account_flag" defaultValue="20"/>
+                    <!--  <a:field name="province_name" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="exp.FND2390.fnd_region_province_lov" lovWidth="500" required="true" title="FND_REGION_PROVINCE.PROV_NAME">
+                        <a:mapping>
+                            <a:map from="region_code" to="province_code"/>
+                            <a:map from="description" to="province_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="city_code"/>
+                    <a:field name="city_name" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="exp.FND2390.fnd_region_city_lov" lovWidth="500" title="FND_REGION_PROVINCE.CITY_NAME">
+                        <a:mapping>
+                            <a:map from="region_city_code" to="city_code"/>
+                            <a:map from="description" to="city_name"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="account_name" required="true"/>
+                    <a:field name="account_number" required="true"/>
+                    <a:field name="notes"/>
+                    <a:field name="primary_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="edit_flag" checkedValue="Y" defaultValue="Y" readOnly="true" unCheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onBankAssignUpdate"/>
+                    <a:event name="beforesubmit" handler="beforesubmitForDs"/>
+                    <a:event name="add" handler="addForDs"/>
+                    <!-- Modify Tagin/2015.07.21 增加 银行账户中若存在一条银行数据，则点新增按钮时提示：“已存在银行信息，不允许新增” -->
+                    <!-- <a:event name="beforecreate" handler="beforecreate"/> -->
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <!-- <a:gridButton id="ebs_add" bind="exp_bank_assigns_grid" type="add" width="80"/> -->
+                <!-- <a:gridButton id="ebs_delete" bind="exp_bank_assigns_grid" type="delete" width="80"/> -->
+                <a:gridButton id="ebs_save" bind="exp_bank_assigns_grid" type="save" width="80"/>
+            </a:screenTopToolbar>
+            <a:fieldSet id="exp_bank_assigns_fs" column="2" title="EXP_EMPLOYEE_ASSIGN.EMPLOYEE_INFO">
+                <a:textField name="employee_code" bindTarget="employee_info_ds" prompt="EXP_EMPLOYEE.EMPLOYEE_CODE"/>
+                <a:textField name="name" bindTarget="employee_info_ds" prompt="EXP_EMPLOYEES.EXP_EMPLOYEES_CHOOSE"/>
+            </a:fieldSet>
+            <a:grid id="exp_bank_assigns_grid" bindTarget="exp_bank_assigns_ds" marginHeight="155" navBar="true">
+                <!-- <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="delete"/>
+                    <a:button type="save"/>
+                </a:toolBar> -->
+                <a:columns>
+                    <a:column name="line_number" align="right" prompt="EXP_REPORT_LINES.LINE_NUMBER" width="50"/>
+                    <a:column name="bank_code" align="center" editor="editor_lov" prompt="CSH_BANKS.BANK_CODE" width="100"/>
+                    <a:column name="bank_name" prompt="CSH_BANKS.BANK_ALT_NAME" width="200"/>
+                    <a:column name="sparticipantbankno" align="left" editor="editor_lov" prompt="CUX_BANKS.SPARTICIPANTBANKNO" width="120"/>
+                    <a:column name="account_flag_desc" align="center" prompt="ACCOUNT_FLAG" width="80"/>
+                    <a:column name="bank_location" prompt="CSH_BANK_BRANCHES.BRANCH_NAME" width="200"/>
+                    <a:column name="province_name" prompt="FND_REGION_PROVINCE.PROV_NAME" width="100"/>
+                    <a:column name="city_name" prompt="FND_REGION_PROVINCE.CITY_NAME" width="100"/>
+                    <a:column name="account_name" prompt="EXP_EMPLOYEE_ACCOUNTS.BANK_ACCOUNT_NAME" width="100"/>
+                    <a:column name="account_number" editor="editor_tf" prompt="CSH_PAYMENT.BANK_ACCOUNT_CODE" width="200"/>
+                    <a:column name="notes" editor="editor_tf" prompt="CSH_CASH_PLAN_HEADERS.NOTES"/>
+                    <a:column name="primary_flag" editor="editor_cb" prompt="EXP_EMPLOYEE_ACCOUNTS.BANK_ACCOUNT_MAIN" width="60"/>
+                    <!-- <a:column name="edit_flag" editor="editor_cb" prompt="是否手工" width="60"/> -->
+                    <a:column name="enabled_flag" editor="editor_cb" prompt="EXP_EMPLOYEE_ASSIGN.ENABLED_FLAG" width="60"/>
+                    <!-- <a:column name="update_document" align="center" prompt="更新单据" renderer="update_document" width="80"/> -->
+                </a:columns>
+                <a:editors>
+                    <a:lov id="editor_lov"/>
+                    <a:textField id="editor_tf"/>
+                    <a:checkBox id="editor_cb"/>
+                    <a:textField id="accountNumTf"/>
+                    <a:comboBox id="editor_combox"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="onCellClick"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function exp_bank_assignsInitSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                var vh = $A.getViewportHeight();
+                //留白宽度
+                var marginWidth = 35 ;
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = autoWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置组件的自适应宽度
+                Ext.get('exp_bank_assigns_fs').setWidth(autoWidth + 4);
+                $('exp_bank_assigns_grid').setWidth(autoWidth);
+                //设置TextArea的自适应宽度,别问我最后那个6是哪里来的，试出来的
+            }
+            //Ext.fly(window).on('resize', exp_bank_assignsInitSize);
+            exp_bank_assignsInitSize();
+            emp_check();
+		]]></script>
+    </a:view>
+</a:screen>

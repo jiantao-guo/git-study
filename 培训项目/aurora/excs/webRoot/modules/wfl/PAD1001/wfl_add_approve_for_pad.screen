@@ -1,0 +1,817 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query autocount="false" fetchall="true" model="expm.exp_business_rules_for_wfl" rootpath="exp_business_rules"/>
+        <a:model-query autocount="false" fetchall="true" model="wfl.wfl_approval_list_id" rootpath="wfl_approval_list_seq"/>
+        <a:model-query fetchAll="true" model="wfl.wfl_notification_win_get_cmp_unit_tree_for_pad" rootPath="emp_unit_tree"/>
+    </a:init-procedure>
+    <a:view template="wfl_notigication_window_for_pad">
+        <style><![CDATA[
+    		#desc{
+    		    width:500px;
+    		    resize:none;
+    		    height:270px;
+    		}
+    		.content_title_desc{
+    		    padding-top:5px!important;
+    		    padding-right:4px;
+    		    width:99%;
+    		}
+    		#approve_desc{
+    		    width:88px;
+    		    padding-right:10px;
+    		    text-align:right;
+    		    padding-top:26px;
+    		}
+    		#approve_td{
+    		    *width:58px;
+    		    *padding-right:10px;
+    		}
+    		#popup{
+    		    position:absolute;
+    		    float:left;
+    		}
+    		#names{
+    		    border:none;
+    		    outline:none;
+    		    -webkit-appearance:none;
+    		    width:100%;
+    		    height:100%;
+    		}
+			#names_text{
+			    float: left;
+			    overflow:hidden;
+			    height:30px;
+			    width: 100px;
+			}
+    		.content_title{
+    			padding-right:4px; 
+    		}
+    		#approver_desc{
+    		    width:88px;
+    		    padding-right:10px;
+    		    text-align:right;
+    		    padding-top:20px;
+    		}
+    		#approve_td{
+    		    *width:58px;
+    		    *padding-right:10px;
+    		}
+    		#approvelist_td{
+    		    width:58px;
+    		    padding-right:10px;
+    		}
+    		#approvelist_div{
+    		    width:88px;
+    		    padding-right:10px;
+    		    text-align:right;
+    		    padding-top:12px;
+    		}
+    		#approveprior_td{
+    		    width:58px;
+    		    padding-right:10px;
+    		}
+    		#approveprior_div{
+    		    width:88px;
+    		    padding-right:10px;
+    		    text-align:right;
+    		    padding-top:12px;
+    		}
+			#searchForm{
+			    background:#f3f8fc;
+			    padding:0px 5px;
+			    border-bottom:#cccccc 1px solid;
+			}
+        	#sea-table{
+        	    position:absolute;
+        	}
+        	#siteSearchInput{
+        	    margin-top:5px;
+        	    border:#cccccc 1px solid;
+        	    height:26px;
+        	    width:85%;
+        	}
+    	]]></style>
+        <script><![CDATA[
+            $get = function() {
+                //参数数组长度
+                var arglength = arguments.length;
+                //返回数组
+                var items = [];
+                switch (arglength) {
+                case 0:
+                    return false;
+                    break;
+                case 1:
+                    return document.getElementById(arguments[0]);
+                    break;
+                default:
+                    for (i = 0;i < arglength;i++) {
+                        items[i] = document.getElementById(arguments[i]);
+                    }
+                    return items;
+                }
+            }
+            
+            function loadCmpUnitData() {
+                var ds = $('emp_unit_tree_ds');
+                var data = ds.getAll();
+                for (var i = 0;i < data.length;i++) {
+                    treemenu.pushCmpUnit({
+                        id: data[i].get('id'),
+                        parentId: data[i].get('parentid'),
+                        html: data[i].get('name')
+                    });
+                }
+                if (treemenu.render) {
+                    treemenu.render();
+                }
+            }
+            
+            function loadEmpData() {
+                var ds = $('emp_list_ds');
+                var data = ds.getAll();
+                for (var i = 0;i < data.length;i++) {
+                    treemenu.pushEmp({
+                        id: data[i].get('id'),
+                        parentId: data[i].get('parentid'),
+                        html: data[i].get('name'),
+                        isLastChild: true,
+                        unit: data[i].get('unit'),
+                        compay: data[i].get('company'),
+                        user_name: data[i].get('user_name'),
+                        user_id: data[i].get('user_id')
+                    });
+                }
+                if (treemenu.render) {
+                    treemenu.render();
+                }
+            }
+            
+            function expendAll(argc) {
+                var a = argc;
+                if (a.innerHTML == "展开所有") {
+                    treemenu.expandAll();
+                    treemenu.settings.expendAll = true;
+                    a.innerHTML = "公司列表";
+                    while (treemenu.visitPathList.length != 0) {
+                        treemenu.visitPathList.pop();
+                    }
+                } else {
+                    treemenu.render();
+                    a.innerHTML = "展开所有";
+                    treemenu.settings.expendAll = false;
+                }
+            }
+            //返回上一级
+            
+            function back() {
+                if (treemenu.visitPathList.length != 0) {
+                    var parentid = treemenu.visitPathList.pop().parentId;
+                    treemenu.render(treemenu.settings.container, parentid);
+                }
+            }
+            //添加通知人：1判断是否已选；2 加入到输入框里； 3把user_id加入到wfl_user_select的dataset中
+            //参数innerText为在输入框显示的文字：张三－A公司－B部门
+            //参数user_id为动态生成的div id，也是提交时的参数user_id。它是唯一的。
+            
+            function addNotityPeople(innerText, user_id) {
+                var exists = $('wfl_app_list_ds').find('employee_id', user_id);
+                //如果存在，则删除输入框里的div
+                if (exists) {
+                    var parent = document.getElementById('add_approver');
+                    var curr = document.getElementById(user_id);
+                    parent.removeChild(curr);
+                    $('wfl_app_list_ds').remove(exists);
+                    return;
+                }
+                //加入到下拉列表里
+                completeField(innerText, user_id);
+            
+                //把user_id回入的dataset中
+                var record = new Aurora.Record({
+                    employee_id: user_id,
+                    seq_number: 1,
+                    approval_list_id: '${/model/wfl_approval_list_seq/record/@approval_list_id}'
+                });
+                $('wfl_app_list_ds').add(record);
+            }
+            
+            //填写输入框
+            
+            function completeField(innerText, id) {
+                add_approver = document.getElementById("add_approver");
+                outputnamesDIV = document.createElement("div");
+                outputnamesDIV._record = {
+                    employee_id: id
+                };
+                outputnamesDIV.style.float = "left";
+                outputnamesDIV.id = id;
+                outputnamesSPAN = document.createElement("span");
+                outputnamesSPAN.innerHTML = innerText;
+                deletenamesDIV = document.createElement("div");
+                deletenamesBTN = document.createElement("input");
+                deletenamesBTN.type = "image";
+                deletenamesBTN.src = '${/request/@context_path}/images/for_pad/del1.png';
+                deletenamesBTN.onclick = function() {
+                    removeNotifyPeople(this.parentNode, id);
+                    inputField.focus();
+                };
+                outputnamesDIV.appendChild(outputnamesSPAN);
+                outputnamesDIV.appendChild(deletenamesBTN);
+                add_approver.insertBefore(outputnamesDIV, names_text);
+                clearNames();
+                inputField.value = '';
+                //inputField.focus();
+            }
+            
+            //删除通知人
+            
+            function removeNotifyPeople(node, id) {
+                add_approver = document.getElementById("add_approver");
+                add_approver.removeChild(node);
+                var user_selected = $('wfl_app_list_ds')
+                var record = user_selected.find('employee_id', id);
+                if (record) {
+                    user_selected.remove(record);
+                }
+            }
+            //清除下拉列表	
+            
+            function clearNames() {
+                var ind = completeTable.childNodes.length;
+                for (var i = ind - 1;i >= 0;i--) {
+                    completeTable.removeChild(completeTable.childNodes[i]);
+                }
+                completeDiv.style.border = "none";
+            }
+            
+            function setfocus() {
+                document.getElementById("names").focus();
+            }
+            //以下是对快速查询JS
+            
+            function findNames() {
+                if (inputField.value.length > 0) {
+                    var detail = '%' + inputField.value + '%';
+                    $('findname_ds').setQueryParameter("detail", detail);
+                    $('findname_ds').setQueryParameter("workflow_category", '${/parameter/@workflow_category}');
+                    $('findname_ds').setQueryParameter("work_type", '${/parameter/@work_type}');
+                    $('findname_ds').query();
+                } else {
+                    clearNames();
+                }
+            }
+            
+            function returnToPage() {
+                window.history.go(-1);
+            }
+            //设置显示位置
+            
+            function setOffsets() {
+                completeTable.style.width = parseInt(add_approver.style.width) + "px";
+                var left = calculateOffset(add_approver, "offsetLeft");
+                var top = calculateOffset(add_approver, "offsetTop") + add_approver.offsetHeight;
+                completeDiv.style.border = "black 1px solid";
+                completeDiv.style.left = left + "px";
+                completeDiv.style.top = top + "px";
+            }
+            //计算显示位置
+            
+            function calculateOffset(field, attr) {
+                var offset = 0;
+                while (field) {
+                    offset += field[attr];
+                    field = field.offsetParent;
+                }
+                return offset;
+            }
+            //生成与输入内容匹配行
+            
+            function setNames(ds) {
+                var records = ds.getAll();
+                var names = new Array();
+                if (records.length > 0) {
+                    for (var n = 0;n < records.length;n++) {
+                        names.push({
+                            user_id: records[n].get("user_id"),
+                            detail: records[n].get("detail"),
+                            name: records[n].get("names")
+                        });
+                    }
+                }
+                clearNames();
+                var size = names.length;
+                setOffsets();
+                var row, cell, txtNode;
+                for (var i = 0;i < size;i++) {
+                    var nextNode = names[i].name;
+                    var detail = names[i].detail;
+                    row = document.createElement("tr");
+                    cell = document.createElement("td");
+                    cell_names = document.createElement("td");
+                    cell_names.style.display = "none";
+                    row.onmouseout = function() {
+                        this.className = 'mouseOver';
+                    };
+                    row.onmouseover = function() {
+                        this.className = 'mouseOut';
+                    };
+                    row.setAttribute("bgcolor", "#FFFAFA");
+                    row.setAttribute("border", "0");
+                    row.onclick = function() {
+                        var user_id = this._record.user_id;
+                        var exists = $('wfl_app_list_ds').find('employee_id', user_id);
+                        if (!exists) {
+                            addNotityPeople(this.lastChild.firstChild.nodeValue, user_id);
+                            searchInput.value = '查找员工...';
+                            searchInput.style.color = '#cccccc'
+                        } else {
+                            alert('已选择该员工！');
+                        }
+                    };
+                    row.id = names[i].user_id + '_temp'
+                    txtNode = document.createTextNode(detail);
+                    txtNode_names = document.createTextNode(nextNode);
+                    cell.appendChild(txtNode);
+                    cell_names.appendChild(txtNode_names);
+                    row.appendChild(cell);
+                    row.appendChild(cell_names);
+                    row._record = names[i];
+                    completeTable.appendChild(row);
+                }
+            }
+            
+            function getdata() {
+                $('wfl_add_method_priority').query();
+                $('exp_business_rules').query();
+            }
+            
+            function setdata(ds) {
+                var valuename = new Array();
+                var code = new Array();
+            
+                var records = ds.getAll();
+                for (var n = 0;n < records.length;n++) {
+                    valuename[n] = records[n].get("code_value_name");
+                    code[n] = records[n].get("code_value");
+                }
+                for (var i = 0;i < records.length;i++) {
+                    document.getElementById('add_priority').options.add(new Option(valuename[i], code[i]));
+                }
+            }
+            
+            function setRdata(ds) {
+                var valuename = new Array();
+                var code = new Array();
+                var records = ds.getAll();
+                //首行为空
+                document.getElementById('method').options.add(new Option(valuename[0], code[0]));
+                for (var n = 0;n < records.length;n++) {
+                    valuename[n + 1] = records[n].get("description");
+                    code[n + 1] = records[n].get("business_rule_code");
+                }
+                for (var i = 0;i < records.length;i++) {
+                    document.getElementById('method').options.add(new Option(valuename[i + 1], code[i + 1]));
+                }
+            }
+            
+            function wflappsave() {
+                var add_method_priority = document.getElementById('add_priority');
+                var approvedesc = document.getElementById('desc');
+                var approver = document.getElementById('add_approver');
+                if (approver.innerText == null || approver.innerText == "") {
+                    alert("未添加审批人");
+                } else {
+                    var record = $('wfl_add_approve').getAt(0);
+                    record.set('add_method_priority', add_method_priority.value);
+                    record.set('approvedesc', approvedesc.value);
+                    $('wfl_add_approve').submit();
+                }
+            }
+            
+            function wflappreset() {
+                $('wfl_app_list_ds').removeAll();
+                var method_records = $('exp_business_rules').getAll();
+                document.getElementById('method').value = method_records[0].get("business_rule_code");
+                var add_priority_records = $('wfl_add_method_priority').getAll();
+                document.getElementById('add_priority').value = add_priority_records[0].get("code_value");
+                resetNotifyEmp();
+                document.getElementById('desc').value = "";
+                var length = treemenu.empList.length;
+                treemenu.reset();
+            }
+            
+            function resetNotifyEmp() {
+                var notify = document.getElementById('add_approver');
+                while (notify.childNodes.length > 2) {
+                    notify.removeChild(notify.firstChild);
+                }
+            }
+            
+            function addApproverList() {
+                var business_rule_code = document.getElementById('method').value;
+                var method_code = $("exp_business_rules").getCurrentRecord().get("method_code");
+                if (method_code != null && method_code != '') {
+                    Aurora.request({
+                        url: '${/request/@context_path}/autocrud/wfl.wfl_approve/insert',
+                        para: {
+                            method_code: method_code,
+                            business_rule_code: business_rule_code,
+                            approval_list_id: '${/model/wfl_approval_list_seq/record/@approval_list_id}'
+                        },
+                        success: loadwflapplistgrid,
+                        scope: this
+                    });
+                }
+            }
+            
+            function userSelectRemove(dataSet, record, index) {
+                var user_id = record.get('employee_id');
+                var length = treemenu.empList.length;
+                for (var i = 0;i < length;i++) {
+                    if (user_id == treemenu.empList[i].user_id) {
+                        treemenu.empList[i].checked = false;
+                        break;
+                    }
+                }
+                treemenu.refresh();
+            }
+            
+            function loadwflapplistgrid() {
+                $('wfl_app_list_ds').query();
+            }
+            
+            function setinitdata(ds, record, index) {
+                record.set('approval_list_id', '${/model/wfl_approval_list_seq/record/@approval_list_id}');
+                record.set('session_id', '${/session/@session_id}');
+                var user_id = record.get('employee_id');
+                var length = treemenu.empList.length;
+                for (var i = 0;i < length;i++) {
+                    if (user_id == treemenu.empList[i].user_id) {
+                        treemenu.empList[i].checked = true;
+                    }
+                }
+                treemenu.refresh();
+            }
+            
+            function appSuccess() {
+                window.history.go(-1);
+            }
+            //以下为查询
+            
+            function searchField(innerText, id) {
+                add_approver = document.getElementById("add_approver");
+                outputnamesDIV = document.createElement("div");
+                outputnamesDIV.style.float = "left";
+                outputnamesDIV.id = id;
+                outputnamesSPAN = document.createElement("span");
+                outputnamesSPAN.innerHTML = innerText;
+                deletenamesDIV = document.createElement("div");
+                deletenamesBTN = document.createElement("input");
+                deletenamesBTN.type = "image";
+                deletenamesBTN.src = '${/request/@context_path}/images/for_pad/del1.png';
+                deletenamesBTN.onclick = function() {
+                    removeNotifyPeople(this.parentNode, id);
+                    inputField.focus();
+                };
+                outputnamesDIV.appendChild(outputnamesSPAN);
+                outputnamesDIV.appendChild(deletenamesBTN);
+                add_approver.insertBefore(outputnamesDIV, names_text);
+                clearSearch();
+                inputField.value = '';
+                document.getElementById('scroll').style.visibility = "visible";
+                //inputField.focus();
+            }
+            
+            function addSearchPeople(innerText, user_id) {
+                //加入到下拉列表里
+                searchField(innerText, user_id);
+            
+                var record = new Aurora.Record({
+                    employee_id: user_id,
+                    seq_number: 1,
+                    approval_list_id: '${/model/wfl_approval_list_seq/record/@approval_list_id}'
+                });
+                $('wfl_app_list_ds').add(record);
+            }
+            
+            function forsearch(ds) {
+                var records = ds.getAll();
+                var names = new Array();
+                if (records.length > 0) {
+                    for (var n = 0;n < records.length;n++) {
+                        names.push({
+                            user_id: records[n].get("user_id"),
+                            detail: records[n].get("detail"),
+                            name: records[n].get("names")
+                        });
+                    }
+                }
+                clearSearch();
+                var size = names.length;
+                setSearchSite();
+                var row, cell, txtNode;
+                for (var i = 0;i < size;i++) {
+                    var nextNode = names[i].name;
+                    var detail = names[i].detail;
+                    row = document.createElement("tr");
+                    cell = document.createElement("td");
+                    cell_names = document.createElement("td");
+                    cell_names.style.display = "none";
+                    row.onmouseout = function() {
+                        this.className = 'mouseOver';
+                    };
+                    row.onmouseover = function() {
+                        this.className = 'mouseOut';
+                    };
+                    row.setAttribute("bgcolor", "#FFFAFA");
+                    row.setAttribute("border", "0");
+                    row.onclick = function() {
+                        var user_id = this._record.user_id;
+                        var exists = $('wfl_app_list_ds').find('employee_id', user_id);
+                        if (!exists) {
+                            addSearchPeople(this.lastChild.firstChild.nodeValue, user_id);
+                            searchInput.value = '查找员工...';
+                            searchInput.style.color = '#cccccc'
+                        } else {
+                            alert('已选择该员工！');
+                        }
+                    };
+                    row.id = names[i].user_id + '_temp'
+                    txtNode = document.createTextNode(detail);
+                    txtNode_names = document.createTextNode(nextNode);
+                    cell.appendChild(txtNode);
+                    cell_names.appendChild(txtNode_names);
+                    row.appendChild(cell);
+                    row.appendChild(cell_names);
+                    row._record = names[i];
+                    document.getElementById('seach-table').appendChild(row);
+                }
+            }
+            
+            function setSearchSite() {
+                var tablediv = document.getElementById('sea-table');
+                var searchBox = document.getElementById('searchBox');
+                completeTable.style.width = parseInt(searchBox.style.width) + "px";
+                var left = calculateOffset(searchBox, "offsetLeft");
+                var top = calculateOffset(searchBox, "offsetTop") + searchBox.offsetHeight;
+                tablediv.style.border = "black 1px solid";
+                tablediv.style.left = left + "px";
+                tablediv.style.top = top + "px";
+            }
+            
+            function mvqMOu() {
+                searchInput.focus()
+                searchInput.value = '';
+                searchInput.style.color = 'black';
+            }
+            
+            function mvqMOv() {
+                if (searchInput.value.length == 0) {
+                    document.getElementById('scroll').style.visibility = "visible";
+                } else {
+                    document.getElementById('scroll').style.visibility = "hidden";
+                }
+                if (searchInput.value.length > 0 && searchInput.value != null && searchInput.value != '') {
+                    var detail = '%' + searchInput.value + '%';
+                    $('searchnames').setQueryParameter("detail", detail);
+                    $('searchnames').setQueryParameter("workflow_category", '${/parameter/@workflow_category}');
+                    $('searchnames').setQueryParameter("work_type", '${/parameter/@work_type}');
+                    $('searchnames').query();
+                } else {
+                    clearSearch();
+                }
+            }
+            
+            function clearSearch() {
+                var seachTable = document.getElementById('seach-table');
+                var ind = seachTable.childNodes.length;
+                for (var i = ind - 1;i >= 0;i--) {
+                    seachTable.removeChild(seachTable.childNodes[i]);
+                }
+                completeDiv.style.border = "none";
+            }
+            
+            function search() {
+                var searchForm = document.getElementById('searchForm');
+                var serchtext = document.getElementById('search-text')
+                if (searchInput.type == 'hidden') {
+                    searchForm.style.height = '40px';
+                    searchInput.type = 'input';
+                    searchInput.value = '查找员工...';
+                    searchInput.style.color = '#cccccc';
+                } else {
+                    searchForm.style.height = '0px';
+                    searchForm.visibility = 'hidden';
+                    searchInput.type = 'hidden';
+                    clearSearch();
+                    document.getElementById('scroll').style.visibility = "visible";
+                }
+            }
+            
+            function setValue() {
+                if (searchInput.value == '') {
+                    searchInput.value = '查找员工...';
+                    searchInput.style.color = '#cccccc';
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="searchnames" fetchAll="true" model="wfl.PAD1001.wfl_workflow_window_search_deliver_emp_for_pad">
+                <a:events>
+                    <a:event name="beforeload" handler="forsearch"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="findname_ds" fetchAll="true" model="wfl.PAD1001.wfl_workflow_window_search_deliver_emp_for_pad">
+                <a:events>
+                    <a:event name="beforeload" handler="setNames"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="emp_list_ds" autoQuery="true" fetchAll="true" model="wfl.PAD1001.wfl_workflow_window_get_emp_list_for_pad">
+                <a:events>
+                    <a:event name="load" handler="loadEmpData"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="emp_unit_tree_ds">
+                <a:datas dataSource="/model/emp_unit_tree"/>
+            </a:dataSet>
+            <a:dataSet id="exp_business_rules" model="expm.exp_business_rules_for_wfl">
+                <a:events>
+                    <a:event name="load" handler="setRdata"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="wfl_add_method_priority" model="wfl.PAD1001.wfl_add_approver_priority">
+                <a:events>
+                    <a:event name="load" handler="setdata"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="wfl_add_approve" autoCreate="true" submiturl="${/request/@context_path}/modules/wfl/public/wfl_add_approval_list.svc">
+                <a:fields>
+                    <a:field name="method_value" displayfield="description" options="exp_business_rules" prompt="WORKFLOW_APPR.CHOICE_PEO" valuefield="business_rule_code">
+                        <a:mapping>
+                            <a:map from="business_rule_id" to="business_rule_code"/>
+                            <a:map from="method_code" to="method_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="workflow_category" defaultValue="${/parameter/@workflow_category}"/>
+                    <a:field name="work_type" defaultValue="${/parameter/@work_type}"/>
+                    <a:field name="record_id" defaultValue="${/parameter/@record_id}"/>
+                    <a:field name="add_method_priority_name" displayfield="code_value_name" options="wfl_add_method_priority" prompt="WORKFLOW_APPR.CHECK_PRIOR" returnField="add_method_priority" valuefield="code_value"/>
+                    <a:field name="add_method_priority"/>
+                    <a:field name="approvedesc" prompt="WORKFLOW_APPR.CHECK_PRIOR_DESC"/>
+                    <a:field name="method_code"/>
+                    <a:field name="business_rule_code"/>
+                    <a:field name="approval_list_id" defaultValue="${/model/wfl_approval_list_seq/record/@approval_list_id}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="appSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="wfl_app_list_ds" bindName="applist" bindTarget="wfl_add_approve" model="wfl.wfl_add_approval_list" querytUrl="${/request/@context_path}/autocrud/wfl.wfl_approve_app_list/query?approval_list_id=${/model/wfl_approval_list_seq/record/@approval_list_id}" selectable="true">
+                <a:fields>
+                    <a:field name="seq_number"/>
+                    <a:field name="approval_list_id" defaultValue="${/model/wfl_approval_list_seq/record/@approval_list_id}"/>
+                    <a:field name="employee_id"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="remove" handler="userSelectRemove"/>
+                    <a:event name="add" handler="setinitdata"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <!--***************************************************************************-->
+        <!--左边-->
+        <div id="left" class="left">
+            <div class="header">
+                <div class="button f-left button-return" onclick="back();"><![CDATA[返回上级]]></div>
+                <div class="button f-left button-4char" onclick="expendAll(this);"><![CDATA[展开所有]]></div>
+                <div class="button f-right button-serach" onclick="search()"/>
+                <div class="button f-right button-2char" onclick="returnToPage();"><![CDATA[返回]]></div>
+            </div>
+            <div id="searchForm" style="">
+                <div id="searchBox" style="">
+                    <div id="search" aligen="center">
+                        <input name="s" id="siteSearchInput" onblur="setValue()" onclick="mvqMOu()" onkeydown="" onkeyup="mvqMOv();" style="" type="hidden" value=""/>
+                    </div>
+                </div>
+                <div id="sea-table" style="">
+                    <table id="seach-table" bgcolor="" border="0" cellpadding="3" cellspacing="0" width="100%"/>
+                </div>
+            </div>
+            <div id="left_0" class="inner_left">
+                <div class="clear"/>
+            </div>
+            <div id="scroll" class="inner_left">
+                <div id="left_1">
+                    <div class="clear"/>
+                </div>
+                <div class="clear"/>
+            </div>
+        </div>
+        <!--右边-->
+        <div id="right" class="right">
+            <div class="header">
+                <div class="button f-right button-up"/>
+                <div class="button f-right button-down"/>
+            </div>
+            <div id="inner_right" class="inner-right">
+                <table border="0" cellpadding="0" cellspacing="0" style="margin-top:1px;">
+                    <tbody>
+                        <tr height="40px">
+                            <td id="approvelist_td" nowrap="" style="" valign="top">
+                                <div id="approvelist_div" nowrap="" style=""><![CDATA[
+	                                    ${l:WORKFLOW_APPR.CHOICE_PEO}:
+	                                ]]></div>
+                            </td>
+                            <td>
+                                <select name="method_value" id="method"/>
+                            </td>
+                        </tr>
+                        <tr height="40px">
+                            <td id="approveprior_td" nowrap="" style="" valign="top">
+                                <div id="approveprior_div" nowrap="" style=""><![CDATA[
+	                                    ${l:WORKFLOW_APPR.CHECK_PRIOR}:
+	                                ]]></div>
+                            </td>
+                            <td>
+                                <select name="add_method_priority_name" id="add_priority"/>
+                            </td>
+                        </tr>
+                        <tr height="60px">
+                            <td id="approver_td" nowrap="" style="" valign="top">
+                                <div id="approver_desc" nowrap="" style=""><![CDATA[添加审批人:  ]]></div>
+                            </td>
+                            <td class="content_title" style="" width="95%">
+                                <div id="add_approver" class="div_txt" onclick="setfocus();" style="cursor:text;width:500px;">
+                                    <div id="names_text" style="">
+                                        <input id="names" autocomplete="off" ime-mode="disabled" onkeyup="findNames();" style="" tabindex="1" type="input"/>
+                                    </div>
+                                    <div id="popup" style="">
+                                        <table id="complete_table" bgcolor="#FFFAFA" border="0" cellpadding="3" cellspacing="0" width="100%"><![CDATA[
+                                     ]]></table>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr height="285px">
+                            <td id="approve_td" nowrap="" style="" valign="top">
+                                <div id="approve_desc" nowrap="" style=""><![CDATA[${l:WORKFLOW_APPR.CHECK_PRIOR_DESC}:]]></div>
+                            </td>
+                            <td class="content_title_desc" style="">
+                                <textarea name="approvedesc" id="desc" style=""/>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><![CDATA[
+                            ]]></td>
+                            <td>
+                                <input class="button-floor" onclick="wflappsave();" src="${/request/@context_path}/images/for_pad/submit.gif" style="" type="image" value="发送"/>
+                                <input class="button-floor" onclick="wflappreset();" src="${/request/@context_path}/images/for_pad/reset.gif" style="" type="image" value="重置"/>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="clear"/>
+            </div>
+            <div class="clear"/>
+        </div>
+        <div class="clear"/>
+        <div class="bottom"/>
+        <script><![CDATA[
+            var myScroll = new iScroll('scroll');
+            var treemenu = new TreeMenu({
+                container : document.getElementById('left_1'),
+                renderCallback : rendercallback
+            });
+            //全局变量
+            var add_approver = document.getElementById("add_approver");
+            var inputField = document.getElementById("names");
+            var completeTable = document.getElementById("complete_table");
+            var completeDiv = document.getElementById("popup");
+            var searchInput=document.getElementById('siteSearchInput');
+            
+            loadCmpUnitData();
+            function resize(){
+                var nodelist = $get("left","right","left_0","scroll","inner_right");
+                var height = (parseInt(document.body.clientHeight)-46)+"px";
+                var right_width = (parseInt(document.body.clientWidth)-300)+"px";
+                var height_inner = (parseInt(document.body.clientHeight)-92)+"px";
+                nodelist[0].style.height = nodelist[1].style.height = height;
+                nodelist[2].style.height = nodelist[3].style.height = nodelist[4].style.height= height_inner;
+                nodelist[1].style.width=right_width;
+                }
+            window.onload = resize;
+            window.onresize = resize;
+            
+            function rendercallback(){
+                myScroll._checkDOMChanges();
+            }
+            document.addEventListener('touchmove', function (e) { e.preventDefault(); }, false);
+        	function init(){
+        	    getdata();
+        	}
+        	init();
+        ]]></script>
+    </a:view>
+</a:screen>

@@ -1,0 +1,342 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: niujiaqing1265 $
+    $Date: 2011/11/02 05:59:01 $
+    $Revision: 1.6 $
+    $Purpose: 用户定义
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" xmlns:c="aurora.application.action" trace="true">
+    <a:init-procedure>
+        <p:method-invoke className="aurora.application.features.cstm.CustomSourceCode" methodName="getElementChildArray" resultPath="/model/@result">
+            <p:arguments>
+                <p:argument path="instance" type="uncertain.ocm.IObjectRegistry"/>
+                <p:argument value="${/parameter/@screen_path}" type="java.lang.String"/>
+                <p:argument value="${/parameter/@id}" type="java.lang.String"/>
+            </p:arguments>
+        </p:method-invoke>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+            var reorder_ds = [];
+            var customization_array_map = {};
+            var customization_array_ds = [];
+            function save_customization(){
+                var propertity_list = [];
+                var hds = $('sys_customization_query_ds');
+                var head = hds.getCurrentRecord();
+                var sds = $('sys_customization_submit_ds');
+                var rds = $('sys_customization_result_ds');
+                sds.removeAll();
+                propertity_list.add(rds.getAll());
+                
+                
+                //处理array的ds
+                for(var i=0;i<customization_array_ds.length;i++){
+                    var ds = $(customization_array_ds[i]);
+                    var list = ds.getAll();
+                    for(var j=0;j<list.length;j++){
+                        var r = list[j];
+                        if(r.data['_cus_stauts']=='delete') reorder_ds.add(customization_array_ds[i]);
+                        if(r.get('pros')){
+                            propertity_list.add(r.get('pros').data);
+                        }
+                        if(r.data['_cus_stauts']){
+                            r.data['head_id']=head.get('head_id');
+                            r.data['source_file']=head.get('source_file');
+                            r.data['id_value']=head.get('id_value');
+                            r.data['dimension_type']=head.get('dimension_type');
+                            r.data['dimension_value']=head.get('dimension_value');
+                            r.data['index_value']=r.data['name'];
+                            r.data['enable_flag']='Y';
+                            sds.create(r.data);
+                        } 
+                    }
+                }
+                
+                //处理属性的ds
+                
+                for(var i=0;i<propertity_list.length;i++){
+                    var list = propertity_list[i]
+                    for(var j=0;j<list.length;j++){
+                        var r = list[j];
+                        if(r.dirty){
+                            var rid = r.get('record_id');
+                            if(!rid){
+                                r.data['_cus_stauts']='insert';
+                            }else{
+                                var v = r.get('attrib_value');
+                                if(Ext.isEmpty(v)){
+                                    r.data['_cus_stauts']='delete';
+                                }else {
+                                    r.data['_cus_stauts']='update';
+                                }
+                            }
+                            r.data['head_id']=head.get('head_id');
+                            r.data['source_file']=head.get('source_file');
+                            r.data['id_value']=head.get('id_value');
+                            r.data['dimension_type']=head.get('dimension_type');
+                            r.data['dimension_value']=head.get('dimension_value');
+                            r.data['enable_flag']='Y';
+                            sds.create(r.data);
+                        }
+                    }
+                }
+                for(var i = 0;i<reorder_ds.length;i++){
+                    var ds = $(reorder_ds[i]);
+                    var order = [];
+                    var datas = ds.getAll();
+                    var array_name;
+                    var index_field;
+                    for(var j=0;j<datas.length;j++){
+                        var r = datas[j];
+                        array_name = r.get('array_name');
+                        index_field = r.get('index_field');
+                        if(r.data['_cus_stauts']=='delete') continue;
+                        order.add(r.get(customization_array_map[reorder_ds[i]]))
+                    }
+                    var data = {};
+                    data['array_name']=array_name;
+                    data['index_field']=index_field;
+                    data['fields_order']=order.join(',');
+                    data['head_id']=head.get('head_id');
+                    data['source_file']=head.get('source_file');
+                    data['id_value']=head.get('id_value');
+                    data['dimension_type']=head.get('dimension_type');
+                    data['dimension_value']=head.get('dimension_value');
+                    data['_cus_stauts']='reorder';
+                    data['mod_type']='re_order';
+                    data['enable_flag']='Y';
+                    sds.create(data);
+                }
+                sds.submit();
+            }
+            
+            function cancel_customization(){
+                $('sys_customization_edit_window').close();
+            }
+            
+            function queryCustomization(){
+                $('sys_customization_result_ds').query();
+                for(var i=0;i<customization_array_ds.length;i++){
+                    var ds = $(customization_array_ds[i]);
+                    ds.removeAll();
+                    ds.query();
+                }
+            }
+            
+            function onCustomizationDataSetUpdate(ds,record,name,value){
+                $('sys_customization_result_ds').removeAll();
+                for(var i=0;i<customization_array_ds.length;i++){
+                    var ds = $(customization_array_ds[i]);
+                    ds.removeAll();
+                }
+                if(name == 'lookup_bm'){
+                    record.getField('dimension_value_name').setLovService(value)
+                }
+                if(name == 'dimension_type'){
+                    if(value == 'SYSTEM'){
+                        record.set('dimension_value','system');
+                        record.set('dimension_value_name','');
+                        record.getField('dimension_value_name').setRequired(false);
+                        record.getField('dimension_value_name').setReadOnly(true);
+                    }else{
+                        record.set('dimension_value','');
+                        record.set('dimension_value_name','');
+                        record.getField('dimension_value_name').setRequired(true);
+                        record.getField('dimension_value_name').setReadOnly(false);
+                    }                    
+                }
+            }
+            
+            function onCustomizationUpdate(dataSet, record, name,value){
+                record.data['mod_type']='set_attrib';
+            }
+            function register_customization_array_ds(id){
+                customization_array_ds.add(id);
+            }
+            
+            function onCustomizationDataSetSubmitSuccess(ds, res){
+                Aurora.showInfoMessage('成功','保存成功!',function(){
+                    queryCustomization();
+                });
+            }
+            
+            
+            function initTabQuery(id){
+                var ds = $(id);
+                if($('sys_customization_result_ds').getAll().length >0 && ds.getAll().length == 0){
+                    ds.query();
+                }
+            }
+            
+            function onCustomizationArrayAdd(ds, r, index ){
+                r.data['mod_type']='insert';
+                r.data['position']='last_child';
+            }
+            
+            
+            function customizationDeleteRenderer(value,record, name){
+                if(name == 'mod_type'){
+                    if(value == 'delete'){
+                        return '<a title="取消删除" href="javascript:unDeleteCustomizationArray(\''+record.ds.id+'\','+record.id+')"><img style="width:14px;height:14px;margin-top:3px;" src="${/request/@context_path}/images/undo.png"></img></a>';
+                    }else{
+                        return '<a title="删除" href="javascript:deleteCustomizationArray(\''+record.ds.id+'\','+record.id+')"><img style="margin-top:3px;" src="${/request/@context_path}/images/remove.gif"></img></a>';
+                    }                
+                }
+            }
+            
+            function deleteCustomizationArray(did, id){
+                var ds = $(did);
+                var r = ds.findById(id);
+                if(r.isNew){
+                    ds.remove(r);
+                }else if(r.get('record_id')){
+                    r.data['_cus_stauts']='delete';
+                    r.set('mod_type','delete');
+                }else{
+                    r.data['_cus_stauts']='insert_delete';
+                    r.set('mod_type','delete');
+                }
+            }
+            
+            function unDeleteCustomizationArray(did, id){
+                var ds = $(did);
+                var r = ds.findById(id);
+                if(r.get('record_id')){
+                    r.data['_cus_stauts'] = 'delete';
+                    r.set('mod_type','');
+                }else{
+                    delete r.data['_cus_stauts'];
+                    r.set('mod_type','');
+                }
+            }
+            
+            function customizationReorderRenderer(value,record, name){
+                var sb = ['<a title="上移" href="javascript:customizationMoveUp(\''+record.ds.id+'\','+record.id+')"><img style="margin-top:3px;" src="${/request/@context_path}/images/up.png"></img></a>',
+                          '<a title="下移" href="javascript:customizationMoveDown(\''+record.ds.id+'\','+record.id+')"><img style="margin-top:3px;" src="${/request/@context_path}/images/down.png"></img></a>'                          
+                ];
+                return sb.join('')
+            }
+            
+            function customizationMoveUp(did,id){
+                reorder_ds.add(did);
+                var ds = $(did);
+                var r = ds.findById(id);
+                var i = ds.indexOf(r);
+                if(i==0)return;
+                var pr = ds.getAt(i-1);
+                ds.data[i-1]=r;
+                ds.data[i]=pr;
+                ds.fireEvent("load", ds);
+                ds.locate(ds.indexOf(pr)+1, true);
+            }
+            function customizationMoveDown(did,id){
+                reorder_ds.add(did);
+                var ds = $(did);
+                var r = ds.findById(id);
+                var i = ds.indexOf(r);
+                if(i==(ds.getAll().length-1))return;
+                var pr = ds.getAt(i+1);
+                ds.data[i+1]=r;
+                ds.data[i]=pr;
+                ds.fireEvent("load", ds);
+                ds.locate(ds.indexOf(pr)+1, true);
+            }
+            
+            
+            function arrayNameRendere(value,record,name){
+                if(record.get('mod_type') == 'delete'){
+                    return '<span style="text-decoration:line-through">'+value+'</span>'
+                }else{
+                    return value;
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="sys_customization_submit_ds" submitUrl="${/request/@context_path}/modules/sys/sys_customization_update.svc">
+                <a:events>
+                    <a:event name="submitsuccess" handler="onCustomizationDataSetSubmitSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="sys_customization_query_ds">
+                <a:fields>
+                    <a:field name="customization_set" required="true" lovService="sys.sys_config_customization_head" lovGridHeight="300" lovHeight="450" lovWidth="350" title="设置集">
+                        <a:mapping>
+                            <a:map from="head_id" to="head_id"/>
+                            <a:map from="comments" to="customization_set"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="source_file" required="true" defaultValue="${/parameter/@screen_path}"/>
+                    <a:field name="id_value" required="true" defaultValue="${/parameter/@id}"/>
+                    <a:field name="dimension_type_name" required="true" lovService="sys.SYS000.sys_config_dimension" lovGridHeight="300" lovHeight="450" lovWidth="500" title="维度集合">
+                        <a:mapping>
+                            <a:map from="dimension_code" to="dimension_type"/>
+                            <a:map from="dimension_type" to="dimension_type_name"/>
+                            <a:map from="lookup_bm" to="lookup_bm"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="dimension_value_name" required="true"  lovGridHeight="300" lovHeight="450" lovWidth="500" title="维度值">
+                        <a:mapping>
+                            <a:map from="id" to="dimension_value"/>
+                            <a:map from="name" to="dimension_value_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onCustomizationDataSetUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="sys_customization_result_ds" autoCount="false" queryDataSet="sys_customization_query_ds" queryUrl="${/request/@context_path}/modules/sys/sys_customization_query.svc"><!--model="sys.sys_config_customization"-->
+                <a:events>
+                    <a:event name="update" handler="onCustomizationUpdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="2" title="个性化设置查询条件" width="760">  
+                <a:vBox>            
+                    <a:hBox prompt="设置集" labelWidth="60">
+                        <a:lov name="customization_set" bindTarget="sys_customization_query_ds" />
+                        <a:textField name="source_file" bindTarget="sys_customization_query_ds" prompt="源文件" width="370"/>
+                    </a:hBox>
+                    <a:hBox prompt="ID" labelWidth="60">
+                        <a:textField name="id_value" bindTarget="sys_customization_query_ds" />
+                        <a:lov name="dimension_type_name" bindTarget="sys_customization_query_ds" prompt="维度"/>
+                        <a:lov name="dimension_value_name" bindTarget="sys_customization_query_ds" prompt="维值"/>
+                        
+                    </a:hBox>
+                </a:vBox>  
+                <a:button text="查询" height="50" style="margin-right:10px;" click="queryCustomization"/>
+            </a:form>
+            <a:tabPanel height="350" width="760">
+                <a:tabs>
+                    <a:tab prompt="属性" width="100" id="cust_pro">
+                        <a:grid bindTarget="sys_customization_result_ds" style="margin:5px;" height="310" width="745">
+                            <a:columns>
+                                <a:column name="attrib_key" prompt="名称" width="130"/>
+                                <a:column name="source_value" prompt="源文件值" width="130"/>
+                                <a:column name="attrib_value" prompt="设定值" width="130" editor="sys_config_customization_tf"/>
+                                <a:column name="document" prompt="说明" width="300"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="sys_config_customization_tf"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:placeHolder id="dynamicTabs"/>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <div class="win-toolbar" style="width:100%;height:38px;position:absolute; bottom:0px;">
+            <a:hBox style="float:right;margin-right:10px;margin-top:5px;">
+                <a:button click="save_customization" text="HAP_SAVE" width="90"/>
+                <a:button click="cancel_customization" text="HAP_CANCEL" width="90"/>
+            </a:hBox>
+        </div>
+    </a:view>
+    <a:view-config>
+        <c:batch-config source="/model/@result" targetId="dynamicTabs">
+             <a:tab prompt="${@document}" id="${@array_name}" width="100" ref="${/request/@context_path}/modules/sys/sys_customization_arrays.screen?name=${@array_name}&amp;index_field=${@index_field}"/>
+        </c:batch-config>
+    </a:view-config>
+</a:screen>

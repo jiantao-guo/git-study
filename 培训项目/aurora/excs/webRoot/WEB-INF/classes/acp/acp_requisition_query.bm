@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+	select * from (select h.acp_requisition_header_id,
+       h.company_id,
+       h.employee_id,
+       (SELECT EE.EMPLOYEE_CODE || '-' || EE.NAME
+						  FROM EXP_EMPLOYEES EE
+						 WHERE EE.EMPLOYEE_ID = H.EMPLOYEE_ID) applicant,
+       h.requisition_number,
+       to_char(h.requisition_date,'RRRR-MM-DD') requisition_date,
+       h.acp_req_type_id,
+       (select typ.description 
+          from acp_sys_acp_req_types_vl typ
+         where typ.ACP_REQ_TYPE_ID = h.acp_req_type_id ) REQ_TYPE,
+       h.transaction_category,
+       h.payment_method_id,
+       h.partner_category,
+       l.ref_document_line_id,
+       (select e.exp_report_number
+			  from exp_report_headers e
+			 where e.exp_report_header_id =
+			       (select s.exp_report_header_id
+			          from exp_report_pmt_schedules s
+			         where s.payment_schedule_line_id = l.ref_document_line_id)) ref_report_id,
+       h.partner_id, 
+					   (SELECT B.CODE_VALUE_NAME
+						  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+						 WHERE A.CODE_ID = B.CODE_ID
+						   AND A.CODE = 'PAYMENT_OBJECT'
+						   AND B.CODE_VALUE = h.PARTNER_CATEGORY) P_PARTNER_CATEGORY,
+					   DECODE(h.PARTNER_CATEGORY,
+							  'EMPLOYEE',
+							  (SELECT EE.EMPLOYEE_CODE || '-' || EE.NAME
+								 FROM EXP_EMPLOYEES EE
+								WHERE EE.EMPLOYEE_ID = h.PARTNER_ID),
+							  'VENDER',
+							  (SELECT SVV.VENDER_CODE || '-' || SVV.DESCRIPTION
+								 FROM PUR_SYSTEM_VENDERS_VL SVV
+								WHERE SVV.VENDER_ID = h.PARTNER_ID),
+							  'CUSTOMER',
+							  (SELECT SCV.CUSTOMER_CODE || '-' || SCV.DESCRIPTION
+								 FROM ORD_SYSTEM_CUSTOMERS_VL SCV
+								WHERE SCV.CUSTOMER_ID = h.PARTNER_ID)) PAYEE_NAME,
+       h.amount,
+       h.currency_code,
+       to_char(h.requisition_payment_date,'RRRR-MM-DD') requisition_payment_date,
+       h.description,
+       h.status,
+       ( SELECT B.CODE_VALUE_NAME 
+			  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+			 WHERE A.CODE_ID = B.CODE_ID
+			   AND A.CODE = 'PAYMENT_REQUISITION_STATUS'
+			   AND B.CODE_VALUE = h.status) STATUS_NAME
+from acp_acp_requisition_hds h,acp_acp_requisition_lns l
+WHERE h.STATUS IN( 'GENERATE','REJECTED','TAKEN_BACK')
+      and l.acp_requisition_header_id = h.acp_requisition_header_id) v
+           #WHERE_CLAUSE#
+         order by v.requisition_date desc
+         ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+        		begin
+			ACP_REQUISITION_PKG.delete_payment_requisition(
+										p_payment_req_header_id => ${@acp_requisition_header_id},
+                                       	p_user_id        => ${/session/@user_id});
+			 
+							end;        	
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="requisition_number" dataType="java.lang.String" queryExpression=" v.requisition_number  like &apos;%&apos;||upper(${@requisition_number})||&apos;%&apos;"/>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="v.employee_id = ${@employee_id}"/>
+        <bm:query-field name="requisition_date_f" dataType="java.lang.String" queryExpression="v.requisition_date &gt;= ${@requisition_date_f}"/>
+        <bm:query-field name="requisition_date_t" dataType="java.lang.String" queryExpression="v.requisition_date &lt;= ${@requisition_date_t}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="v.currency_code = ${@currency_code}"/>
+        <bm:query-field name="status" dataType="java.lang.String" queryExpression="v.status = ${@status}"/>
+        <bm:query-field name="partner_category" dataType="java.lang.String" queryExpression="v.partner_category = ${@partner_category}"/>
+        <bm:query-field name="partner_id" dataType="java.lang.Long" queryExpression="v.partner_id = ${@partner_id}"/>
+        <bm:query-field name="amount_f" dataType="java.lang.Double" queryExpression="v.amount &gt;= ${@amount_f}"/>
+        <bm:query-field name="amount_t" dataType="java.lang.Double" queryExpression="v.amount &lt;= ${@amount_t}"/>
+        <bm:query-field name="already_paying_f" dataType="java.lang.Double" queryExpression="v.already_paying &gt;= ${@already_paying_f}"/>
+        <bm:query-field name="already_paying_t" dataType="java.lang.Double" queryExpression="v.already_paying &lt;= ${@already_paying_t}"/>
+        <bm:query-field name="csh_type_id" dataType="java.lang.Long" queryExpression="v.acp_req_type_id = ${@csh_type_id}"/>
+        <bm:query-field name="payment_status" dataType="java.lang.String" queryExpression="v.payment_status1 = ${@payment_status}"/>
+    </bm:query-fields>
+</bm:model>

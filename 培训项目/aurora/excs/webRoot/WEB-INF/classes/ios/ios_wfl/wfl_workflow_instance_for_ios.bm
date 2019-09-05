@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Mouse Chow  
+    $Date: 2012-5-7 下午01:01:30  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select t.*,
+                       decode(t.last_approve_name,
+                              null,
+                              null,
+                              to_char(t.last_update_date, 'yyyy-mm-dd hh24:mi')) last_update_date_desc
+                  from (select rs.*,
+                               to_char(rs.creation_date, 'yyyy-mm-dd hh24:mi') creation_date_desc,
+                               (select code_value_name
+                                  from sys_service_lookup_v
+                                 where code = 'WFL_WORKFLOW_INSTANCE_STATUS'
+                                   and code_value = to_char(rs.status)
+                                   and language = 'ZHS') status_name,
+                                   
+                               nvl(wfl_common_pkg.get_current_node(rs.workflow_id,
+                                                               rs.instance_id,
+                                                               rs.current_node),' ') curr_approve_name,
+                               wfl_common_pkg.get_wfl_user_name(rs.created_by) create_by_name,
+                               wfl_common_pkg.get_wfl_user_name((select r.created_by
+                                                                  from wfl_approve_record r
+                                                                 where r.record_id =
+                                                                       (select max(record_id)
+                                                                          from wfl_approve_record
+                                                                         where instance_id =
+                                                                               rs.instance_id))) last_approve_name,
+                               (select nvl(wdr.document_desc,' ')
+                                  from wfl_document_reference_vl wdr
+                                 where rs.workflow_category = wdr.workflow_category) order_type,
+                                nvl(to_char((select max(nr.date_limit)
+                                         from wfl_instance_node_recipient nr,
+                                              wfl_workflow_node           n
+                                        where nr.instance_id = rs.instance_id
+                                          and nr.node_id = n.node_id
+                                          and n.sequence_num = rs.current_node),
+                                       'yyyy-mm-dd hh24:mi'),' ') date_limit,
+                                       rs.service_name || '=' || rs.instance_param as doc_page_url
+                          from (select to_char(a.instance_id) instance_id,
+                                       to_char(a.workflow_id) workflow_id,
+                                       to_char(a.current_node) current_node,
+                                       to_char(a.created_by) created_by,
+                                       a.creation_date,
+                                       nvl(a.document_number,' ') order_no,
+                                       nvl(b.name,' ') workflow_name,
+                                       a.last_update_date,
+                                       nvl(b.workflow_category,' ') workflow_category,
+                                       a.status,
+                                       nvl(a.status_desc,' ') status_desc,
+                                       nvl(a.instance_desc,' ') instance_desc,
+                                       to_char(a.instance_param) instance_param,
+                                       nvl(ws.service_name,' ') service_name
+                                  from wfl_workflow_instance a, Wfl_Workflow_Vl b,
+                                  (select nvl((select d.service_name
+						                     from wfl_workflow_page p, wfl_workflow_page_detail d
+						                    where p.service_name = w.display_form
+						                      and d.record_id = p.record_id
+						                      and d.device_type = ''),
+						                   w.display_form) as service_name,
+						               w.workflow_id as wfl_id
+						          from wfl_workflow w) ws
+                                 where a.workflow_id = b.workflow_id
+                                 and a.workflow_id = ws.wfl_id
+                                  and  exists (select 1
+								  from wfl_approve_record
+								 where instance_id = a.instance_id
+								   and created_by = ${/session/@user_id})
+                                   ) rs) t 
+                           #WHERE_CLAUSE#]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Administrator  
+    $Date: 2017-7-5 下午8:10:39  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        t.contract_header_id,
+                        t.company_id,
+                        t.contract_number,
+                        t.contract_type_id,
+                        (SELECT DISTINCT
+                            a.description
+                            || '-'
+                            || a.contract_type_code code
+                        FROM
+                            con_contract_types_vl a
+                        WHERE
+                            t.contract_type_id = a.contract_type_id
+                        ) contract_type_id_display,
+                        t.document_number,
+                        t.document_desc,
+                        t.created_by,
+                        (SELECT DISTINCT
+                            su.description
+                        FROM
+                            sys_user su
+                        WHERE
+                            su.user_id = t.created_by
+                        ) created_by_display,
+                        TO_CHAR(t.creation_date,'yyyy-mm-dd') creation_date
+                    FROM
+                        con_contract_headers t
+                    WHERE
+                        t.status IN ('SUBMITTED') AND
+                        (
+                            con_contract_maintenance_pkg.exist_con_authorities(t.contract_header_id,
+                            (SELECT s.employee_id FROM sys_user s WHERE s.user_id = ${/session/@user_id}
+                            ), ${@AUTHORITIES}, ${/session/@user_id})
+                        )
+                                     = 'N' AND
+                        t.company_id =${/session/@company_id} AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            sys_role s
+                        WHERE
+                            s.role_id  = ${/session/@role_id} AND
+                            s.role_code='40'
+                        )
+                    )v #WHERE_CLAUSE#
+                ORDER BY
+                    v.contract_number
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="contract_number" dataType="java.lang.String" queryExpression="v.CONTRACT_NUMBER like  &apos;%&apos;||${@contract_number}||&apos;%&apos;"/>
+        <bm:query-field name="document_desc" dataType="java.lang.String" queryExpression="upper(v.DOCUMENT_DESC) like &apos;%&apos;||upper(${@document_desc})||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,1973 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="gld.gld_currency_vl" rootpath="currencylist"/>
+        <a:model-query fetchAll="true" model="expm.exp_report_employeelist" rootPath="employee_list"/>
+        <a:model-query fetchAll="true" model="expm.exp_report_typelist" rootPath="exp_report_type_list"/>
+        <a:model-query model="expm.get_batch_id" rootPath="batch_id"/>
+        <a:model-query model="gl.gl_segment_description" rootPath="segment_descs"/>
+        <a:model-query model="cont.sys_date" rootPath="sysdate"/>
+        <a:model-query model="expm.get_company_currency_code" rootPath="company_currency_code"/>
+        <a:model-query model="expm.gld_get_default_period_name" rootPath="default_period_name"/>
+        <a:model-query model="expm.EXP5240.exp_expense_journal_t_value" rootPath="t_code"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_expense_journal_adjust_save_control_link" url="${/request/@context_path}/modules/expm/EXP5240/exp_expense_journal_adjust_save_control.svc"/>
+        <a:link id="exp_report_reject_link_2" url="${/request/@context_path}/modules/expm/public/exp_report_reject.screen"/>
+        <a:link id="get_accounts_result_link_2" model="expm.exp_report_accounts_query" modelaction="query"/>
+        <a:link id="get_exchange_rate_link_15" model="expm.get_exchange_rate" modelaction="query"/>
+        <a:link id="gld_get_period_name_link_3" model="expm.gld_get_period_name" modelaction="query"/>
+        <a:link id="exp_report_accounts_link_4" url="${/request/@context_path}/modules/expm/public/exp_report_accounts.screen"/>
+        <a:link id="exp_report_accounts_create_control_link_3" url="${/request/@context_path}/modules/expm/public/exp_report_accounts_create_control.svc"/>
+        <a:link id="exp_report_audit_control_link_2" url="${/request/@context_path}/modules/expm/public/exp_report_audit_control.svc"/>
+        <a:link id="exp_expense_report_audit_link" url="${/request/@context_path}/modules/expm/EXP5140/exp_expense_report_audit.svc"/>
+        <a:link id="exp_report_query_history_link_7" url="${/request/@context_path}/modules/exp/public/exp_report_query_history.screen"/>
+        <a:link id="exp_expense_report_audit_log_link_3" url="${/request/@context_path}/modules/expm/public/exp_expense_report_audit_log.screen"/>
+        <a:link id="exp_report_audit_account_tmp_control_link_3" url="${/request/@context_path}/modules/expm/public/exp_report_audit_account_tmp_control.svc"/>
+        <a:link id="exp_report_readonly_wfl_link_9" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl_edit_for_expense_journal_adjust.screen"/>
+        <a:link id="EXP5250_delete_exp_report_accounts_link" model="db.exp_report_pkg.delete_exp_report_accounts" modelaction="batch_update"/>
+        <a:link id="exp_req_query_report_link11" url="${/request/@context_path}/modules/exp/exp_requisition_query_report.screen"/>
+        <a:link id="cux_exp_report_paste_temp_clear_link" model="expm.exp_report_paste_temp_clear" modelaction="delete"/>
+        <a:link id="cux_exp_report_paste_temp_insert_link" model="expm.exp_report_report_temp_insert" modelaction="batch_update"/>
+        <a:link id="eam2000_notify_emp_link" url="${/request/@context_path}/modules/eam/EAM2000/eamexp_report_notify_user.screen"/>
+        <script><![CDATA[
+            var flag = 0;
+            var exp_report_header_id = 0;
+            
+            function doQuery() {
+                // $('audit_result_ds').query();
+                $('journal_adjust_result').query();
+            
+            }
+            
+            function audit_result_onload() {
+                var record = $('audit_result_ds').getAt(0);
+                if (record) {
+                    var headerId = record.get('exp_report_header_id');
+                    
+            
+                    $('journal_adjust_result').setQueryParameter('header_id', headerId);
+                    $('journal_adjust_result').query();
+                    exp_report_header_id = record.get('exp_report_header_id');
+            
+                } else {
+                    $('journal_adjust_result').setQueryParameter('header_id', '');
+                    $('journal_adjust_result').query();
+                }
+            }
+            
+            function journalQueryFun() {
+                if ($('audit_result_ds').getCurrentRecord()) {
+                    var curRecord = $('audit_result_ds').getCurrentRecord();
+                    var headerId = curRecord.get('exp_report_header_id');
+                    if (headerId) {
+                        $('journal_adjust_result').setQueryParameter('header_id', headerId);
+                        $('journal_adjust_result').query();
+                    }
+                }
+            }
+            
+            function selectChange(grid, rowNum, record) {
+                $('journal_adjust_result').setQueryParameter('header_id', record.get('exp_report_header_id'));
+                $('journal_adjust_result').query();
+                exp_report_header_id = record.get('exp_report_header_id');
+            }
+            
+            function seeDetail(value, record, name) {
+                var header_id = record.get('exp_report_header_id');
+                return '<a href="javascript:detailNewWindow(' + header_id + ');">' + value + '</a>';
+            }
+            
+            function detailNewWindow(header_id) {
+                var url = /*${/request/@context_path}/modules/expm/exp_report_readonly_wfl.screen*/
+                $('exp_report_readonly_wfl_link_9').getUrl() + '?exp_report_header_id=' + header_id + '&canUploadFlag=false';
+                //window.open(url, '', 'fullscreen=no,resizable=yes,width=1024,height=600');
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:EXP_REPORT_QUERY_DETAIL}',
+                    id: 'exp_report_detail',
+                    fullScreen: true
+                });
+            }
+            
+            function doCreate() {
+                var records = $('audit_result_ds').getJsonData(true);
+                if (records.length < 1) {
+                    Aurora.showWarningMessage('', '${l:PROMPT.PLEASE_SELECT}', null, 200, 100);
+                    return;
+                }
+                var param = new Object();
+                var datas = [];
+                for (var i = 0,
+                    l = records.length;i < l;i++) {
+                    var data = records[i];
+                    data['batch_id'] = '${/model/batch_id/record/@batch_id}';
+                    datas.push(data);
+                }
+                param['details'] = datas;
+                param['batch_id'] = '${/model/batch_id/record/@batch_id}';
+                Aurora.request({
+                    url: /*${/request/@context_path}/modules/expm/exp_report_audit_account_tmp_control.svc*/
+                    $('exp_report_audit_account_tmp_control_link_3').getUrl(),
+                    para: param,
+                    success: createSuccess,
+                    scope: this
+                });
+            }
+            
+            function refresh() {
+                flag = 0;
+                Aurora.showMessage('${l:PROMPT}', '${l:EXP_REPORT_ACCOUNTS.PROMPT}', function() {
+                    if (doQuery && typeof(doQuery) == 'function') {
+                        doQuery();
+                    }
+                });
+            }
+            
+            function errorRefresh() {
+                flag = 0;
+            }
+            
+            function createSuccess() {
+                Aurora.request({
+                    url: /*${/request/@context_path}/modules/expm/exp_report_audit_account_tmp_control.svc*/
+                    $('get_accounts_result_link_2').getUrl(),
+                    para: {
+                        batch_id: '${/model/batch_id/record/@batch_id}'
+                    },
+                    success: checkPeriodName,
+                    scope: this
+                });
+            }
+            
+            function checkPeriodName(args) {
+                var records = args.result.record;
+                var period_name = $('input_date_ds').getAt(0).get('period_name');
+                if (period_name) {
+                    if (records.length) {
+                        for (var i = 0,
+                            l = records.length;i < l;i++) {
+                            checkChangeRateRecord(records, records[i], records.length);
+                        }
+                    } else {
+                        checkChangeRateRecord(records, records, records.length);
+                    }
+                } else {
+                    Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+                }
+            
+            }
+            
+            function checkChangeRateRecord(rs, record, length) {
+            
+                var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}';
+                var cur_code = record.currency_code;
+                if (f_cur_code == cur_code) {
+                    flagIncrease(rs, length);
+                } else {
+                    var from_currency = f_cur_code;
+                    var to_currency = cur_code;
+                    var exchange_rate_type = record.exchange_rate_type;
+                    var exchange_date = $('input_date_ds').getAt(0).get('journal_date');
+                    var exchange_period_name = $('input_date_ds').getAt(0).get('period_name');
+                    exchange_date = Aurora.formatDate(exchange_date);
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/
+                        $('get_exchange_rate_link_15').getUrl(),
+                        para: {
+                            "from_currency": from_currency,
+                            "to_currency": to_currency,
+                            "exchange_rate_type": exchange_rate_type,
+                            "exchange_date": exchange_date,
+                            "exchange_period_name": exchange_period_name
+                        },
+                        success: function(args) {
+                            var pluscols = args.result.record;
+                            if (pluscols.length) {
+                                if (pluscols[0].exchange_rate) {
+                                    flagIncrease(rs, length);
+                                } else {
+                                    if (record.exchange_rate_type_code != 'MANUAL') {
+                                        flag = 0;
+                                        Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+                                    }
+                                }
+                            } else {
+                                if (pluscols.exchange_rate) {
+                                    flagIncrease(rs, length);
+                                } else {
+                                    if (record.exchange_rate_type_code != 'MANUAL') {
+                                        flag = 0;
+                                        Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+                                    }
+                                }
+                            }
+            
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function flagIncrease(rs, args) {
+                flag++;
+                // alert("flag:"+flag);
+                // alert("args:"+args);
+                if (flag == args || (args == null && flag == 1)) {
+                    createFunction(rs);
+                }
+            }
+            
+            function createFunction(records) {
+                if ($('input_date_ds').validate()) {
+                    var journal_date = $('input_date_ds').getAt(0).get('journal_date');
+                    journal_date = Aurora.formatDate(journal_date);
+                    var period_name = $('input_date_ds').getAt(0).get('period_name');
+                    var param = new Object();
+                    var datas = [];
+                    for (var i = 0,
+                        l = records.length;i < l;i++) {
+                        var data = records[i].data;
+                        datas.push(data);
+                    }
+                    param['details'] = datas;
+                    param['journal_date'] = journal_date;
+                    param['batch_id'] = '${/model/batch_id/record/@batch_id}';
+                    Aurora.request({
+                        url: /*${/request/@context_path}/modules/expm/exp_report_accounts_create_control.svc*/
+                        $('exp_report_accounts_create_control_link_3').getUrl(),
+                        para: param,
+                        success: refresh,
+                        // success: "",
+                        error: errorRefresh,
+                        failure: errorRefresh,
+                        scope: this
+                    });
+                }
+            }
+            
+            function exchangeRateModify() {
+                //    			
+                var records = $('audit_result_ds').getJsonData(true);
+                if (records.length < 1) {
+                    Aurora.showWarningMessage('', '${l:PROMPT.PLEASE_SELECT}', null, 200, 100);
+                    return;
+                }
+                var param = new Object();
+                var datas = [];
+                for (var i = 0,
+                    l = records.length;i < l;i++) {
+                    var data = records[i];
+                    data['batch_id'] = '${/model/batch_id/record/@batch_id}';
+                    datas.push(data);
+                }
+                param['details'] = datas;
+                param['batch_id'] = '${/model/batch_id/record/@batch_id}';
+                Aurora.request({
+                    url: /*${/request/@context_path}/modules/expm/exp_report_audit_account_tmp_control.svc*/
+                    $('exp_report_audit_account_tmp_control_link_3').getUrl(),
+                    para: param,
+                    success: modifySuccess,
+                    scope: this
+                });
+            }
+            
+            function modifySuccess() {
+                var journal_date = Aurora.formatDate($('input_date_ds').getAt(0).get('journal_date'));
+                var url = /*${/request/@context_path}/modules/expm/exp_report_accounts.screen*/
+                $('exp_report_accounts_link_4').getUrl() + '?batch_id=' + '${/model/batch_id/record/@batch_id}' + '&journal_date=' + journal_date;
+                //window.open(url,'','fullscreen=no,resizable=yes,width=530,height=515');
+                new Aurora.Window({
+                    id: 'exp_report_accounts_screen',
+                    url: url,
+                    title: '',
+                    height: 515,
+                    width: 530
+                });
+            }
+            
+            function dateUpdate() {
+                var journal_date = $('input_date_ds').getAt(0).get('journal_date');
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.gld_get_period_name/query*/
+                    $('gld_get_period_name_link_3').getUrl(),
+                    para: {
+                        p_date: journal_date
+                    },
+                    success: getPeriodName,
+                    scope: this
+                });
+            }
+            
+            function getPeriodName(args) {
+                var record = args.result.record;
+                var red = $('input_date_ds').getAt(0);
+                var period_name = '';
+                if (record.length) {
+                    period_name = record[0].period_name;
+                } else {
+                    period_name = record.period_name;
+                }
+                red.set('period_name', period_name);
+                if (!period_name) {
+                    Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+                }
+            }
+            
+            function seeLog() {
+                var url = /*${/request/@context_path}/modules/expm/exp_expense_report_audit_log.screen*/
+                $('exp_expense_report_audit_log_link_3').getUrl() + '?batch_id=' + '${/model/batch_id/record/@batch_id}';
+                //window.open(url, '', 'fullscreen=no,resizable=yes,width=780,height=560');
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:LOGS_MESSAGE}',
+                    id: 'exp_expense_report_audit_log_screen',
+                    fullScreen: true
+                });
+            }
+            
+            function doHistory() {
+                var myRecords = $('audit_result_ds').getSelected();
+                if (myRecords.length != 1) {
+                    Aurora.showWarningMessage('', '${l:PROMPT.PLEASE_SELECT_ONE}', null, 200, 100);
+                    return;
+                }
+                var head_id = myRecords[0].get('exp_report_header_id');
+                if (head_id) {
+                    var url = /*${/request/@context_path}/modules/exp/exp_report_query_history.screen*/
+                    $('exp_report_query_history_link_7').getUrl() + '?head_id=' + head_id;
+                    //window.open(url, '', 'fullscreen=no,resizable=yes,width=680,height=540');
+                    new Aurora.Window({
+                        url: url,
+                        title: '${l:REC_REQUISITION_HISTORY}',
+                        id: 'exp_report_history_window',
+                        fullScreen: true
+                    });
+                }
+            }
+            
+            function doFlag() {
+                if (!$('journal_adjust_result').validate() || $('journal_adjust_result').isModified()) {
+                    Aurora.showInfoMessage('${l:HAP_ERROR}', '${l:EXP_REPORT_AUDIT.SAVE_JE_FIRST}', null, 250, 100);
+                    return;
+                }
+            
+                var return_msg = '';
+                var myRecords = $('audit_result_ds').getSelected();
+                if (myRecords.length < 1) {
+                    Aurora.showWarningMessage('', '${l:PROMPT.PLEASE_SELECT}', null, 200, 100);
+                    return;
+                }
+            
+                /* var cash_flow_code_null_flag_msg='';
+                 for (var i = 0;i < myRecords.length;i++) {
+                 var cash_flow_code_null_flag = myRecords[i].get('cash_flow_code_null_flag');
+                 if (cash_flow_code_null_flag == 'Y') {
+                 if (cash_flow_code_null_flag_msg == '') {
+                 cash_flow_code_null_flag_msg = myRecords[i].get('exp_report_number');
+                 } else {
+                 cash_flow_code_null_flag_msg = cash_flow_code_null_flag_msg + '&nbsp;,&nbsp;' + myRecords[i].get('exp_report_number');
+                 }
+                 }
+                 }
+                 if(cash_flow_code_null_flag_msg != ''){
+                 cash_flow_code_null_flag_msg = '<span style="word-wrap:break-word;overflow:hidden;"><pre>报销单' + cash_flow_code_null_flag_msg + '未填写现金流量项，请返回修改！</pre></span>';
+                 Aurora.showWarningMessage('', cash_flow_code_null_flag_msg, null, 400, 200);
+                 return;
+                 } */
+            
+                var datas = [];
+                for (var i = 0,
+                    l = myRecords.length;i < l;i++) {
+                    var data = myRecords[i].data;
+                    datas.push(data);
+                }
+                var params = new Object();
+                params['details'] = datas;
+            
+            
+                Aurora.request({
+                    url: $('exp_expense_report_audit_link').getUrl(),
+                    para: params,
+                    success: function(args) {
+                        var records = args.result.details.record;
+            
+                        for (var i = 0;i < records.length;i++) {
+                            var check_flag = records[i]['check_flag'];
+                            if (check_flag == 'N') {
+                                if (return_msg == '') {
+                                    return_msg = records[i]['exp_report_number'];
+                                } else {
+            
+                                    return_msg = return_msg + ',' + records[i]['exp_report_number'];
+                                }
+                            }
+            
+                        }
+                        if (return_msg != '') {
+                            return_msg = '<span style="word-wrap:break-word;overflow:hidden;"><pre>报销单' + return_msg + '存在未核销的借款,是否审核通过？</pre></span>';
+                            Aurora.showConfirm('${l:PROMPT}', return_msg, function() {
+                                Aurora.request({
+                                    url: /*${/request/@context_path}/modules/expm/exp_report_audit_control.svc*/
+                                    $('exp_report_audit_control_link_2').getUrl(),
+                                    para: params,
+                                    success: function() {
+                                        // doQuery();
+                                        $('audit_result_ds').query();
+                                    },
+                                    scope: this
+                                });
+                            }, null, 400, 200);
+                        } else {
+                            Aurora.request({
+                                url: /*${/request/@context_path}/modules/expm/exp_report_audit_control.svc*/
+                                $('exp_report_audit_control_link_2').getUrl(),
+                                para: params,
+                                success: function() {
+                                    // doQuery();
+                                    $('audit_result_ds').query();
+                                },
+                                scope: this
+                            });
+                        }
+                    },
+                    scope: this
+                });
+            
+            }
+            
+            function doReject() {
+                var myRecords = $('audit_result_ds').getSelected();
+                if (myRecords.length < 1) {
+                    Aurora.showWarningMessage('', '${l:PROMPT.PLEASE_SELECT}', null, 200, 100);
+                    return;
+                }
+                new Aurora.Window({
+                    id: 'exp_report_reject_window',
+                    url: /*${/request/@context_path}/modules/expm/exp_report_reject.screen*/
+                    $('exp_report_reject_link_2').getUrl(),
+                    title: '',
+                    height: 240,
+                    width: 640
+                });
+            }
+            
+            function doSave() {
+                var ds = $('journal_adjust_result');
+                if (ds.validate()) {
+                    var myRecords = ds.getAll();
+                    var datas = [];
+                    for (var i = 0,
+                        l = myRecords.length;i < l;i++) {
+                        var data = myRecords[i].data;
+                        data.exp_report_header_id = exp_report_header_id;
+                        data.journal_date = $('input_date_ds').getAt(0).get('journal_date');
+                        if(typeof(data.exp_report_je_line_id) == 'undefined' || data.exp_report_je_line_id==''){
+                            data._status = 'insert';
+                        }else{
+                            data._status = 'update';
+                        }
+                        datas.push(data);
+                    }
+                    var params = new Object();
+                    params['details'] = datas;
+                    Aurora.request({
+                        url: /*${/request/@context_path}/modules/expm/exp_expense_journal_adjust_save_control.svc*/
+                        $('exp_expense_journal_adjust_save_control_link').getUrl(),
+                        para: params,
+                        success: function() {
+                            ds.query();
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function doCellClick(grid, row, field, record) {
+                if (field == "center_code") {
+                    //
+                    var center_code = record.getMeta().getField('center_code');
+                    var company_id = record.get('company_id');
+                    if(typeof(company_id) == 'undefined'){
+                        company_id = '';
+                    }
+                    var url = 'bgt.bgt_journal_responsibility_centers_combo?p_company_id=' + company_id;
+                    center_code.setLovService(url);
+                }
+                if (field == "account_code") {
+                    var account_code = record.getMeta().getField('account_code');
+                    var company_id = record.get('company_id');
+                    if(typeof(company_id)=='undefined'){
+                        company_id = '';
+                    }
+                    var url = 'expm.EXP5140.exp_expense_journal_adjust_account_id_combo?company_id=' + company_id;
+                    account_code.setLovService(url);
+                }
+            }
+            
+            function reset() {
+                $('audit_query_ds').reset();
+            }
+            
+            function accountJeCategoryEditFun(record, name) {
+                if (record.get('seg_je_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('je_category_code');
+                    field.setRequired(record.get('seg_je_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'je_category_code'
+                    }]);
+                    var sqlQuery = record.get('seg_je_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('seg_je_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('je_category_code');
+                    field.setRequired(record.get('seg_je_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'je_category_code'
+                    }]);
+                    var segmentId = record.get('seg_je_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('seg_je_type') == 'TEXT') {
+                    var field = record.getMeta().getField('je_category_code');
+                    field.setRequired(record.get('seg_je_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+                return '';
+            }
+            
+            function accountSegment1EditFun(record, name) {
+                if (record.get('segment1_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment1');
+                    field.setRequired(record.get('segment1_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment1'
+                    }]);
+                    var sqlQuery = record.get('segment1_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment1_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment1');
+                    field.setRequired(record.get('segment1_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment1'
+                    }]);
+                    var segmentId = record.get('segment1_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment1_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment1');
+                    field.setRequired(record.get('segment1_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+                return '';
+            }
+            
+            function accountSegment2EditFun(record, name) {
+                if (record.get('segment2_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment2');
+                    field.setRequired(record.get('segment2_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment2'
+                    }]);
+                    var sqlQuery = record.get('segment2_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment2_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment2');
+                    field.setRequired(record.get('segment2_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment2'
+                    }]);
+                    var segmentId = record.get('segment2_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment2_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment2');
+                    field.setRequired(record.get('segment2_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment3EditFun(record, name) {
+                if (record.get('segment3_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment3');
+                    field.setRequired(record.get('segment3_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment3'
+                    }]);
+                    var sqlQuery = record.get('segment3_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment3_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment3');
+                    field.setRequired(record.get('segment3_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment3'
+                    }]);
+                    var segmentId = record.get('segment3_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment3_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment3');
+                    field.setRequired(record.get('segment3_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment4EditFun(record, name) {
+                if (record.get('segment4_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment4');
+                    field.setRequired(record.get('segment4_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment4'
+                    }]);
+                    var sqlQuery = record.get('segment4_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment4_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment4');
+                    field.setRequired(record.get('segment4_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment4'
+                    }]);
+                    var segmentId = record.get('segment4_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment4_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment4');
+                    field.setRequired(record.get('segment4_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment5EditFun(record, name) {
+                if (record.get('segment5_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment5');
+                    field.setRequired(record.get('segment5_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment5'
+                    }]);
+                    var sqlQuery = record.get('segment5_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment5_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment5');
+                    field.setRequired(record.get('segment5_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment5'
+                    }]);
+                    var segmentId = record.get('segment5_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment5_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment5');
+                    field.setRequired(record.get('segment5_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment6EditFun(record, name) {
+                if (record.get('segment6_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment6');
+                    field.setRequired(record.get('segment6_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment6'
+                    }]);
+                    var sqlQuery = record.get('segment6_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment6_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment6');
+                    field.setRequired(record.get('segment6_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment6'
+                    }]);
+                    var segmentId = record.get('segment6_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment6_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment6');
+                    field.setRequired(record.get('segment6_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment7EditFun(record, name) {
+                if (record.get('segment7_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment7');
+                    field.setRequired(record.get('segment7_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment7'
+                    }]);
+                    var sqlQuery = record.get('segment7_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment7_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment7');
+                    field.setRequired(record.get('segment7_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment7'
+                    }]);
+                    var segmentId = record.get('segment7_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment7_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment7');
+                    field.setRequired(record.get('segment7_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment8EditFun(record, name) {
+                if (record.get('segment8_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment8');
+                    field.setRequired(record.get('segment8_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment8'
+                    }]);
+                    var sqlQuery = record.get('segment8_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment8_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment8');
+                    field.setRequired(record.get('segment8_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment8'
+                    }]);
+                    var segmentId = record.get('segment8_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment8_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment8');
+                    field.setRequired(record.get('segment8_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment9EditFun(record, name) {
+                if (record.get('segment9_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment9');
+                    field.setRequired(record.get('segment9_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment9'
+                    }]);
+                    var sqlQuery = record.get('segment9_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment9_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment9');
+                    field.setRequired(record.get('segment9_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment9'
+                    }]);
+                    var segmentId = record.get('segment9_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment9_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment9');
+                    field.setRequired(record.get('segment9_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment10EditFun(record, name) {
+                if (record.get('segment10_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment10');
+                    field.setRequired(record.get('segment10_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment10'
+                    }]);
+                    var sqlQuery = record.get('segment10_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment10_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment10');
+                    field.setRequired(record.get('segment10_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment10'
+                    }]);
+                    var segmentId = record.get('segment10_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment10_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment10');
+                    field.setRequired(record.get('segment10_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return 'edit_tf';
+            }
+            
+            function accountSegment11EditFun(record, name) {
+                if (record.get('segment11_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment11');
+                    field.setRequired(record.get('segment11_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment11'
+                    }]);
+                    var sqlQuery = record.get('segment11_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment11_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment11');
+                    field.setRequired(record.get('segment11_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment11'
+                    }]);
+                    var segmentId = record.get('segment11_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment11_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment11');
+                    field.setRequired(record.get('segment11_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment12EditFun(record, name) {
+                if (record.get('segment12_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment12');
+                    field.setRequired(record.get('segment12_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment12'
+                    }]);
+                    var sqlQuery = record.get('segment12_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment12_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment12');
+                    field.setRequired(record.get('segment12_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment12'
+                    }]);
+                    var segmentId = record.get('segment12_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment12_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment12');
+                    field.setRequired(record.get('segment12_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment13EditFun(record, name) {
+                if (record.get('segment13_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment13');
+                    field.setRequired(record.get('segment13_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment13'
+                    }]);
+                    var sqlQuery = record.get('segment13_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment13_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment13');
+                    field.setRequired(record.get('segment13_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment13'
+                    }]);
+                    var segmentId = record.get('segment13_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment13_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment13');
+                    field.setRequired(record.get('segment13_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment14EditFun(record, name) {
+                if (record.get('segment14_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment14');
+                    field.setRequired(record.get('segment14_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment14'
+                    }]);
+                    var sqlQuery = record.get('segment14_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment14_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment14');
+                    field.setRequired(record.get('segment14_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment14'
+                    }]);
+                    var segmentId = record.get('segment14_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment14_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment14');
+                    field.setRequired(record.get('segment14_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment15EditFun(record, name) {
+                if (record.get('segment15_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment15');
+                    field.setRequired(record.get('segment15_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment15'
+                    }]);
+                    var sqlQuery = record.get('segment15_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment15_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment15');
+                    field.setRequired(record.get('segment15_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment15'
+                    }]);
+                    var segmentId = record.get('segment15_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment15_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment15');
+                    field.setRequired(record.get('segment15_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment16EditFun(record, name) {
+                if (record.get('segment16_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment16');
+                    field.setRequired(record.get('segment16_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment16'
+                    }]);
+                    var sqlQuery = record.get('segment16_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment16_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment16');
+                    field.setRequired(record.get('segment16_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment16'
+                    }]);
+                    var segmentId = record.get('segment16_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment16_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment16');
+                    field.setRequired(record.get('segment16_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment17EditFun(record, name) {
+                if (record.get('segment17_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment17');
+                    field.setRequired(record.get('segment17_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment17'
+                    }]);
+                    var sqlQuery = record.get('segment17_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment17_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment17');
+                    field.setRequired(record.get('segment17_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment17'
+                    }]);
+                    var segmentId = record.get('segment17_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment17_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment17');
+                    field.setRequired(record.get('segment17_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment18EditFun(record, name) {
+                if (record.get('segment18_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment18');
+                    field.setRequired(record.get('segment18_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment18'
+                    }]);
+                    var sqlQuery = record.get('segment18_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment18_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment18');
+                    field.setRequired(record.get('segment18_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment18'
+                    }]);
+                    var segmentId = record.get('segment18_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment18_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment18');
+                    field.setRequired(record.get('segment18_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment19EditFun(record, name) {
+                if (record.get('segment19_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment19');
+                    field.setRequired(record.get('segment19_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment19'
+                    }]);
+                    var sqlQuery = record.get('segment19_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment19_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment19');
+                    field.setRequired(record.get('segment19_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment19'
+                    }]);
+                    var segmentId = record.get('segment19_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment19_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment19');
+                    field.setRequired(record.get('segment19_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+            
+                return '';
+            }
+            
+            function accountSegment20EditFun(record, name) {
+                if (record.get('segment20_type') == 'SQL_VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment20');
+                    field.setRequired(record.get('segment20_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'code',
+                        to: 'account_segment20'
+                    }]);
+                    var sqlQuery = record.get('segment20_sql_query');
+                    if (sqlQuery) {
+                        field.setLovPara('SQL_QUERY', sqlQuery.replace(':COMPANY_ID', '${/session/@company_id}').replace(':DOC_HEADER_ID', record.get('exp_report_header_id')).replace(':DOC_LINE_ID', record.get('exp_report_line_id')).replace(':DOC_DIST_ID', record.get('exp_report_dist_id')));
+                    }
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gl_sql_query');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment20_type') == 'VALUE_LIST') {
+                    var field = record.getMeta().getField('account_segment20');
+                    field.setRequired(record.get('segment20_is_required') == 'Y' ? true : false);
+                    field.setMapping([{
+                        from: 'value_code',
+                        to: 'account_segment20'
+                    }]);
+                    var segmentId = record.get('segment20_id')
+                    field.setLovPara('segment_id', segmentId);
+                    field.setLovWidth(500);
+                    field.setLovGridHeight(320);
+                    field.setLovHeight(450);
+                    field.setLovService('gl.gld_segments_values_lov');
+                    return 'edit_lov';
+                }
+            
+                if (record.get('segment20_type') == 'TEXT') {
+                    var field = record.getMeta().getField('account_segment20');
+                    field.setRequired(record.get('segment20_is_required') == 'Y' ? true : false);
+                    return 'edit_tf';
+                }
+                return '';
+            }
+            
+            function doDelete() {
+                var records = $('audit_result_ds').getJsonData(true);
+                if (records.length < 1) {
+                    Aurora.showWarningMessage('', '${l:PROMPT.PLEASE_SELECT}', null, 200, 100);
+                    return;
+                }
+                var datas = [];
+                for (var i = 0,
+                    l = records.length;i < l;i++) {
+                    var data = {
+                        exp_report_header_id: records[i]['exp_report_header_id'],
+                        _status: 'execute'
+                    };
+                    datas.push(data);
+                }
+                Aurora.request({
+                    url: $('EXP5250_delete_exp_report_accounts_link').getUrl(),
+                    para: datas,
+                    success: function() {
+                        doQuery();
+                    },
+                    scope: this
+                });
+            }
+            
+            
+            function viewFunction() {
+                var records = $('audit_result_ds').getSelected();
+                if (records.length != 1) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT_ONE}', null, 250, 100);
+                    return;
+                }
+                new Aurora.Window({
+                    url: $('exp_req_query_report_link11').getUrl() + '?exp_report_header_id=' + records[0].get('exp_report_header_id'),
+                    title: '',
+                    fullScreen: true,
+                    id: 'exp_req_query_report_screen'
+                });
+            }
+            
+            function editF(record,name){
+                
+                if (record.isNew) {
+                    return 'edit_tf';
+                } else {
+                     var edit_flag;
+		                if(name == 'account_segment4'){
+		                    edit_flag = '${/model/t_code/record/@anal_t0}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                if(name == 'account_segment5'){
+		                    edit_flag = '${/model/t_code/record/@anal_t1}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                if(name == 'account_segment6'){
+		                    edit_flag = '${/model/t_code/record/@anal_t2}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                if(name == 'account_segment7'){
+		                    edit_flag = '${/model/t_code/record/@anal_t3}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                if(name == 'account_segment8'){
+		                    edit_flag = '${/model/t_code/record/@anal_t4}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                if(name == 'account_segment9'){
+		                    edit_flag = '${/model/t_code/record/@anal_t5}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                if(name == 'account_segment10'){
+		                    edit_flag = '${/model/t_code/record/@anal_t6}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                if(name == 'account_segment11'){
+		                    edit_flag = '${/model/t_code/record/@anal_t7}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                if(name == 'account_segment12'){
+		                    edit_flag = '${/model/t_code/record/@anal_t8}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                if(name == 'account_segment13'){
+		                    edit_flag = '${/model/t_code/record/@anal_t9}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+		                 if(name == 'account_segment14'){
+		                    edit_flag = '${/model/t_code/record/@jrnal_type}';
+		                    if(edit_flag == 'Y'){
+		                        return 'edit_tf';
+		                    }
+		                    else {
+		                        return '';
+		                    }
+		                }
+                }
+               
+            }
+            
+            function tfEditFun(record, name) {
+                if (record.isNew) {
+                    return 'edit_tf';
+                } else {
+                    return '';
+                }
+            }
+            function lovEditFun(record, name) {
+                if (record.isNew) {
+                    return 'edit_lov';
+                } else {
+                    return '';
+                }
+            }
+            function nfEditFun(record, name) {
+                if (record.isNew) {
+                    return 'edit_nf';
+                } else {
+                    return '';
+                }
+            }
+            function amountValidator(record, name, value) {
+                if (name == "entered_amount_dr" || name == "entered_amount_cr") {
+                    var from_value = record.get('entered_amount_dr');
+                    var to_value = record.get('entered_amount_cr');
+                    if(!(to_value || from_value) || (to_value && from_value)){
+                        return '请输入借方金额或者贷方金额!';
+                    }
+                }
+                
+                return true;
+            }
+            function updateLines(dataSet, record, name, value, oldValue) {
+            
+               if (name === 'entered_amount_dr') {
+                    if (value === '' || value === null) {
+                        //设置借方金额可以为空
+                        record.getField('entered_amount_dr').setRequired(false);
+                        record.getField('functional_amount_dr').setRequired(false);
+            
+                        record.getField('functional_amount_dr').setReadOnly(false);
+                        record.set('functional_amount_dr', '');
+                        record.getField('functional_amount_dr').setReadOnly(true);
+                        //设置贷方金额不可以为空
+                        record.getField('entered_amount_cr').setRequired(true);
+                        record.getField('functional_amount_cr').setRequired(true);
+                    } else {
+                        record.getField('functional_amount_dr').setReadOnly(false);
+                        record.set('functional_amount_dr', value);
+                        record.getField('functional_amount_dr').setReadOnly(true);
+                        //设置贷方金额可以为空
+                        record.getField('entered_amount_cr').setRequired(false);
+                        record.getField('functional_amount_cr').setRequired(false);
+                    }
+                } else if (name === 'entered_amount_cr') {
+                    if (value === '' || value === null) {
+                        //设置贷方金额可以为空
+                        record.getField('entered_amount_cr').setRequired(false);
+                        record.getField('functional_amount_cr').setRequired(false);
+            
+                        record.getField('functional_amount_cr').setReadOnly(false);
+                        record.set('functional_amount_cr', '');
+                        record.getField('functional_amount_cr').setReadOnly(true);
+                        //设置借方金额不可以为空
+                        record.getField('entered_amount_dr').setRequired(true);
+                        record.getField('functional_amount_dr').setRequired(true);
+                    } else {
+                        record.getField('functional_amount_cr').setReadOnly(false);
+                        record.set('functional_amount_cr', value);
+                        record.getField('functional_amount_cr').setReadOnly(true);
+                        //设置借方金额可以为空
+                        record.getField('entered_amount_dr').setRequired(false);
+                        record.getField('functional_amount_dr').setRequired(false);
+                    }
+                }
+               
+            }
+            //批量打印
+            function batchPrintFunction() {
+                var records = $('audit_result_ds').getJsonData(true);
+                var record = $('audit_result_ds').getSelected();
+                var reportName = record[0].get('report_name');
+                var href = window.location.href;
+                href = href.substring(0, href.indexOf("/modules"));
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}');
+                    return false;
+                }
+                for (var i = 0;i < records.length;i++) {
+                    records[i]["web_url"] = href;
+                    //生成凭证页面，单据本来就已经审核通过了
+                    // if (record[i].get('requisition_status_value') != 'COMPLETELY_APPROVED') {
+                    // Aurora.showInfoMessage('${l:PROMPT}', '请打印审批通过的单据!');
+                    // return;
+                    // }
+                    var reportNameLine = record[i].get('report_name');
+                    if (reportName != reportNameLine) {
+                        Aurora.showMessage('${l:PROMPT}', '请选择同类型的单据打印!');
+                        return;
+                    }
+                }
+                new Aurora.request({
+                    url: $('cux_exp_report_paste_temp_clear_link').getUrl(),
+                    success: function(res) {
+                        new Aurora.request({
+                            url: $('cux_exp_report_paste_temp_insert_link').getUrl(),
+                            para: records,
+                            success: function(res) {
+                                window.open('${/request/@context_path}/reports?__report=' + reportName + '&session_id=' + '${/session/@session_id}' + '&__format=pdf');
+                            }
+                        });
+                    }
+                });
+            }
+            
+            function eam2000_notify_emp() {
+                var record = $('audit_result_ds').getSelected();
+                if (record.length < 1 || record.length > 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                    return false;
+                }
+                var exp_report_header_id = record[0].get('exp_report_header_id');
+                new Aurora.Window({
+                    id: 'eam2000_notify_emp_screen',
+                    url: $('eam2000_notify_emp_link').getUrl() + '?exp_report_header_id=' + exp_report_header_id,
+                    title: '选择员工',
+                    width: 680,
+                    height: 420
+                });
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="unit_ds" autoCount="false" fetchAll="true" loadData="true" model="exp.EXP1020.exp_org_unit_query"/>
+            <a:dataSet id="exp_report_type_ds">
+                <a:datas dataSource="/model/exp_report_type_list"/>
+            </a:dataSet>
+            <a:dataSet id="return_status_ds">
+                <a:datas>
+                    <a:record name="退回" code="退回"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="employee_ds">
+                <a:datas dataSource="/model/employee_list"/>
+            </a:dataSet>
+            <a:dataSet id="currency_ds">
+                <a:datas dataSource="/model/currencylist"/>
+            </a:dataSet>
+            <!-- <a:dataSet id="t6code_ds" lookupCode="TCODE_6"/> -->
+            <a:dataSet id="input_date_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="journal_date" defaultValue="${/model/sysdate/record/@now}" prompt="EXP_REPORT_ACCOUNTS.JOURNAL_DATE" required="true"/>
+                    <a:field name="period_name" defaultValue="${/model/default_period_name/record/@period_name}" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="dateUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="audit_query_ds" model="expm.exp_expense_report_audit_query">
+                <a:fields>
+                    <a:field name="exp_reprot_type_display" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="expm.exp_expense_report_types_lov" lovWidth="470" title="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID">
+                        <a:mapping>
+                            <a:map from="expense_report_type_id" to="exp_report_type_id"/>
+                            <a:map from="description" to="exp_reprot_type_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exp_report_type_id"/>
+                    <a:field name="employee_display" autoComplete="true" autoCompleteField="name_code" lovGridHeight="320" lovHeight="450" lovService="exp.exp_company_employees_v" lovWidth="500" title="EXP_REPORT_HEADERS.EMPLOYEE_NAME">
+                        <a:mapping>
+                            <a:map from="name_code" to="employee_display"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="employee_id"/>
+                    <a:field name="currency_display" displayField="currency_name" options="currency_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="return_status" displayField="name" options="return_status_ds" returnField="return_status" valueField="code"/>
+                    <a:field name="unit_id"/>
+                    <a:field name="unit_name" displayField="unit_name" options="unit_ds" prompt="报销人部门" returnField="unit_id" valueField="unit_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="audit_result_ds" autoQuery="true" model="expm.exp_expense_report_audit_query" queryDataSet="audit_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="amortization_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="je_creation_status" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="cash_flow_code_null_flag" prompt="现金流量项有空值"/>
+                    <a:field name="exp_report_number"/>
+                    <a:field name="exp_report_header_id"/>
+                    <a:field name="report_name"/>
+                    <a:field name="unit_name" prompt="报销人部门"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="audit_result_onload"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="journal_adjust_result" model="expm.EXP5240.exp_expense_journal_adjust_query" selectable="true">
+                <a:fields>
+                    <a:field name="company_code" lovGridHeight="320" lovHeight="450" lovService="expm.EXP5240.exp_expense_journal_company_lov" lovWidth="500" required="true" title="BGT_BUDGET_ITEM_MAPPING.RESPONSIBILITY_CENTER_CODE">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_short_name" to="company_short_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="center_code" lovGridHeight="320" lovHeight="450" lovWidth="500" required="true" title="BGT_BUDGET_ITEM_MAPPING.RESPONSIBILITY_CENTER_CODE">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="center_id"/>
+                            <a:map from="responsibility_center_code" to="center_code"/>
+                            <a:map from="responsibility_center_name" to="center_id_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_code" lovGridHeight="320" lovHeight="450" lovWidth="500" required="true" title="BGT_BUDGET_ITEMS_INTERFACE.ACCOUNT_CODE">
+                        <a:mapping>
+                            <a:map from="account_id" to="account_id"/>
+                            <a:map from="account_code" to="account_code"/>
+                            <a:map from="account_desc" to="account_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="period_name" autoComplete="true" autoCompleteField="period_name" lovGridHeight="300" lovHeight="460" lovService="expm.bgt_periods_detail_lov" lovWidth="500" prompt="EXP_REQUISITION_LINES.PERIOD_NAME" required="true" requiredMessage="期间不能为空" title="EXP_REQUISITION_LINES.PERIOD_NAME">
+                        <a:mapping>
+                            <a:map from="period_name" to="period_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="description" required="true"/>
+                    <a:field name="je_category_code" prompt="EBS_GL_JE_CATEGORIES.DOCUMENT_CATEGORY_CODE"/>
+                    <a:field name="account_segment1" prompt="${/model/segment_descs/record/@segment1_desc}"/>
+                    <a:field name="account_segment2" prompt="${/model/segment_descs/record/@segment2_desc}"/>
+                    <a:field name="account_segment3" prompt="${/model/segment_descs/record/@segment3_desc}"/>
+                    <a:field name="account_segment4" prompt="${/model/segment_descs/record/@segment4_desc}" required="true"/>
+                    <a:field name="account_segment5" prompt="${/model/segment_descs/record/@segment5_desc}" required="true"/>
+                    <a:field name="account_segment6" prompt="${/model/segment_descs/record/@segment6_desc}" required="true"/>
+                    <a:field name="account_segment7" prompt="${/model/segment_descs/record/@segment7_desc}" required="true"/>
+                    <a:field name="account_segment8" prompt="${/model/segment_descs/record/@segment8_desc}" required="true"/>
+                    <a:field name="account_segment9" prompt="${/model/segment_descs/record/@segment9_desc}" required="true"/>
+                    <a:field name="account_segment10" prompt="${/model/segment_descs/record/@segment10_desc}" required="true"/>
+                    <a:field name="account_segment11" prompt="${/model/segment_descs/record/@segment11_desc}" required="true"/>
+                    <a:field name="account_segment12" prompt="${/model/segment_descs/record/@segment12_desc}" required="true"/>
+                    <a:field name="account_segment13" prompt="${/model/segment_descs/record/@segment13_desc}" required="true"/>
+                    <a:field name="account_segment14" prompt="${/model/segment_descs/record/@segment14_desc}" required="true"/>
+                    <a:field name="account_segment15" prompt="${/model/segment_descs/record/@segment15_desc}"/>
+                    <a:field name="account_segment16" prompt="${/model/segment_descs/record/@segment16_desc}"/>
+                    <a:field name="account_segment17" prompt="${/model/segment_descs/record/@segment17_desc}"/>
+                    <a:field name="account_segment18" prompt="${/model/segment_descs/record/@segment18_desc}"/>
+                    <a:field name="account_segment19" prompt="${/model/segment_descs/record/@segment19_desc}"/>
+                    <a:field name="account_segment20" prompt="${/model/segment_descs/record/@segment20_desc}"/>
+                    <a:field name="entered_amount_dr" validator="amountValidator"/>
+                    <a:field name="entered_amount_cr" validator="amountValidator"/>
+                    <a:field name="functional_amount_dr"/>
+                    <a:field name="functional_amount_cr"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateLines"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="reset" text="HAP_RESET" width="80"/>
+                <a:toolbarButton click="doCreate" text="PROMPT.CREATE_JE" width="80"/>
+                <a:toolbarButton click="doFlag" text="提交" width="80"/>
+                <a:toolbarButton click="doReject" text="PROMPT.REJECT" width="80"/>
+                <a:toolbarButton click="doSave" text="HAP_SAVE" width="80"/>
+                <a:toolbarButton click="doDelete" text="PROMPT.DELETE_JE" width="80"/>
+                <a:toolbarButton click="viewFunction" text="关联申请单" width="80"/>
+                <!-- <a:toolbarButton click="exchangeRateModify" text="EXP_EXPENSE_REPORT.EXCHANGE_RATE_MODIFY" width="80"/> -->
+                <!-- <a:toolbarButton click="seeLog" text="PROMPT.VIEW_LOG" width="80"/> -->
+                <a:toolbarButton click="doHistory" text="PROMPT.HISTORY" width="80"/>
+                <a:toolbarButton click="batchPrintFunction" text="PROMPT.BATCH_PRINT" width="80"/>
+                <a:toolbarButton click="eam2000_notify_emp" text="通知验收" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="audit_query_ds" resultTarget="audit_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="exp_report_number" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER"/>
+                    <a:lov name="exp_reprot_type_display" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID"/>
+                    <a:lov name="employee_display" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.EMPLOYEE_NAME"/>
+                    <a:comboBox name="unit_name" bindTarget="audit_query_ds"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:comboBox name="currency_display" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE"/>
+                    <a:datePicker name="report_date_f" bindTarget="audit_query_ds" prompt="EXP_EXPENSE_REPORT_AUDIT.REPORT_DATE_F"/>
+                    <a:datePicker name="report_date_t" bindTarget="audit_query_ds" prompt="EXP_EXPENSE_REPORT_AUDIT.REPORT_DATE_T"/>
+                    <a:comboBox name="return_status" bindTarget="audit_query_ds" prompt="复核退回"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:form id="exp_report_aduit_head_form" column="1" title="EXP_REQUISITION_HEADERS.REQUISITION_DATE">
+                <a:box column="4" style="width:100%;">
+                    <a:datePicker name="journal_date" bindTarget="input_date_ds" renderer="Aurora.formatDate" width="120"/>
+                </a:box>
+            </a:form>
+            <a:grid id="audit_result_ds_grid" bindTarget="audit_result_ds" height="300" navBar="true">
+                <a:columns>
+                    <a:column name="company_name" align="left" prompt="ACP_INVOICE_HEADERS.COMPANY_ID" sortable="true" width="240"/>
+                    <a:column name="exp_report_number" align="center" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER" renderer="seeDetail" sortable="true" width="160"/>
+                    <!-- <a:column name="amortization_flag" align="center" editor="edt_cbx" prompt="PROMPT.AMORTIZATION_FLAG" width="50"/> -->
+                    <a:column name="exp_report_type_desc" align="left" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID" sortable="true" width="120"/>
+                    <a:column name="employee_name" align="left" prompt="EXP_REPORT_HEADERS.EMPLOYEE_NAME" sortable="true" width="80"/>
+                    <a:column name="unit_name" align="center" sortable="true"/>
+                    <a:column name="currency_name" align="left" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE" sortable="true" width="60"/>
+                    <a:column name="report_amount" align="right" prompt="ACP_ACP_REQUISITION_REFS.AMOUNT" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="report_date" align="center" prompt="EXP_REPORT_HEADERS.REPORT_DATE" sortable="true" width="80"/>
+                    <a:column name="report_status_desc" align="left" prompt="EXP_REPORT_HEADERS.REPORT_STATUS" sortable="true" width="80"/>
+                    <a:column name="description" align="left" prompt="EXP_REQUISITION_DISTS.DESCRIPTION" sortable="true" width="180"/>
+                    <a:column name="je_creation_status" align="center" prompt="PROMPT.CREATE_JE" sortable="true" width="60"/>
+                    <a:column name="return_status" align="center" prompt="复核退回" sortable="true" width="60"/>
+                </a:columns>
+                <a:editors>
+                    <a:checkBox id="edt_cbx"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="rowclick" handler="selectChange"/>
+                </a:events>
+            </a:grid>
+            <a:grid id="journal_adjust_result_grid" bindTarget="journal_adjust_result" height="330" navBar="true">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="delete"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="description" align="left" editor="edit_tf" prompt="EXP_REPORT_ACCOUNTS.DESCRIPTION" width="120"/>
+                    <a:column name="period_name" align="center" editor="edit_lov" prompt="BGT_CHECK_LOGS.PERIOD_NAME" width="80"/>
+                    <a:column name="company_code" align="center" editor="edit_lov" prompt="BGT_BUDGET_ITEM_MAPPING.COMPANY_CODE" width="80"/>
+                    <a:column name="company_short_name" align="left" prompt="BGT_COMPANY_PERIOD_SETS.COMPANY_FULL_NAME" width="120"/>
+                    <a:column name="center_code" align="center" editor="edit_lov" prompt="BGT_BUDGET_ITEM_MAPPING.RESPONSIBILITY_CENTER_CODE" width="80"/>
+                    <a:column name="center_id_display" align="left" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME" width="120"/>
+                    <a:column name="account_code" align="center" editor="edit_lov" prompt="BGT_BUDGET_ITEMS_INTERFACE.ACCOUNT_CODE" width="80"/>
+                    <a:column name="account_desc" align="left" prompt="EXP_AMORTIZATION_ACCOUNTS.DESCRIPTION" width="100"/>
+                    <a:column name="entered_amount_dr" align="right" editor="edit_nf" prompt="CSH_BANK_BALANCES.ENTERED_DATE_NET_DR" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="entered_amount_cr" align="right" editor="edit_nf" prompt="CSH_BANK_BALANCES.ENTERED_DATE_NET_CR" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="functional_amount_dr" align="right" prompt="CSH_PAY_REQ.FUNCTIONAL_AMOUNT_DR" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="functional_amount_cr" align="right" prompt="CSH_PAY_REQ.FUNCTIONAL_AMOUNT_CR" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="account_segment1" align="center" editorFunction="accountSegment1EditFun"/>
+                    <a:column name="account_segment2" align="center" editorFunction="accountSegment2EditFun"/>
+                    <a:column name="account_segment3" align="center" editorFunction="accountSegment3EditFun"/>
+                    <a:column name="account_segment4" align="center" editorFunction="editF"/>
+                    <a:column name="account_segment5" align="center" editorFunction="editF"/>
+                    <a:column name="account_segment6" align="center" editorFunction="editF"/>
+                    <a:column name="account_segment7" align="center" editorFunction="editF"/>
+                    <a:column name="account_segment8" align="center" editorFunction="editF"/>
+                    <a:column name="account_segment9" align="center" editorFunction="editF"/>
+                    <!-- <a:column name="account_segment10" align="center" editorFunction="accountSegment10EditFun"/> -->
+                    <a:column name="account_segment10" align="center" editorFunction="editF"/>
+                    <a:column name="account_segment11" align="center" editorFunction="editF"/>
+                    <a:column name="account_segment12" align="center" editorFunction="editF"/>
+                    <a:column name="account_segment13" align="center" editorFunction="editF"/>
+                    <a:column name="account_segment14" align="center" editorFunction="editF"/>
+                    <!-- <a:column name="je_category_code" align="center" editorFunction="accountJeCategoryEditFun"/> -->
+                    <!-- <a:column name="account_segment15" align="center" editorFunction="accountSegment15EditFun"/>
+                    <a:column name="account_segment16" align="center" editorFunction="accountSegment16EditFun"/>
+                    <a:column name="account_segment17" align="center" editorFunction="accountSegment17EditFun"/>
+                    <a:column name="account_segment18" align="center" editorFunction="accountSegment18EditFun"/>
+                    <a:column name="account_segment19" align="center" editorFunction="accountSegment19EditFun"/>
+                    <a:column name="account_segment20" align="center" editorFunction="accountSegment20EditFun"/> -->
+                </a:columns>
+                <a:editors>
+                    <a:textField id="edit_tf"/>
+                    <a:lov id="edit_lov"/>
+                    <a:comboBox id="edit_cb"/>
+                    <a:numberField id="edit_nf"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="doCellClick"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function expReqDupInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            　　    Ext.get('exp_report_aduit_head_form').setWidth(autoWidth + 4);       
+            	   $('audit_result_ds_grid').setWidth(autoWidth);
+            	   $('journal_adjust_result_grid').setWidth(autoWidth);
+            }
+            //Ext.fly(window).on('resize', expReqDupInitSize);
+            expReqDupInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

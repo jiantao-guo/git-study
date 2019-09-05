@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Mouse Chow  
+    $Date: 2011-11-22 下午01:48:05  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="wfl.PAD1001.wfl_workflow_instance_for_todo_for_pad" rootPath="waiting"/>
+        <!-- <a:model-query autoCount="false" fetchAll="true" model="wfl.wfl_waiting_report_mapping_for_pad" rootPath="report_mapping"/>-->
+    </a:init-procedure>
+    <a:view>
+        <a:link id="work_flow_approve_link" url="${/request/@context_path}/modules/wfl/public/work_flow_approve.svc"/>
+        <a:link id="wfl_approve_for_pad_link" url="${/request/@context_path}/modules/wfl/PAD1001/wfl_approve_for_pad.screen"/>
+        <script><![CDATA[
+            //定义document.getElementById的别名
+            
+            //概要状态管理
+            var sumStatus = {};
+            
+            function $g(id) {
+                return document.getElementById(id);
+            }
+            
+            function jumpToApprove(recordId, instanceId, workflow_category) {
+                /*window.open('wfl_approve_for_pad.screen?record_id=' + recordId + '&instance_id=' + instanceId + '&workflow_category=' + workflow_category);*/
+            	window.location.href=/*wfl_approve_for_pad.screen*/$('wfl_approve_for_pad_link').getUrl()+'?record_id=' + recordId + '&instance_id=' + instanceId + '&workflow_category=' + workflow_category;
+                
+            }
+            
+            var interval;
+            silde = function(obj) {
+                if (this.interval != null) window.clearInterval(this.interval);
+                var el = document.getElementById(obj.id);
+                var h = parseInt(el.style.height);
+            
+                function move() {
+                    if (h < obj.nh) {
+                        h = Math.ceil(h + (obj.nh - h) / 5);
+                    } else if (h > obj.nh) {
+                        h = Math.floor(h - (h - obj.nh) / 5);
+                    }
+                    el.style.height = h + "px";
+                    if (h == obj.nh) {
+                        window.clearInterval(this.interval);
+                        (!obj.call) || obj.call();
+                    }
+                }
+                this.interval = window.setInterval(move, 10);
+            }
+            
+            function changeSumStatus(document_number) {
+                try {
+                    if (event.srcElement == event.currentTarget.children[0].children[0]) {
+                        return;
+                    }
+                } catch (e) {
+            
+                   }
+                if (!sumStatus['sum_frame_' + document_number]) {
+                    getSumContent(document_number);
+                    var allOpers = $('ds_' + document_number).getAll();
+            
+                    var canAgree = false;
+                    var canRefuse = false;
+            
+                    for (var i = 0;i < allOpers.length;i++) {
+                        if (allOpers[i].get('action_type') == 1) {
+                            canAgree = true;
+                        } else if (allOpers[i].get('action_type') == -1) {
+                            canRefuse = true;
+                        }
+                    }
+            
+                    if (!canAgree) {
+                        $g('agree_img_' + document_number).src = '${/request/@context_path}/images/for_pad/agree_disable.png';
+                    }
+                    if (!canRefuse) {
+                        $g('refuse_img_' + document_number).src = '${/request/@context_path}/images/for_pad/refuse_disable.png';
+                    }
+            
+                }
+            
+                if ($g('sum_status_' + document_number).value == 'closed') {
+                    $g('summary_' + document_number).style.display = 'block';
+                    silde({
+                        id: 'summary_' + document_number,
+                        nh: 300,
+                        call: function() {
+                            $g('summary_' + document_number).style.visibility = 'visible';
+                        }
+                    });
+                    $g('sum_status_' + document_number).value = 'opened';
+                } else {
+                    $g('summary_' + document_number).style.visibility = 'hidden';
+                    silde({
+                        id: 'summary_' + document_number,
+                        nh: 0,
+                        call: function() {
+                            $g('summary_' + document_number).style.display = 'none';
+                        }
+                    });
+                    $g('sum_status_' + document_number).value = 'closed';
+                }
+            }
+            
+            function getSumContent(document_number) {
+                var reqUrl = $g('screen_target_' + document_number).value;
+                Ext.Ajax.request({
+                    url: reqUrl,
+                    success: function(res) {
+                        if (res && res.responseText) {
+                            $g('sum_frame_' + document_number).innerHTML = res.responseText;
+                        }
+                    }
+                });
+            }
+            
+            
+            function approveSave(action_id_o) {
+                var action_id = action_id_o.wrap.dom.getAttribute('action_id');
+                $('commentsdata').getAt(0).set('action_id', action_id);
+                $('commentsdata').submit();
+            }
+            
+            function agreeFunction(document_number, record_id) {
+                var allOpers = $('ds_' + document_number).getAll();
+                for (var i = 0;i < allOpers.length;i++) {
+                    if (allOpers[i].get('action_type') == '1') {
+                        Aurora.request({
+                            url: /*${/request/@context_path}/modules/wfl/work_flow_approve.svc*/$('work_flow_approve_link').getUrl(),
+                            para: [{
+                                record_id: record_id,
+                                action_id: allOpers[i].get('action_id'),
+                                comments: $g('comment_' + document_number).value
+                            }],
+                            success: function() {
+                                var rowIndex = $g('tr_' + document_number).rowIndex;
+                                $g('approve_list').deleteRow(rowIndex);
+                                $g('approve_list').deleteRow(rowIndex);
+                            }
+                        });
+                    }
+                }
+            }
+            
+            function refuseFunction(document_number, record_id) {
+                var allOpers = $('ds_' + document_number).getAll();
+                for (var i = 0;i < allOpers.length;i++) {
+                    if (allOpers[i].get('action_type') == '-1') {
+                        Aurora.request({
+                            url: /*${/request/@context_path}/modules/wfl/work_flow_approve.svc*/$('work_flow_approve_link').getUrl(),
+                            para: [{
+                                record_id: record_id,
+                                action_id: allOpers[i].get('action_id'),
+                                comments: $g('comment_' + document_number).value
+                            }],
+                            success: function() {
+                                var rowIndex = $g('tr_' + document_number).rowIndex;
+                                $g('approve_list').deleteRow(rowIndex);
+                                $g('approve_list').deleteRow(rowIndex);
+                            }
+                        });
+                    }
+                }
+            }
+        ]]></script>
+        <style><![CDATA[
+        	
+        		#approve_list{
+					border-collapse:separate;		    
+        		}
+	        	.approve_list_td{
+					text-align:center;	
+					line-height:30px;
+					 border-top:#fff 1px solid;
+					border-bottom:#c5cfd4 1px solid
+				}
+				.approve_list_th{
+					text-align:center;		
+					line-height:30px;
+				}
+				.approve_list_div{
+				    text-align:left;
+				}
+        		
+        		iframe{
+        		    border:none;
+        		}
+        		
+        		.clear{
+					clear:both;        		    
+        		}
+        		.bgt{
+                	background: url(${/request/@context_path}/images/for_pad/titlebg.jpg) repeat-x;
+        		}
+        		.tr_bgr{
+                	background:#ccc;;
+        		}
+        ]]></style>
+        <a:dataSets><![CDATA[
+		]]></a:dataSets>
+        <table id="approve_list" border="0" cellpadding="0" cellspacing="0">
+            <tr class="bgt" height="40">
+                <th class="approve_list_th" style="width:150px;color:white;font-size:15px;font-weight:bold;"><![CDATA[
+					单据编号
+				]]></th>
+                <th class="approve_list_th" style="width:100px;color:white;font-size:15px;font-weight:bold;"><![CDATA[
+					所在节点
+				]]></th>
+                <th class="approve_list_th" style="width:100px;color:white;font-size:15px;font-weight:bold;"><![CDATA[
+					填写人
+				]]></th>
+                <th class="approve_list_th" style="width:120px;color:white;font-size:15px;font-weight:bold;"><![CDATA[
+					单据类型
+				]]></th>
+                <th class="approve_list_th" style="width:150px;color:white;font-size:15px;font-weight:bold;"><![CDATA[
+					申请日期
+				]]></th>
+                <th class="approve_list_th" style="width:150px;color:white;font-size:15px;font-weight:bold;"><![CDATA[
+					到达审批时间
+				]]></th>
+                <th class="approve_list_th" style="width:150px;color:white;font-size:15px;font-weight:bold;"><![CDATA[
+					当前审批结束时间
+				]]></th>
+            </tr>
+            <a:repeater datamodel="/model/waiting">
+                <tr id="tr_${@document_number}" class="tr_bgr" height="28" onclick="javascript:changeSumStatus(&apos;${@document_number}&apos;,this)">
+                    <td class="approve_list_td">
+                        <a href="javascript:jumpToApprove(${@record_id},${@instance_id},&apos;${@workflow_category}&apos;);"><![CDATA[${@document_number}]]></a>
+                    </td>
+                    <td class="approve_list_td"><![CDATA[
+					${@node_name}
+				]]></td>
+                    <td class="approve_list_td"><![CDATA[
+					${@employee_name}
+				]]></td>
+                    <td class="approve_list_td"><![CDATA[
+					${@order_type}
+				]]></td>
+                    <td class="approve_list_td"><![CDATA[
+					${@creation_date_view}
+				]]></td>
+                    <td class="approve_list_td"><![CDATA[
+					${@apply_date_view}
+				]]></td>
+                    <td class="approve_list_td"><![CDATA[
+					${@date_limit_view}
+				]]></td>
+                </tr>
+                <tr>
+                    <td class="approve_list_td" colspan="7" style="border:none;padding:0px;">
+                        <div id="summary_${@document_number}" class="approve_list_div" style="display:none; overflow:hidden;border-bottom:1px solid #333333;height:0px;">
+                            <div onclick="javascript:changeSumStatus(&apos;${@document_number}&apos;,this)" style="float:left;display:block;">
+                                <div id="sum_frame_${@document_number}" style="width:743px;height:280px;zindex:0"/>
+                                <input id="screen_target_${@document_number}" type="hidden" value="${/request/@context_path}${@mapping_url}?${@param_name1}=${@instance_param}&amp;${@param_name2}=${@document_number}"/>
+                            </div>
+                            <div style="float:left;display:block;">
+                                <div style="text-align:center;">
+                                    <span style="font-size:15px;letter-spacing:5px;"><![CDATA[审批意见]]></span>
+                                </div>
+                                <div style="padding-top:15px;">
+                                    <textArea id="comment_${@document_number}" style="width:175px;height:175px;"/>
+                                </div>
+                                <div style="padding-top:15px;">
+                                    <input id="agree_img_${@document_number}" onclick="javascript:agreeFunction(&apos;${@document_number}&apos;,${@record_id});" src="${/request/@context_path}/images/for_pad/agree.png" style="margin-left:19px;" type="image"/>
+                                    <input id="refuse_img_${@document_number}" onclick="javascript:refuseFunction(&apos;${@document_number}&apos;,${@record_id});" src="${/request/@context_path}/images/for_pad/refuse.png" style="margin-left:19px;" type="image"/>
+                                </div>
+                            </div>
+                            <div class="clear"/>
+                        </div>
+                    </td>
+                </tr>
+            </a:repeater>
+        </table>
+        <a:repeater datamodel="/model/waiting">
+            <input id="sum_status_${@document_number}" type="hidden" value="closed"/>
+        </a:repeater>
+        <a:dataSets>
+            <a:placeHolder id="ds_place"/>
+        </a:dataSets>
+        <a:box/>
+    </a:view>
+    <a:view-config>
+        <c:create-config xmlns:c="aurora.application.action" targetId="ds_place">
+            <p:loop xmlns:p="uncertain.proc" source="/model/waiting">
+                <c:process-config>
+                    <a:dataSet id="ds_${@document_number}" autoQuery="true" model="wfl.wfl_node_action_type_list" queryUrl="${/request/@context_path}/autocrud/wfl.wfl_node_action_type_list/query?record_id=${@record_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

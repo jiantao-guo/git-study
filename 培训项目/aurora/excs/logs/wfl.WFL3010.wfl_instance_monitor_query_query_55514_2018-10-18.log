@@ -1,0 +1,149 @@
+2018-10-18 06:21:10.700 [aurora.application.session_check] [CONFIG] Session data copied to context
+2018-10-18 06:21:10.701 [aurora.application.session_check] [CONFIG] Checking BM access wfl.WFL3010.wfl_instance_monitor_query for operation query
+2018-10-18 06:21:10.701 [aurora.application.session_check] [CONFIG] Result from aurora.bm.DefaultAccessChecker@3dd93b73 is true
+2018-10-18 06:21:10.701 [uncertain.proc] [CONFIG] [action] AccessCheck
+2018-10-18 06:21:10.703 [uncertain.proc] [CONFIG] [action] CheckServiceLock
+2018-10-18 06:21:10.703 [uncertain.proc] [CONFIG] [action] ParseParameter
+2018-10-18 06:21:10.703 [uncertain.proc] [CONFIG] [action] ValidateInput
+2018-10-18 06:21:10.703 [uncertain.proc] [CONFIG] [action] InvokeService
+2018-10-18 06:21:10.703 [aurora.database] [CONFIG] ===================================== prepare to run model-query wfl.WFL3010.wfl_instance_monitor_query==============================
+2018-10-18 06:21:10.709 [uncertain.proc] [CONFIG] [action] DecideSqlGenerationMode
+2018-10-18 06:21:10.709 [uncertain.proc] [FINE] aurora.database.service.BusinessModelService.onDecideSqlGenerationMode
+2018-10-18 06:21:10.709 [uncertain.proc] [CONFIG] [action] CreateOperationSql
+2018-10-18 06:21:10.709 [uncertain.proc] [CONFIG] [action] PopulateOperationSql
+2018-10-18 06:21:10.709 [uncertain.proc] [FINE] aurora.database.features.OrderByClauseCreator.onPopulateOperationSql
+2018-10-18 06:21:10.709 [uncertain.proc] [FINE] aurora.database.features.WhereClauseCreator.onPopulateOperationSql
+2018-10-18 06:21:10.709 [uncertain.proc] [CONFIG] [action] ExecuteQuery
+2018-10-18 06:21:10.709 [uncertain.proc] [FINE] aurora.bm.QuerySqlCreator.onExecuteQuery
+2018-10-18 06:21:11.121 [uncertain.proc] [CONFIG] [action] QueryFinish
+2018-10-18 06:21:11.121 [uncertain.proc] [FINE] aurora.database.features.AutoQueryCounter.onQueryFinish
+2018-10-18 06:21:11.207 [uncertain.proc] [CONFIG] [action] FetchResultSet
+2018-10-18 06:21:11.207 [uncertain.proc] [FINE] aurora.database.features.CacheBasedLookUpField.postFetchResultSet
+2018-10-18 06:21:11.207 [aurora.database] [CONFIG] 
+============= BEGIN [query] SQL Statement execution dump ============
+
+                WITH
+                    comp_temp AS
+                    (SELECT
+                        company_id
+                    FROM
+                        fnd_companies_vl START
+                    WITH company_id            = ? CONNECT BY PRIOR company_id = parent_company_id AND
+                        ? = 'Y'
+                    UNION ALL
+                    SELECT
+                        company_id
+                    FROM
+                        fnd_companies_vl
+                    WHERE
+                        company_id = ?
+                    )
+                SELECT
+                    t.*,
+                    DECODE(t.last_approve_name, NULL, NULL, TO_CHAR(t.last_update_date, 'yyyy-mm-dd hh24:mi')) last_update_date_desc
+                FROM
+                    (SELECT
+                        rs.*,
+                        TO_CHAR(rs.creation_date, 'yyyy-mm-dd hh24:mi') creation_date_desc,
+                        (SELECT
+                            code_value_name
+                        FROM
+                            sys_service_lookup_v
+                        WHERE
+                            code       = 'WFL_WORKFLOW_INSTANCE_STATUS' AND
+                            code_value = TO_CHAR(rs.status) AND
+                            language   = 'ZHS'
+                        ) status_name,
+                        (SELECT
+                            fcv.company_short_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = wfl_common_pkg.get_instance_company(rs.instance_id)
+                        ) company_name,
+                        wfl_common_pkg.get_current_node(rs.workflow_id, rs.instance_id, rs.current_node) curr_approve_name,
+                        wfl_common_pkg.get_wfl_user_name(rs.created_by) create_by_name,
+                        wfl_common_pkg.get_wfl_user_name(
+                        (SELECT
+                            r.created_by
+                        FROM
+                            wfl_approve_record r
+                        WHERE
+                            r.record_id =
+                            (SELECT
+                                record_id
+                            FROM
+                                (SELECT
+                                    a.record_id,
+                                    a.instance_id
+                                FROM
+                                    wfl_approve_record a,
+                                    wfl_workflow_node n
+                                WHERE
+                                    a.node_id = n.node_id
+                                ORDER BY
+                                    n.sequence_num DESC,
+                                    a.creation_date DESC
+                                )x
+                            WHERE
+                                x.instance_id = r.instance_id AND
+                                rownum        = 1
+                            ) AND
+                            r.instance_id = rs.instance_id
+                        )) last_approve_name,
+                        (SELECT
+                            wdr.document_desc
+                        FROM
+                            wfl_document_reference_vl wdr
+                        WHERE
+                            rs.workflow_category = wdr.workflow_category
+                        ) order_type,
+                        TO_CHAR(
+                        (SELECT
+                            MAX(nr.date_limit)
+                        FROM
+                            wfl_instance_node_recipient nr,
+                            wfl_workflow_node n
+                        WHERE
+                            nr.instance_id = rs.instance_id AND
+                            nr.node_id     = n.node_id AND
+                            n.sequence_num = rs.current_node
+                        ), 'yyyy-mm-dd hh24:mi') date_limit
+                    FROM
+                        (SELECT
+                            a.instance_id,
+                            a.workflow_id,
+                            a.current_node,
+                            a.created_by,
+                            a.creation_date,
+                            a.document_number order_no,
+                            b.name workflow_name,
+                            a.last_update_date,
+                            b.workflow_category,
+                            a.status,
+                            a.status_desc,
+                            wfl_common_pkg.get_instance_company(a.instance_id) company_id
+                        FROM
+                            wfl_workflow_instance a,
+                            Wfl_Workflow_Vl b
+                        WHERE
+                            a.workflow_id = b.workflow_id
+                        ) rs
+                    WHERE
+                        rs.company_id IN
+                        (SELECT * FROM comp_temp
+                        )
+                    ) t  WHERE t.creation_date > to_date(?, 'yyyy-mm-dd') AND t.creation_date < to_date(?, 'yyyy-mm-dd') + 1
+                ORDER BY
+                    t.creation_date DESC
+            
+---------------------Binding info---------------------
+No.1	Access path:/session/@company_id	Data type of passed value :java.lang.String	Value:835	Output:false	Database Type:null	
+No.2	Access path:@include_child_flag	Data type of passed value :java.lang.String	Value:N	Output:false	Database Type:null	
+No.3	Access path:/session/@company_id	Data type of passed value :java.lang.String	Value:835	Output:false	Database Type:null	
+No.4	Access path:@creation_date_from	Data type of passed value :java.lang.String	Value:2018-07-20	Output:false	Database Type:null	
+No.5	Access path:@creation_date_to	Data type of passed value :java.lang.String	Value:2018-10-18	Output:false	Database Type:null	
+
+=============== END [query] SQL Statement execution dump ============
+
+2018-10-18 06:21:11.208 [uncertain.proc] [CONFIG] [action] CreateSuccessResponse

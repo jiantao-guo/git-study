@@ -1,0 +1,463 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010
+    $Date: 2013-3-25 下午4:21:58  
+    $Revision: 1.0  
+    $Purpose: 资产申请验收，资产台账明细
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="eam.eam0910.eam0910_valuable_flag_query" rootPath="valuable_flag"/>
+        <a:model-query model="eam.eam0311.eam0311_asset_headers_query" rootPath="asset_header"/>
+        <a:model-query fetchAll="true" model="eam.eam0311.eam0311_requisition_lines_edit" rootPath="req_line"/>
+        <a:model-query model="eam.eam0910.eam0910_inter_acc_flag_query" rootPath="inter_acc_flag"/>
+        <a:model-query defaultWhereClause="t1.base_trx_category = &apos;ADD&apos;" fetchAll="true" model="eam.eam0120.eam_transaction_types_lv" rootPath="transaction_types"/>
+        <a:model-query model="eam.common.eam_currency_query" rootPath="eam_currency"/>
+        <a:model-query model="eam.eam0910.eam0910_asset_finance_class_query" rootPath="asset_finance"/>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+        	//Aurora.onReady(init);
+        	
+        	function init() {
+        	    // 价值管理
+        	    var valuable_flag = '${/model/valuable_flag/record/@valuable_flag}'; 
+        	    // 核算凭证
+        	    var accounting_flag = '${/model/inter_acc_flag/record/@accounting_flag}';
+        	    var tabs = $("asset_management_tab");
+        	    if(valuable_flag == 'N') {
+        	        tabs.setDisabled(0);
+        	    }
+        	    
+        	    if(accounting_flag == 'N') {
+        	        tabs.setDisabled(1);
+        	    }
+        	    
+        	    var inter_flag = '${/model/inter_acc_flag/record/@interface_flag}';
+                if(inter_flag == 'Y') {
+                    var record1 = $('eam_asset_finance_info_result_ds').getCurrentRecord();
+                    record1.getMeta().getField('asset_card_num').setRequired(true);
+                }
+                var form_record = $('eam_asset_headers_readonly_result_ds').getCurrentRecord();
+                
+                var price = '${/model/req_line/record/@price}';
+                var req_desc = '${/model/req_line/record/@description}';
+                var transaction_type_id = '${/model/req_line/record/@transaction_type_id}';
+                var transaction_type = '${/model/req_line/record/@trans_type_desc}';
+        	     
+        	    form_record.set('price', price);
+        	    form_record.set('req_desc', req_desc);
+        	    form_record.set('transaction_type_id', transaction_type_id);
+        	    form_record.set('transaction_type', transaction_type);
+        	    
+                var records = $('cost_source_ds').getAll();
+              	var value = form_record.get("asset_source_type");
+              	
+                // 当取得来源为"在建工程结转","抵债资产转自用","换入"时,"成本来源"标签可编辑
+                // 当取得来源为"购置"时,也可编辑,但里面只可编辑[价值类型],[本次结转]两个字段.
+                if(value == "FROMCIP" || value == "FROMDEBT" || value == "TRANSFERIN" || value == "PURCHASE") {
+                    tabs.setEnabled(11);
+                } else {
+                    tabs.setDisabled(11); 
+                }
+              	 
+                for(var i=0; i<records.length; i++) {
+              	    var record = records[i];
+					switch(asset_source_type) {
+	                     // 在建工程结转
+	                    case 'FROMCIP':
+	                    	//  能选择的源对象号资产分类为在建工程的,状态为建设中的资产,[价值类型] 可编辑,且值为"决算价"或"暂估价",默认值为"决算价"
+	                    	record.getField("source_asset_code").setLovPara('status', 'IN_PROCESS');
+	                    	record.getField("source_asset_code").setLovPara('asset_type', 'CIP');
+	                    	record.set('cost_value_type', 'FINAL');
+	                    	//
+	                    break;
+	                    // 抵债转自用
+	                    case 'FROMDEBT':
+	                    // 能选择的源对象为资产分类为抵债资产,且状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+	                    record.getField("source_asset_code").setLovPara('status', 'USING');
+	                	record.getField("source_asset_code").setLovPara('asset_type', 'DEBT');
+	                	record.getMeta().getField('cost_value_type_desc').setReadOnly(true);
+	                	record.set('cost_value_type', 'FINAL');
+	                    break;
+	                    // 换入
+	                    case 'TRANSFERIN':
+	                    // 能选择源对象为固定资产或无形资产及状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+	                    record.getField("source_asset_code").setLovService('eam.eam0310.eam0310_source_asset_for_trans');
+	                	record.getMeta().getField('cost_value_type_desc').setReadOnly(true);
+	                	record.set('cost_value_type', 'FINAL');
+	                    break;
+	                    // 购置
+	                    case 'PURCHASE':
+	                    record.getMeta().getField('source_asset_code').setReadOnly(true);
+	                	record.getMeta().getField('source_asset_code').setRequired(false);
+	                    break; 
+	                }              	    
+              	} 
+        	}
+        
+        	function backFun() {
+        	    $('eam_asset_cost_vadj_window').close();
+        	}
+        	 
+        	function onSubSuccessHandler() {
+        	    alert('${l:BGT_CONTROL_RULES.SAVE_FIRST}');
+        	}
+        	
+        	function onCostSourceAdd(dataSet, record, index) {
+                var form_record = $("eam_asset_headers_readonly_result_ds").getCurrentRecord();
+                var asset_source_type = form_record.get("asset_source_type");
+                var asset_source_type_desc = form_record.get("asset_source_type_desc");
+                record.set('source_type', asset_source_type);
+                record.set('source_type_desc', asset_source_type_desc);
+                switch(asset_source_type) {
+                     // 在建工程结转
+                    case 'FROMCIP':
+                    	//  能选择的源对象号资产分类为在建工程的,状态为建设中的资产,[价值类型] 可编辑,且值为"决算价"或"暂估价",默认值为"决算价"
+                    	record.getField("source_asset_code").setLovPara('status', 'IN_PROCESS');
+                    	record.getField("source_asset_code").setLovPara('asset_type', 'CIP');
+                    	record.set('cost_value_type', 'FINAL');
+                    	//
+                    break;
+                    // 抵债转自用
+                    case 'FROMDEBT':
+                    // 能选择的源对象为资产分类为抵债资产,且状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+                    record.getField("source_asset_code").setLovPara('status', 'USING');
+                	record.getField("source_asset_code").setLovPara('asset_type', 'DEBT');
+                	record.getMeta().getField('cost_value_type_desc').setReadOnly(true);
+                	record.set('cost_value_type', 'FINAL');
+                    break;
+                    // 换入
+                    case 'TRANSFERIN':
+                    // 能选择源对象为固定资产或无形资产及状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+                    record.getField("source_asset_code").setLovService('eam.eam0310.eam0310_source_asset_for_trans');
+                	record.getMeta().getField('cost_value_type_desc').setReadOnly(true);
+                	record.set('cost_value_type', 'FINAL');
+                    break;
+                    // 购置
+                    case 'PURCHASE':
+                    record.getMeta().getField('source_asset_code').setReadOnly(true);
+                	record.getMeta().getField('source_asset_code').setRequired(false);
+                    break; 
+                }
+            }
+            
+            // 保存之前应当先校验时否已经有资产id
+            function beforeCostSubmit() {
+                var asset_id = $('eam_asset_headers_readonly_result_ds').getCurrentRecord().get("asset_id");
+                if(!asset_id) {
+                    alert("${l:EAM_ASSET_PARTNER_INFO.DO_SAVE_EAM_ASSET_HEADERS}");
+                    return false;
+                } else {
+                    $('cost_source_ds').getCurrentRecord().set('asset_id', asset_id);
+                }
+            } 
+            
+            
+            // 事务类型加载
+            function onTransFocusHandler() {
+                var base_trx_category = '${/model/transaction_types/record/@base_trx_category}';
+                $('trans_type_ds').setQueryParameter('base_trx_category', base_trx_category);
+                $('trans_type_ds').query();
+            }
+            
+            // 
+            function costValidator(record, name, value) {
+                var source_asset_cost = record.get("source_asset_cost") ;
+                var source_asset_sum_cost = record.get("source_asset_sum_cost");
+                var cost = record.get("cost");
+                var cost_value_type = record.get("cost_value_type");
+                
+                source_asset_cost = !source_asset_cost ? 0 : source_asset_cost;
+                source_asset_sum_cost = !source_asset_sum_cost ? 0 : source_asset_sum_cost;
+                
+                if(cost_value_type == 'FINAL') {
+                    var source_type = record.get("source_type");
+                    if(source_type != 'PURCHASE') {
+                        if(cost > source_asset_cost - source_asset_sum_cost) {
+	                        return '${l:EAM_COST_GREATER_ERROR}';
+	                    }
+                    }
+                }
+                return true;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="trans_type_ds">
+                <a:datas dataSource="/model/transaction_types"/>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_headers_readonly_result_ds" autoCreate="true" model="eam.eam0311.eam0311_asset_headers_query" queryUrl="${/request/@context_path}/autocrud/eam.eam0311.eam0311_asset_headers_query/query?asset_id=${/parameter/@asset_id}" submitUrl="${/request/@context_path}/modules/eam/EAM0910/eam_asset_management_save.svc">
+                <a:datas dataSource="/model/asset_header"/>
+                <a:fields>
+                    <a:field name="currency_desc" prompt="EAM_ASSET_FINANCE_INFO.CURRENCY_NAME" readOnly="true"/>
+                    <a:field name="location_resp_center_name"/>
+                    <a:field name="location_company_name"/>
+                    <a:field name="location_resp_center_id"/>
+                    <a:field name="location_company_id"/>
+                    <a:field name="asset_book_id"/>
+                    <a:field name="location_type_desc" prompt="EAM_LOCATIONS.LOCATION_TYPE" readOnly="true"/>
+                    <a:field name="asset_book_desc" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK"/>
+                    <a:field name="asset_code" prompt="EAM_ASSET_HEADERS.ASSET_CODE" readOnly="true"/>
+                    <a:field name="description" prompt="EAM_ASSET_HEADERS.DESCRIPTION" readOnly="true"/>
+                    <a:field name="tag_number" prompt="EAM_ASSET_HEADERS.TAG_NUMBER" readOnly="true"/>
+                    <a:field name="status"/>
+                    <a:field name="transaction_type_id"/>
+                    <a:field name="transaction_type" displayField="description" options="trans_type_ds" prompt="EAM_REQUISITION_TYPES.DEFAULT_TRX_TYPE_DESC" returnField="transaction_type_id" valueField="transaction_type_id"/>
+                    <a:field name="contract_header_id"/>
+                    <a:field name="contract_name" lovGridHeight="300" lovHeight="460" lovService="eam.eam0310.eam0310_csh_contract_lov" lovWidth="500" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER" title="CON_CONTRACT_HEADERS.CONTRACT_NUMBER">
+                        <a:mapping>
+                            <a:map from="contract_number" to="contract_name"/>
+                            <a:map from="contract_header_id" to="contract_header_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="price" prompt="EXP_REPORT_DISTS.PRICE"/>
+                    <a:field name="install_position" prompt="EAM_ASSET_HEADERS.INSTALL_POSITION"/>
+                    <a:field name="status_desc" prompt="EAM_ASSET_HEADERS.STATUS"/>
+                    <a:field name="serial_number" prompt="EAM_ASSET_HEADERS.SERIAL_NUMBER" readOnly="true"/>
+                    <a:field name="asset_source_type"/>
+                    <a:field name="req_desc" prompt="SYS_SESSION.NOTE"/>
+                    <a:field name="asset_source_type_desc" prompt="EAM_ASSET_HEADERS.ASSET_SOURCE_TYPE" readOnly="true"/>
+                    <a:field name="lock_flag" checkedValue="Y" defaultValue="Y" prompt="EAM_ASSET_HEADERS.LOCK_FLAG" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="date_of_purchase" prompt="EAM_ASSET_HEADERS.DATE_OF_PURCHASE" readOnly="true"/>
+                    <a:field name="gain_date" prompt="EAM_ASSET_HEADERS.GAIN_DATE" readOnly="true"/>
+                    <a:field name="start_use_date" prompt="EAM_ASSET_HEADERS.START_USE_DATE" readOnly="true"/>
+                    <a:field name="asset_unit" prompt="EAM_ASSET_HEADERS.ASSET_UNIT"/>
+                    <a:field name="asset_unit_desc" prompt="EAM_ASSET_HEADERS.ASSET_UNIT" readOnly="true"/>
+                    <a:field name="quantity" prompt="EAM_ASSET_HEADERS.QUANTITY" readOnly="true"/>
+                    <a:field name="cost" prompt="EAM_ASSET_HEADERS.COST" readOnly="true"/>
+                    <a:field name="category_id"/>
+                    <a:field name="category_desc" prompt="EAM_ASSET_HEADERS.CATEGORY_ID" readOnly="true"/>
+                    <a:field name="entity_class_id"/>
+                    <a:field name="entity_class_desc" prompt="EAM_ASSET_HEADERS.ENTITY_CLASS_ID" readOnly="true"/>
+                    <a:field name="location_id"/>
+                    <a:field name="to_location_id"/>
+                    <a:field name="current_location_desc" readOnly="true"/>
+                    <a:field name="value_man_company_id"/>
+                    <a:field name="value_man_company_desc" prompt="EAM_ASSET_HEADERS.VALUE_MAN_COMPANY_ID" readOnly="true"/>
+                    <a:field name="value_man_unit_id"/>
+                    <a:field name="value_man_unit_desc" prompt="EAM_ASSET_HEADERS.VALUE_MAN_UNIT_ID" readOnly="true"/>
+                    <a:field name="value_man_position_id"/>
+                    <a:field name="value_man_position_desc" prompt="EAM_ASSET_HEADERS.VALUE_MAN_POSITION_ID" readOnly="true"/>
+                    <a:field name="entity_company_id"/>
+                    <a:field name="entity_man_company_desc" prompt="EAM_ASSET_HEADERS.ENTITY_MAN_COMPANY_ID" readOnly="true"/>
+                    <a:field name="entity_unit_id"/>
+                    <a:field name="entity_man_unit_desc" prompt="EAM_ASSET_HEADERS.ENTITY_MAN_UNIT_ID" readOnly="true"/>
+                    <a:field name="entity_position_id"/>
+                    <a:field name="entity_man_position_desc" prompt="EAM_ASSET_HEADERS.ENTITY_MAN_POSITION_ID" readOnly="true"/>
+                    <a:field name="responsibility_company_id"/>
+                    <a:field name="responsibility_company_desc" prompt="EAM_ASSET_HEADERS.RESPONSIBILITY_COMPANY_ID" readOnly="true"/>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="responsibility_center_desc" prompt="EAM_ASSET_HEADERS.RESPONSIBILITY_CENTER_ID" readOnly="true"/>
+                    <a:field name="allocate_element_type"/>
+                    <a:field name="allocate_element_type_desc" readOnly="true"/>
+                    <a:field name="allocate_element_name" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="eam_currency_ds">
+                <a:datas dataSource="/model/eam_currency"/>
+            </a:dataSet>
+            <a:dataSet id="asset_finance_ds">
+                <a:datas dataSource="/model/asset_finance"/>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_finance_info_result_ds" autoCreate="true" autoQuery="true" bindName="finance_info" bindTarget="eam_asset_headers_readonly_result_ds" model="eam.eam0810.eam0810_asset_finance_info_query" queryUrl="${/request/@context_path}/autocrud/eam.eam0810.eam0810_asset_finance_info_query/query?asset_id=${/parameter/@asset_id}">
+                <a:fields>
+                    <a:field name="asset_finance_info_id"/>
+                    <a:field name="asset_id" defaultValue="${/parameter/@asset_id}"/>
+                    <a:field name="finance_class_id"/>
+                    <a:field name="asset_card_num" readOnly="true"/>
+                    <a:field name="depreciate_flag" readOnly="true"/>
+                    <a:field name="currency_code" readOnly="true"/>
+                    <a:field name="currency_desc" displayField="currency_name" options="eam_currency_ds" prompt="EAM_ASSET_FINANCE_INFO.CURRENCY_NAME" readOnly="true" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="original_cost" readOnly="true"/>
+                    <a:field name="current_cost" readOnly="true"/>
+                    <a:field name="accumulated_dep_amt" readOnly="true"/>
+                    <a:field name="impairment_loss_amt" readOnly="true"/>
+                    <a:field name="scrap_amount" prompt="EAM_REQUISITION_LINES.DISCARD_AMOUNT" readOnly="true"/>
+                    <a:field name="salvage_value" readOnly="true"/>
+                    <a:field name="start_depreciatite_date" readOnly="true"/>
+                    <a:field name="last_depr_period_name" readOnly="true"/>
+                    <a:field name="last_depr_date" readOnly="true"/>
+                    <a:field name="life_in_month" readOnly="true"/>
+                    <a:field name="remaining_life_in_month" readOnly="true"/>
+                    <a:field name="scrap_cost" readOnly="true"/>
+                    <a:field name="finance_class_desc" displayField="class_name" options="asset_finance_ds" prompt="EAM_ASSET_FINANCE_INFO.FINANCE_CLASS_DESC" required="true" returnField="finance_class_id" valueField="class_id">
+                        <a:mapping>
+                            <a:map from="salvage_value_rate" to="salvage_value_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="salvage_value_rate" prompt="EAM_ASSET_FIN_CLASSES.SALVAGE_VALUE_RATE"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="onSubSuccessHandler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="value_type_ds" lookupCode="EAM_VALUE_TYPE"/>
+            <a:dataSet id="cost_source_ds" autoQuery="true" bindName="cost_lines" bindTarget="eam_asset_headers_readonly_result_ds" model="eam.eam0310.eam0310_asset_cost_sources_edit" queryUrl="${/request/@context_path}/autocrud/eam.eam0310.eam0310_asset_cost_sources_edit/query?asset_id=${/parameter/@asset_id}&amp;document_id=${/parameter/@requisition_header_id}&amp;document_line_id=${/parameter/@requisition_line_id}" selectable="true">
+                <a:fields>
+                    <a:field name="cost_source_id"/>
+                    <a:field name="source_type" prompt="EAM_ASSET_HEADERS.ASSET_SOURCE_TYPE"/>
+                    <a:field name="source_type_desc" prompt="EAM_ASSET_HEADERS.ASSET_SOURCE_TYPE"/>
+                    <a:field name="source_asset_id"/>
+                    <a:field name="asset_id"/>
+                    <a:field name="source_asset_code" lovGridHeight="240" lovHeight="400" lovService="eam.eam0310.eam0310_source_asset_query" lovWidth="500" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_CODE" title="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_CODE">
+                        <a:mapping>
+                            <a:map from="asset_id" to="source_asset_id"/>
+                            <a:map from="asset_code" to="source_asset_code"/>
+                            <a:map from="source_asset_cost" to="source_asset_cost"/>
+                            <a:map from="source_asset_sum_cost" to="source_asset_sum_cost"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="source_asset_name" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_NAME"/>
+                    <a:field name="source_asset_cost" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_COST"/>
+                    <a:field name="source_asset_sum_cost" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_SUM_COST1"/>
+                    <a:field name="cost_value_type"/>
+                    <a:field name="cost_value_type_desc" displayField="code_value_name" options="value_type_ds" prompt="EAM_ASSET_COST_SOURCES.COST_VALUE_TYPE" returnField="cost_value_type" valueField="code_value"/>
+                    <a:field name="cost" prompt="EAM_ASSET_COST_SOURCES.COST" validator="costValidator"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="onCostSourceAdd"/>
+                    <a:event name="beforesubmit" handler="beforeCostSubmit"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="1" labelWidth="100" title="EAM_ASSET_HEADERS.TITLE" width="720">
+                <a:hBox>
+                    <a:textField name="asset_code" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                    <a:textField name="tag_number" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                    <a:textField name="serial_number" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:textField name="description" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                    <a:lov name="contract_name" bindTarget="eam_asset_headers_readonly_result_ds" readOnly="true"/>
+                    <a:comboBox name="transaction_type" bindTarget="eam_asset_headers_readonly_result_ds" readOnly="true">
+                        <a:events>
+                            <a:event name="focus" handler="onTransFocusHandler"/>
+                        </a:events>
+                    </a:comboBox>
+                </a:hBox>
+                <a:hBox>
+                    <a:textField name="req_desc" bindTarget="eam_asset_headers_readonly_result_ds" readOnly="true" width="615"/>
+                </a:hBox>
+            </a:form>
+            <!-- 按钮 -->
+            <a:hBox>
+                <a:button click="backFun" text="HAP_BACK"/>
+            </a:hBox>
+            <a:tabPanel id="asset_management_tab" height="320" width="1090">
+                <a:tabs>
+                    <!-- <a:tab height="100" prompt="EAM_ASSET_HEADERS.FINANCIAL_INFORMATION" ref="${/request/@context_path}/modules/eam/EAM0910/eam_asset_finance_info.screen?asset_id=${/parameter/@asset_id}&amp;requisition_line_id=${/parameter/@requisition_line_id}" width="80"/> -->
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.FINANCIAL_INFORMATION" width="80">
+                        <a:form column="1" height="179" labelWidth="100" width="880">
+                            <a:box column="3">
+                                <a:textField name="asset_card_num" bindTarget="eam_asset_finance_info_result_ds"/>
+                                <a:comboBox name="finance_class_desc" bindTarget="eam_asset_finance_info_result_ds" readOnly="true"/>
+                                <a:checkBox name="depreciate_flag" bindTarget="eam_asset_finance_info_result_ds" checkedValue="Y" uncheckedValue="N"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:numberField name="original_cost" allowDecimals="true" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds" decimalPrecision="2"/>
+                                <a:numberField name="current_cost" allowDecimals="true" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds" decimalPrecision="2"/>
+                                <a:numberField name="impairment_loss_amt" allowDecimals="true" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds" decimalPrecision="2"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:numberField name="accumulated_dep_amt" allowDecimals="true" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds" decimalPrecision="2"/>
+                                <a:numberField name="salvage_value_rate" allowDecimals="true" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds" decimalPrecision="3" readOnly="true"/>
+                                <a:numberField name="salvage_value" allowDecimals="true" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds" decimalPrecision="2" readOnly="true"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:textField name="scrap_amount" bindTarget="eam_asset_finance_info_result_ds"/>
+                                <a:datePicker name="start_depreciatite_date" bindTarget="eam_asset_finance_info_result_ds" renderer="Aurora.formatDate"/>
+                                <a:numberField name="life_in_month" allowDecimals="false" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:numberField name="remaining_life_in_month" allowDecimals="false" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds"/>
+                                <a:comboBox name="currency_desc" bindTarget="eam_asset_finance_info_result_ds"/>
+                            </a:box>
+                        </a:form>
+                    </a:tab>
+                    <a:tab height="100" prompt="EAM_REQUISITION_ACCOUNTING_VOCHERS" ref="${/request/@context_path}/modules/eam/EAM0910/eam_asset_acc_tab_readonly.screen?asset_id=${/parameter/@asset_id}&amp;requisition_header_id=${/parameter/@requisition_header_id}&amp;requisition_line_id=${/parameter/@requisition_line_id}" width="80"/>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.BASIC_INFORMATION" width="80">
+                        <a:form column="1" height="200" labelWidth="100" width="890">
+                            <a:box column="3">
+                                <a:comboBox name="asset_source_type_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                <a:datePicker name="date_of_purchase" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                <a:datePicker name="gain_date" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:datePicker name="start_use_date" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                <a:lov name="asset_unit_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                <a:numberField name="quantity" allowDecimals="false" allowNegative="false" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:numberField name="price" bindTarget="eam_asset_headers_readonly_result_ds" readOnly="true"/>
+                                <a:numberField name="cost" allowDecimals="true" allowNegative="false" bindTarget="eam_asset_headers_readonly_result_ds" decimalPrecision="2"/>
+                                <a:textField name="status_desc" bindTarget="eam_asset_headers_readonly_result_ds" readOnly="true"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:lov name="category_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                <a:lov name="entity_class_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                <a:lov name="install_position" bindTarget="eam_asset_headers_readonly_result_ds" readOnly="true"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:textField name="location_type_desc" bindTarget="eam_asset_headers_readonly_result_ds" readOnly="true"/>
+                                <a:comboBox name="currency_desc" bindTarget="eam_asset_headers_readonly_result_ds" readOnly="true"/>
+                            </a:box>
+                        </a:form>
+                    </a:tab>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.PARTNERS" ref="${/request/@context_path}/modules/eam/public/eam_asset_partner_info_readonly_for_requisition.screen?asset_id=${/parameter/@asset_id}" width="80"/>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.LOCATION_INFORMATION" ref="${/request/@context_path}/modules/eam/public/eam_asset_location_histories_readonly_for_requisition.screen?asset_id=${/parameter/@asset_id}" width="80"/>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.ORGANIZATIONAL_STRUCTURE" width="80">
+                        <a:form column="1" height="200" labelWidth="100" width="890">
+                            <a:fieldSet title="EAM_LOCATIONS.VALUE_MAN_ORG">
+                                <a:box column="3">
+                                    <a:lov name="value_man_company_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                    <a:lov name="value_man_unit_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                    <a:lov name="value_man_position_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                </a:box>
+                            </a:fieldSet>
+                            <a:fieldSet title="EAM_LOCATIONS.ENTITY_MAN_ORG">
+                                <a:box column="3">
+                                    <a:lov name="entity_man_company_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                    <a:lov name="entity_man_unit_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                    <a:lov name="entity_man_position_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                </a:box>
+                            </a:fieldSet>
+                            <a:fieldSet title="EAM_ASSET_HEADERS.RESPONSIBILITY_ATTRIBUTION">
+                                <a:box column="3">
+                                    <a:lov name="responsibility_company_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                    <a:lov name="responsibility_center_desc" bindTarget="eam_asset_headers_readonly_result_ds"/>
+                                </a:box>
+                            </a:fieldSet>
+                        </a:form>
+                    </a:tab>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.PROPERTY_INFORMATION" ref="${/request/@context_path}/modules/eam/public/eam_asset_property_info_readonly_for_requisition.screen?asset_id=${/parameter/@asset_id}" width="80"/>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.INSURANCE_INFORMATION" ref="${/request/@context_path}/modules/eam/public/eam_asset_insure_info_readonly_for_requisition.screen?asset_id=${/parameter/@asset_id}" width="80"/>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.CHARACTERISTIC_PARAMETERS" ref="${/request/@context_path}/modules/eam/public/eam_asset_character_values_readonly_for_requisition.screen?asset_id=${/parameter/@asset_id}" width="80"/>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.DOCUMENT_INFORMATION" ref="${/request/@context_path}/check_uploadFile.screen?table_name=EAM_ASSET_HEADERS&amp;header_id=${/parameter/@asset_id}" width="80"/>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.SHARING_ALLOCATION" ref="${/request/@context_path}/modules/eam/public/eam_asset_allocations_readonly_for_requisition.screen?asset_id=${/parameter/@asset_id}" width="80"/>
+                    <a:tab id="eam_asset_code_sources" disabled="true" height="100" prompt="EAM_ASSET_COST_SOURCES" width="80">
+                        <a:grid bindTarget="cost_source_ds" height="180" navBar="true" width="880">
+                            <a:toolBar>
+                                <a:label/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="source_type_desc" align="center"/>
+                                <a:column name="source_asset_code" align="center"/>
+                                <a:column name="source_asset_name" align="center"/>
+                                <a:column name="source_asset_cost" align="center"/>
+                                <a:column name="source_asset_sum_cost" align="center"/>
+                                <a:column name="cost_value_type_desc" align="center"/>
+                                <a:column name="cost" align="center"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	
+        		init();
+        	
+        ]]></script>
+    </a:view>
+</a:screen>

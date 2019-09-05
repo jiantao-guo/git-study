@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: liubo
+    $Date: 2018-4-11 13:53:50  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="csh.CSH3201.csh_get_sys_import_head_id" rootPath="header"/>
+        <a:import-excel header_id="${/model/header/record/@header_id}" separator="," status_field="/parameter/@ImportSuccess" template_code="CSHIMPORT" user_id="${/session/@user_id}"/>
+        <a:model-query defaultWhereClause="header_id=${/model/header/record/@header_id} and TEMPLATE_CODE = &apos;CSHIMPORT&apos;" model="csh.CSH3201.csh_import_get_status" rootPath="status"/>
+        <a:model-query autoCount="false" defaultWhereClause="header_id=${/model/header/record/@header_id} order by line_id" fetchAll="true" model="csh.CSH3201.fee_import_get_fnd_data" rootPath="importData"/>
+        <a:model-query autoCount="false" defaultWhereClause="header_id=${/model/header/record/@header_id} order by line_id" fetchAll="true" model="csh.CSH3201.get_count_fnd_data" rootPath="importDataCount"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="csh_transaction_import_export_link" url="${/request/@context_path}/modules/csh/CSH3201/csh_transaction_import_export.screen"/>
+        <a:link id="csh_transaction_update_data_link" url="${/request/@context_path}/modules/csh/CSH3201/csh_transaction_update_data.svc"/>
+        <script src="${/request/@context_path}/javascripts/util.js" type="text/javascript"/>
+        <script><![CDATA[
+            function loadComplete() {
+                var count = $('fnd_count').getAll()[0].get('count');
+                if (count > 2001) {
+                    Aurora.showWarningMessage("${l:PROMPT.WARN}", "记录数不能超过2000！");
+                    return;
+                }
+                // if ('${/model/status/record/@status}' == 'NEW') {
+                    var importData = $('fnd_data_ds').getAll();
+                    var param = {};
+                    var saveData = [];
+                    var errorData = "";
+                    var importFlag = true;
+                    var errorInfo = "";
+                    for (var i = 1;i < importData.length;i++) {
+                        var transaction_num = importData[i].get('attribute_2');
+                        var pay_status_desc = importData[i].get('attribute_3');
+                        if(pay_status_desc == '已支付'){
+                             importData[i].set('attribute_3','0');
+                        }
+                        if(pay_status_desc == '支付中'){
+                             importData[i].set('attribute_3','1');
+                        }     
+                        if(pay_status_desc == '支付失败'){
+                             importData[i].set('attribute_3','3');
+                        }     
+                        if(pay_status_desc == '退票'){
+                             importData[i].set('attribute_3','4');
+                        }                                        			                                   
+                        
+            			if (!transaction_num || !trim(transaction_num))  {
+                        
+						importFlag = false;
+                        errorInfo = "付款交易编号不能为空";
+                        errorData += importData[i].get('line_id') + ",";
+                        }
+                        
+                        if (!pay_status_desc || !trim(pay_status_desc))  {
+                        
+						importFlag = false;
+                        errorInfo = "付款状态不能为空";
+                        errorData += importData[i].get('line_id') + ",";
+                        }
+                        pay_status_desc = importData[i].get('attribute_3');
+                        if (pay_status_desc !=0 && pay_status_desc !=1 && pay_status_desc !=3 && pay_status_desc != 4)  {
+                        
+						importFlag = false;
+                        errorInfo = "付款状态与系统不相符，无法更新";
+                        errorData += importData[i].get('line_id') + ",";
+                        }                                                                                                                                    
+                        
+                        var lineData = {};                       
+                        lineData['transaction_num'] = trim(transaction_num);
+                        lineData['pay_status_desc'] = trim(pay_status_desc);                                    			
+                        saveData.push(lineData);
+                    }
+            
+                    if (importFlag) {
+                        param['details'] = saveData;                       
+                        Aurora.request({
+                            url: $('csh_transaction_update_data_link').getUrl(),
+                            para: param,
+                            success: function(args) {
+                                Ext.get('failure_form').setStyle('display', 'none');
+                                Ext.get('success_form').setStyle('visibility', 'visible');
+                            },
+                            failure: function(args) {
+                                Aurora.showWarningMessage("${l:PROMPT.WARN}", "操作失败！");
+                                return;
+                            },
+                            error: function(args) {
+                                // Aurora.showWarningMessage("${l:PROMPT.WARN}", "操作错误！");
+                                return;
+                            },
+                            scope: this
+                        });
+                       
+                    } else {
+                        Aurora.showMessage('导入失败', errorInfo);
+                        errorData = errorData.substr(0, errorData.length - 1);
+                        Ext.get('success_form').setStyle('display', 'none');
+                        Ext.get('failure_form').setStyle('visibility', 'visible');
+                        $('error_ds').setQueryParameter('errorData', errorData);
+                        $('error_ds').query();
+                    }
+                // } else {
+                    // Ext.get('success_form').setStyle('display', 'none');
+                    // Ext.get('failure_form').setStyle('visibility', 'visible');
+                // }
+            }
+            
+            function isDateFormat(sDate) {
+                var mp = /\d{4}-\d{2}-\d{2}/;
+            
+                var matchArray = sDate.match(mp);
+                if (matchArray == null) {
+                    return false;
+                }
+                var iaMonthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+                var iaDate = new Array(3);
+                var year, month, day;
+            
+                iaDate = sDate.split("-");
+                year = parseFloat(iaDate[0]);
+                month = parseFloat(iaDate[1]);
+                day = parseFloat(iaDate[2]);
+                if (year < 1900 || year > 2100) {
+                    return false;
+                }
+                if (((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0)) {
+                    iaMonthDays[1] = 29;
+                }
+                if (month < 1 || month > 12) {
+                    return false;
+                }
+                if (day < 1 || day > iaMonthDays[month - 1]) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function back() {
+                window.location.href = $('csh_transaction_import_export_link').getUrl();
+            }
+            
+            function getCurrentDate() {
+                var DateIn = new Date();
+                var Year = 0;
+                var Month = 0;
+                var Day = 0;
+                var CurrentDate = "";
+                // 初始化时间
+                Year = DateIn.getFullYear();
+                Month = DateIn.getMonth() + 1;
+                Day = DateIn.getDate();
+                CurrentDate = Year + "-";
+                if (Month >= 10) {
+                    CurrentDate = CurrentDate + Month + "-";
+                } else {
+                    CurrentDate = CurrentDate + "0" + Month + "-";
+                }
+                if (Day >= 10) {
+                    CurrentDate = CurrentDate + Day;
+                } else {
+                    CurrentDate = CurrentDate + "0" + Day;
+                }
+                return CurrentDate;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="fnd_data_ds">
+                <a:datas dataSource="/model/importData"/>
+            </a:dataSet>
+            <a:dataSet id="fnd_count">
+                <a:datas dataSource="/model/importDataCount"/>
+            </a:dataSet>
+            <a:dataSet id="error_ds" model="csh.CSH3201.csh_transaction_import_get_error_data">
+                <a:fields>
+                    <a:field name="num" prompt="编号"/>
+                    <a:field name="transaction_num" prompt="付款交易编号"/>
+                    <a:field name="pay_status_desc" prompt="付款状态"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form id="success_form" style="visibility:hidden" title="IMPORT_SUCCESS" width="400"><![CDATA[
+            ]]></a:form>
+            <a:hBox>
+                <a:button click="back" text="HAP_BACK"/>
+            </a:hBox>
+            <a:form id="failure_form" height="400" style="visibility:hidden" title="ERROR_MESSAGE" width="920">
+                <a:grid bindTarget="error_ds" height="420" navBar="true" width="920">
+                    <a:columns>
+                        <a:column name="num" align="center" width="150"/>
+                        <a:column name="transaction_num" align="center" width="150"/>
+                        <a:column name="pay_status_desc" align="center" width="150"/>
+                    </a:columns>
+                </a:grid>
+            </a:form>
+        </a:screenBody>
+        <script><![CDATA[
+	  		loadComplete();
+	  	]]></script>
+    </a:view>
+</a:screen>

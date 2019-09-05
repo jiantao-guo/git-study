@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Zealot  
+    $Date: 2014-10-28 下午2:55:21  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    NVL(
+                    (SELECT
+                        fcv.company_code
+                        || '-'
+                        || fcv.company_short_name
+                    FROM
+                        fnd_companies_vl fcv
+                    WHERE
+                        fcv.company_id = vv.company_id
+                    ), '合计') AS company_name,
+                    vv.company_id,
+                    NVL(
+                    (SELECT
+                        frcv.responsibility_center_code
+                        || '-'
+                        || frcv.responsibility_center_name
+                    FROM
+                        fnd_responsibility_centers_vl frcv
+                    WHERE
+                        frcv.responsibility_center_id = vv.responsibility_center_id
+                    ), '汇总') AS resp_name,
+                    NVL(
+                    (SELECT
+                        frcv.responsibility_center_code
+                    FROM
+                        fnd_responsibility_centers_vl frcv
+                    WHERE
+                        frcv.responsibility_center_id = vv.responsibility_center_id
+                    ), '_SUMMARY') AS resp_code,
+                    NVL(
+                    (SELECT
+                        bbiv.budget_item_code
+                        || '-'
+                        || bbiv.description
+                    FROM
+                        bgt_budget_items_vl bbiv
+                    WHERE
+                        bbiv.budget_item_id = vv.budget_item_id
+                    ), '小计') AS budget_item_name,
+                    vv.budget_item_id,
+                    TO_CHAR(bgt_sum_year, 'FM99999999999999990.00') AS bgt_sum_year,
+                    TO_CHAR(bgt_sum_to_now, 'FM99999999999999990.00') AS bgt_sum_to_now,
+                    TO_CHAR(usd_sum_year, 'FM99999999999999990.00') AS usd_sum_year,
+                    TO_CHAR(usd_sum_to_now, 'FM99999999999999990.00') AS usd_sum_to_now,
+                    TO_CHAR(rsv_sum_year, 'FM99999999999999990.00') AS rsv_sum_year,
+                    TO_CHAR(rsv_sum_to_now, 'FM99999999999999990.00') AS rsv_sum_to_now,
+                    TO_CHAR((bgt_sum_year - usd_sum_year - rsv_sum_year), 'FM99999999999999990.00') AS year_left,
+                    TO_CHAR((bgt_sum_to_now - usd_sum_to_now - rsv_sum_to_now), 'FM99999999999999990.00') AS to_now_left,
+                    DECODE(bgt_sum_year, 0, '0', TO_CHAR(ROUND((usd_sum_year + rsv_sum_year) / bgt_sum_year, 4) * 100, 'FM99999999999999990.00')
+                    || '%') AS year_rate,
+                    DECODE(bgt_sum_to_now, 0, '0', TO_CHAR(ROUND((usd_sum_to_now + rsv_sum_to_now) / bgt_sum_to_now, 4) * 100, 'FM99999999999999990.00')
+                    || '%') AS to_now_rate
+                FROM
+                    (SELECT
+                        MAX(result_id) AS order_seq,
+                        r.company_id,
+                        r.responsibility_center_id,
+                        r.budget_item_id,
+                        r.period_year,
+                        SUM(r.bgt_period_functional_amount) AS bgt_sum_year,
+                        SUM(r.rsv_period_functional_amount) AS rsv_sum_year,
+                        SUM(r.usd_period_functional_amount) AS usd_sum_year,
+                        SUM(
+                            CASE
+                                WHEN (r.period_name <= ${@period_to} and r.period_name >= ${@period_from})
+                                THEN r.bgt_period_functional_amount
+                                ELSE 0
+                            END) AS bgt_sum_to_now,
+                        SUM(
+                            CASE
+                                WHEN (r.period_name <= ${@period_to} and r.period_name >= ${@period_from})
+                                THEN r.rsv_period_functional_amount
+                                ELSE 0
+                            END) AS rsv_sum_to_now,
+                        SUM(
+                            CASE
+                                WHEN (r.period_name <= ${@period_to} and r.period_name >= ${@period_from})
+                                THEN r.usd_period_functional_amount
+                                ELSE 0
+                            END) AS usd_sum_to_now
+                    FROM
+                        bgt_execution_rate_result r
+                    WHERE
+                        r.batch_id    = ${/session/@session_id} AND
+                        r.period_year = ${@period_year}
+                    GROUP BY
+                        r.company_id,
+                        r.responsibility_center_id,
+                        r.budget_item_id,
+                        r.parent_budget_item_id,
+                        r.period_year
+                    ) vv
+                ORDER BY
+                    order_seq
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

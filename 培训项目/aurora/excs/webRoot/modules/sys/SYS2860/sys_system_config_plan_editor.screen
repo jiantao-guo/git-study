@@ -1,0 +1,532 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="sys.SYS2860.sys_config_plan_graphics_main_query" rootPath="_graphics_main"/>
+        <a:model-query autoCount="false" fetchAll="true" model="sys.SYS2860.sys_config_graphics_node_query" rootPath="_graphics_nodes"/>
+    </a:init-procedure>
+    <a:view>
+        <style><![CDATA[
+    		.graphic_tool{
+    			border:1px solid #CCC;
+    			background-color:#EEE;
+    			cursor:pointer;
+    			overflow:visible;
+    		}
+    		.win-content{
+    			background-color:#CCC;
+    		}
+    	]]></style>
+        <script><![CDATA[
+        	var ___title_field = "name";
+        
+        	function _graphics_onSaveSuccess(){
+        		var id = '${/parameter/@plan_id}';
+        		if(!Ext.isEmpty(id)){
+	        		var panel = Ext.get('_graphics_preview_main');
+        			if(panel){
+        				var r = $('_graphics_main_ds').getCurrentRecord(),w = r.get('width')+'px',h = r.get('height')+'px';
+        				panel.setStyle({'width':w,'height':h});
+        			}
+        			//$('_graphics_preview_nodes_ds').setQueryParameter('plan_id',Number(id));
+        		}
+        		//$('_graphics_preview_nodes_ds').query();
+        	}
+
+        	function _graphics_getConfig(record){
+        		return Ext.util.JSON.decode('{'+((record.get?record.get('config'):record)||'').replace(/^{|}$/g,'').toLowerCase()+'}');
+        	}
+        
+        	function _graphics_onMove(el,ds,record){
+        		_graphics_onIndexChange(ds,record);
+        	}
+        	
+            function _graphics_onDrop(el,ds,x,y){
+            	var main = Ext.get('_graphics_main');
+            	var config = _graphics_getConfig(ds.data[0]);
+            	var w = config.width;
+            	var h = config.height;
+            	var sw = main.getWidth();
+            	var sh = main.getHeight();
+            	if(x < 0) x = 0;
+            	if(x + w > sw - 2) x = sw - 2 - w;
+            	if(y < 0) y = 0;
+            	if(y + h > sh - 2) y = sh - 2 - h;
+            	var records = ds.getAll();
+            	for(var i=0;i<records.length;i++){
+            		var data = {},r = records[i];
+            		var config = _graphics_getConfig(r);
+            		config.x = x;
+            		config.y = y;
+            		config.moveable = true;
+        			data.config = Ext.util.JSON.encode(config);
+        			data.type = r.get('type');
+        			var record = $('_graphics_nodes_ds').create(data);
+            	}
+            }
+            function _graphics_onChange(el,value){
+            	var record = $('_graphics_nodes_ds').getCurrentRecord();
+            	var attr = el.id.split('_')[1];
+            	if(attr == 'type'){
+            		record.set('type',value);
+            	}else{
+	            	var config = _graphics_getConfig(record);
+	            	if(attr == 'moveable'){
+	            		value = value == 'Y'?false:true;
+	            	}else if(attr == 'shadow'){
+	            		value = value == 'Y'?true:false;
+	            	}else if(attr == 'startarrow'||attr == 'endarrow'){
+	            		value = value == 'Y'?"classic":"";
+	            	}
+	            	config[attr] = value;
+	            	record.set('config',Ext.util.JSON.encode(config).replace(/^{|}$/g,''));
+            	}
+            	//$('_graphics_main').resizeSVG();
+            }
+            function _graphics_onUpdate(ds,record,name,value){
+            	if(name == 'type'){
+					if(!value){
+						record.set('type','rect');
+            		}else if(value == 'oval'|| value == 'diamond'){
+            			_graphics_hide(['attr_rx','attr_ry']);
+            		}else{
+            			var record = ds.getCurrentRecord();
+            			var config = _graphics_getConfig(record);
+            			if(!config.height || !config.width){
+            				config.height = config.ry*2;
+            				config.width = config.rx*2;
+            				config.rx = 0;
+            				config.ry = 0;
+            				record.set('config',Ext.util.JSON.encode(config).replace(/^{|}$/g,''))
+            			}
+        				$('attr_rx').setValue(config.rx||0,true);
+            			$('attr_ry').setValue(config.ry||0,true);
+            			_graphics_show(['attr_rx','attr_ry']);
+            		}
+            	}else if(name == 'config'){
+            		var config = _graphics_getConfig(value);
+            		$('attr_points').setValue(config.points,true);
+            	}
+            }
+            function _graphics_show(id,hide){
+            	if(Ext.isArray(id)){
+            		while(id.length){
+            			_graphics_show(id.pop(),hide);
+            		}
+            	}else{
+            		Ext.get(id).parent('tr').setStyle('display',hide?'none':'');
+            	}
+            }
+            function _graphics_hide(id){
+            	_graphics_show(id,true);
+            }
+            function _graphics_onIndexChange(ds,record){
+            	Ext.get('attr_list').setStyle('display','');
+            	var config = _graphics_getConfig(record);
+            	var type = record.get('type');
+            	if(type == 'line'){
+            		_graphics_show(['attr_points','attr_startarrow','attr_endarrow']);
+            		_graphics_hide(['attr_type','attr_width','attr_height','attr_rx','attr_ry','attr_x','attr_y','attr_fillcolor','attr_fillopacity','attr_moveable','attr_shadow']);
+            		$('attr_points').setValue(config.points,true);
+            		$('attr_startarrow').setValue(!!config.startarrow,true);
+            		$('attr_endarrow').setValue(!!config.endarrow,true);
+            	}else{
+            		_graphics_show(['attr_type','attr_width','attr_height','attr_x','attr_y','attr_fillcolor','attr_fillopacity','attr_moveable','attr_shadow']);
+	            	_graphics_hide(['attr_points','attr_startarrow','attr_endarrow','attr_rx','attr_ry']);
+	            	$('attr_type').setValue(type,true);
+	            	if(type == 'oval'){
+	            		$('attr_width').setValue(config.rx*2,true);
+	            		$('attr_height').setValue(config.ry*2,true);
+	            	}else if(type == 'rect'){
+            			_graphics_show(['attr_rx','attr_ry']);
+	            		$('attr_rx').setValue(config.rx,true);
+	            		$('attr_ry').setValue(config.ry,true);
+	            	}
+            		$('attr_width').setValue(config.width,true);
+            		$('attr_height').setValue(config.height,true);
+	        		$('attr_x').setValue(config.x,true);
+	        		$('attr_y').setValue(config.y,true);
+	        		$('attr_fillcolor').setValue(config.fillcolor,true);
+	        		$('attr_fillopacity').setValue(config.fillopacity,true);
+	        		$('attr_moveable').setValue(!config.moveable,true);
+	        		$('attr_shadow').setValue(config.shadow,true);
+        		}
+        		$('attr_strokecolor').setValue(config.strokecolor,true);
+        		$('attr_strokewidth').setValue(config.strokewidth,true);
+        		$('attr_strokeopacity').setValue(config.strokeopacity,true);
+        		$('attr_title').setValue(config.title,true);
+        		$('attr_titlex').setValue(config.titlex,true);
+        		$('attr_titley').setValue(config.titley,true);
+        		$('attr_titlecolor').setValue(config.titlecolor,true);
+        		$('attr_titlesize').setValue(config.titlesize,true);
+        		$('attr_info').setValue(config.info,true);
+            }
+            function _graphics_remove(){
+            	var ds = $('_graphics_nodes_ds'),r = ds.getCurrentRecord();
+            	if(Ext.isEmpty(r.get('table_id'))||r.get('type') == 'line'){
+	            	ds.remove();
+	            	if(ds.getAll().length==0){
+	            		Ext.get('attr_list').setStyle('display','none');
+            		}
+            	}
+            }
+            function _graphics_save(){
+            	var main = $('_graphics_main_ds');
+            	if(main.validate()){
+            	    
+            	    var records = $('_graphics_nodes_ds').getAll();
+            	    for(var i = 0 ; i < records.length ; i ++){
+            	        if(records[i].get('detail_id') && records[i].get('detail_id') != ''){
+            	            
+            	        }else{
+            	            records[i].isNew = true;
+            	        }
+            	    }
+            		main.submit();
+            	}
+            }
+            function _graphics_pre(){
+            	$('_graphics_nodes_ds').pre();
+            }
+            function _graphics_next(){
+            	$('_graphics_nodes_ds').next();
+            }
+            function _graphics_onMainUpdate(ds,record,name,value){
+            	var panel = Ext.get('_graphics_main');
+            	if(panel){
+	            	if(name == 'height' || name == 'width'){
+		            	panel.setStyle(name,value+'px');
+	            	}else{
+	            		record = ds.getCurrentRecord();
+	            		var width = record.get('width') + 'px',
+	            			height = record.get('height') + 'px';
+	            		panel.setStyle({'width':width,'height':height});
+	            	}
+            	}
+            }
+            function _line_onMouseDown(e,el,ds){
+            	var line = Ext.get('_graphics_line'),panel = $('_graphics_main');
+            	if(!panel.candrawline){
+            		_line_onMouseOver();
+	            	line.on('mouseout',_line_onMouseOut,window);
+	            	line.on('mouseover',_line_onMouseOver,window);
+	            	Ext.get(document).on('mouseup',_line_onMouseUp,window);
+            	}else{
+            		_line_onMouseOut();
+            	}
+            }
+            function _line_onMouseUp(e,el,ds){
+            	var line = Ext.get('_graphics_line');
+            	line.un('mouseout',_line_onMouseOut,window);
+            	line.un('mouseover',_line_onMouseOver,window);
+            	Ext.get(document).un('mouseup',_line_onMouseUp,window);
+            }
+           	function _line_onMouseOut(){
+           		var line = Ext.get('_graphics_line'),panel = $('_graphics_main');
+           		panel.candrawline = false;
+            	line.setStyle('background-color','');
+           	}
+           	function _line_onMouseOver(){
+           		var line = Ext.get('_graphics_line'),panel = $('_graphics_main');
+           		panel.candrawline = true;
+            	line.setStyle('background-color','white');
+           	}
+           	function _graphics_onDrawn(){
+           		_line_onMouseOut();
+           	}
+           	
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="_graphics_rect_ds">
+                <a:datas>
+                    <a:record config="width:90,height:50,rx:5,ry:5,fillOpacity:1,fillColor:&apos;#f5f5f5&apos;,strokeColor:&apos;#808080&apos;,strokeWidth:1,strokeOpacity:1,x:5,y:5,shadow:true,titleColor:&apos;black&apos;,titleX:30,titleY:15,titleSize:14" type="rect"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="_graphics_oval_ds">
+                <a:datas>
+                    <a:record config="fillOpacity:1,fillColor:&apos;#f5f5f5&apos;,strokeColor:&apos;#808080&apos;,strokeWidth:1,strokeOpacity:1,x:5,y:5,width:90,height:50,titleColor:&apos;black&apos;,titleX:30,titleY:15,titleSize:14" type="oval"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="_graphics_diamond_ds">
+                <a:datas>
+                    <a:record config="width:90,height:50,fillOpacity:1,fillColor:&apos;#f5f5f5&apos;,strokeColor:&apos;#808080&apos;,strokeWidth:1,strokeOpacity:1,x:5,y:5,titleColor:&apos;black&apos;,titleX:30,titleY:15,titleSize:14" type="diamond"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="_graphics_line_ds">
+                <a:datas>
+                    <a:record config="strokeColor:&apos;#aaaaaa&apos;,strokeWidth:2,strokeOpacity:1,points:&apos;5,55 45,25 55,35 95 5&apos;,endArrow:&apos;classic&apos;,titleColor:&apos;black&apos;,titleX:30,titleY:15,titleSize:14" type="line"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="_graphics_main_ds" submitUrl="${/request/@context_path}/sys_graphics_update.svc">
+                <a:datas dataSource="/model/_graphics_main"/>
+                <a:fields>
+                    <a:field name="graphic_code" prompt="图形代码" required="true"/>
+                    <a:field name="graphic_name" prompt="图形名称" required="true"/>
+                    <a:field name="height" prompt="高度"/>
+                    <a:field name="width" prompt="宽度"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="_graphics_onMainUpdate"/>
+                    <a:event name="load" handler="_graphics_onMainUpdate"/>
+                    <a:event name="add" handler="_graphics_onMainUpdate"/>
+                    <a:event name="submitsuccess" handler="_graphics_onSaveSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="_graphics_nodes_ds" autoCount="false" model="sys.WFL2010.sys_graphics_detail">
+                <a:datas dataSource="/model/_graphics_nodes"/>
+                <a:fields>
+                    <a:field name="type" defaultValue="rect"/>
+                    <a:field name="config"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="indexchange" handler="_graphics_onIndexChange"/>
+                    <a:event name="update" handler="_graphics_onUpdate"/>
+                    <a:event name="remove" handler="_graphics_onSaveSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="type_ds">
+                <a:datas>
+                    <a:record name="rect" value="rect"/>
+                    <a:record name="oval" value="oval"/>
+                    <a:record name="diamond" value="diamond"/>
+                </a:datas>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:vBox>
+                <a:hBox>
+                    <a:vBox style="border:1px solid #000;background-color:#EEE;">
+                        <a:graphic id="_graphics_line" bindTarget="_graphics_line_ds" className="graphic_tool" height="60" width="100">
+                            <a:events>
+                                <a:event name="mousedown" handler="_line_onMouseDown"/>
+                            </a:events>
+                        </a:graphic>
+                        <a:hBox>
+                            <a:button click="_graphics_pre" text="上一个" width="25"/>
+                            <a:button click="_graphics_next" text="下一个" width="25"/>
+                        </a:hBox>
+                        <a:button click="_graphics_remove" text="删除" width="100"/>
+                        <a:button click="_graphics_save" text="保存" width="100"/>
+                        <!--<a:graphic id="_graphics_rect" bindTarget="_graphics_rect_ds" className="graphic_tool" dropTo="_graphics_main" height="60" width="100"><![CDATA[
+                    ]]></a:graphic>
+                    <a:graphic id="_graphics_oval" bindTarget="_graphics_oval_ds" className="graphic_tool" dropTo="_graphics_main" height="60" width="100"><![CDATA[
+                    ]]></a:graphic>
+                    <a:graphic id="_graphics_diamond" bindTarget="_graphics_diamond_ds" className="graphic_tool" dropTo="_graphics_main" height="60" width="100"><![CDATA[
+                    ]]></a:graphic>-->
+                    </a:vBox>
+                    <a:graphic name="table_id" id="_graphics_main" bindTarget="_graphics_nodes_ds" editable="true" height="400" style="border:1px solid #000;background-color:#fff" width="600">
+                        <a:events>
+                            <a:event name="drop" handler="_graphics_onDrop"/>
+                            <a:event name="move" handler="_graphics_onMove"/>
+                            <a:event name="drawn" handler="_graphics_onDrawn"/>
+                        </a:events>
+                    </a:graphic>
+                    <a:vBox>
+                        <a:form style="border:1px solid #000" title="画板属性" width="160">
+                            <a:textField name="graphic_code" bindTarget="_graphics_main_ds" width="70"><![CDATA[
+                        ]]></a:textField>
+                            <a:textField name="graphic_name" bindTarget="_graphics_main_ds" width="70"><![CDATA[
+                        ]]></a:textField>
+                            <a:numberField name="width" allowDecimals="false" allowNegative="false" bindTarget="_graphics_main_ds" width="70"><![CDATA[
+                        ]]></a:numberField>
+                            <a:numberField name="height" allowDecimals="false" allowNegative="false" bindTarget="_graphics_main_ds" prompt="高度" width="70"><![CDATA[
+                        ]]></a:numberField>
+                        </a:form>
+                        <a:accordionPanel id="attr_list" height="310" style="border:1px solid #000;display:none" width="160">
+                            <a:accordions>
+                                <a:accordion prompt="布局" selected="true" width="40">
+                                    <a:vBox>
+                                        <a:textArea id="attr_points" height="180" prompt="端点坐标集" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:textArea>
+                                        <a:numberField id="attr_width" allowDecimals="false" allowNegative="false" prompt="宽度" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                        <a:numberField id="attr_height" allowDecimals="false" allowNegative="false" prompt="高度" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                        <a:numberField id="attr_x" allowDecimals="false" allowNegative="false" prompt="x轴坐标" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                        <a:numberField id="attr_y" allowDecimals="false" allowNegative="false" prompt="y轴坐标" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                        <a:numberField id="attr_rx" allowDecimals="false" allowNegative="false" prompt="倒角水平宽度" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                        <a:numberField id="attr_ry" allowDecimals="false" allowNegative="false" prompt="倒角垂直宽度" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                    </a:vBox>
+                                </a:accordion>
+                                <a:accordion prompt="渲染" width="40">
+                                    <a:vBox>
+                                        <a:textField id="attr_fillcolor" prompt="填充颜色" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:textField>
+                                        <a:numberField id="attr_fillopacity" allowNegative="false" decimalPrecision="1" prompt="填充透明度" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                        <a:textField id="attr_strokecolor" prompt="边框颜色" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:textField>
+                                        <a:numberField id="attr_strokewidth" allowDecimals="false" allowNegative="false" prompt="边框宽度" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                        <a:numberField id="attr_strokeopacity" allowNegative="false" decimalPrecision="1" prompt="边框透明度" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                    </a:vBox>
+                                </a:accordion>
+                                <a:accordion prompt="标题" width="40">
+                                    <a:vBox>
+                                        <a:textField id="attr_title" prompt="标题" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:textField>
+                                        <a:numberField id="attr_titlesize" allowDecimals="false" prompt="标题字体大小" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                        <a:textField id="attr_titlecolor" prompt="标题字体颜色" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:textField>
+                                        <a:numberField id="attr_titlex" allowDecimals="false" prompt="标题x轴坐标" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                        <a:numberField id="attr_titley" allowDecimals="false" prompt="标题y轴坐标" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:numberField>
+                                    </a:vBox>
+                                </a:accordion>
+                                <a:accordion prompt="其他" width="40">
+                                    <a:vBox>
+                                        <a:comboBox id="attr_type" displayField="name" options="type_ds" prompt="类型" returnField="type" valueField="value" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:comboBox>
+                                        <a:checkBox id="attr_moveable" prompt="固定" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:checkBox>
+                                        <a:checkBox id="attr_shadow" prompt="阴影" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:checkBox>
+                                        <a:checkBox id="attr_startarrow" prompt="开始箭头" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:checkBox>
+                                        <a:checkBox id="attr_endarrow" prompt="结束箭头" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:checkBox>
+                                        <a:textArea id="attr_info" prompt="悬浮信息" width="70">
+                                            <a:events>
+                                                <a:event name="change" handler="_graphics_onChange"/>
+                                            </a:events>
+                                        </a:textArea>
+                                    </a:vBox>
+                                </a:accordion>
+                            </a:accordions>
+                        </a:accordionPanel>
+                    </a:vBox>
+                </a:hBox>
+            </a:vBox>
+        </a:screenBody>
+        <script><![CDATA[
+        	Ext.get('_graphics_main').parent().dom.vAlign="top";
+        	Aurora.onReady(function(){
+	    		var x = 170,y = 10,w = 600,h = 0;
+	        	var ds = $('_graphics_nodes_ds');
+	    		var records = ds.getAll();
+	    		var rect = $('_graphics_rect_ds').getCurrentRecord();
+        		var el = Ext.get(Ext.DomHelper.append(Ext.getBody(),"<div style='visibility:hidden'></div>"));
+        		var isNew = true;
+        		for(var i = 0,l = records.length; i < l;i++){
+	    			var r = records[i],
+	    				title = r.get(___title_field),
+	    				info = r.get('info');
+	    				config = r.get('config');
+	    			if(!config){
+		    			config = _graphics_getConfig(rect);
+		    			var width = config.width;
+		    			config.moveable = true;
+		    			if(title){
+		    				config.title = title;
+		    				el.setStyle('font-size',config.titlesize+'px');
+		    				var v = Aurora.TextMetrics.measure(el,title).width;
+		    				if(v + 10 >= width){
+		    					config.width = width = v + 10;
+		    				}
+		    				config.titlex = Math.round(width - v)/2;
+		    			}
+		    			config.x = x;
+		    			config.y = y;
+		    			x += width+100;
+		    			if(x + width>w){
+		    				x = 10;
+		    				y += config.height + 50;
+		    			}
+		    			config['info'] = info; 
+		    			r.set('config',Ext.util.JSON.encode(config).replace('\\\\n','\\n'));
+	    			}else{
+	    				isNew = false;
+	    			}
+	    		}
+	    		if(isNew){
+	    			ds.create({config:'shadow:true,moveable:true,fillColor:"#66FF66",width:60,height:60,strokeWidth:1,strokeColor:"#808080",x:10,y:10,titleX:15,titleY:25,titleColor:"black",titleSize:14,title:"开始"',type:'oval',table_id:0});
+	    			ds.create({config:'shadow:true,moveable:true,fillColor:"#FF6666",width:60,height:60,strokeWidth:1,strokeColor:"#808080",x:'+x+',y:'+y+',titleX:15,titleY:25,titleColor:"black",titleSize:14,title:"结束"',type:'oval',table_id:-1});
+	    		}
+	    		h = y + 150;
+	    		el.remove();
+	    		
+	    		var main = $('_graphics_main_ds');
+        		if(main.getAll().length == 0){
+        			main.create({'width':w,'height':h});
+        		}
+        		ds.bindtarget = '_graphics_main_ds';
+        		ds.bindname = 'result_ds';
+        		ds.bind(main,'result_ds');
+        		ds.refreshBindDataSet(main.getCurrentRecord(),ds.getConfig());
+        		ds.fireEvent('indexchange',ds,ds.getCurrentRecord());
+        	});
+        ]]></script>
+    </a:view>
+</a:screen>

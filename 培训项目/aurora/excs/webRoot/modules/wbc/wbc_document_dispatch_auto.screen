@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: hyb  
+    $Date: 2011-12-15 下午05:26:20  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="wbc.wbc_auto_dispatch_time_gap_query" rootPath="time_gap"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="wbc_document_dispatch_detail_link" url="${/request/@context_path}/modules/wbc/WBC1110/wbc_document_dispatch_detail.screen"/>
+        <a:link id="wbc_document_dispatch_detail_streamlined_link" url="${/request/@context_path}/modules/wbc/WBC1110/wbc_document_dispatch_detail_streamlined.screen"/>
+        <a:link id="wbc_doc_dispatching_link" model="db.wbc_core_pkg.doc_dispatching" modelaction="execute"/>
+        <a:link id="work_start_link" model="db.cux_wbc_core_pkg.work_start" modelaction="execute"/>
+        <a:link id="work_end_link" model="db.cux_wbc_core_pkg.work_end" modelaction="execute"/>
+        <a:link id="work_pause_link" model="db.cux_wbc_core_pkg.work_pause" modelaction="execute"/>
+        <a:link id="wbc_work_state_query_link" model="wbc.WBC1115.wbc_work_state_query" modelaction="query"/>
+        <script><![CDATA[
+            window.autoViewFlag = false;
+            window.autoDispatchFlag = false;
+            window.onQuery = false;
+            window.timeGap = parseInt('${/model/time_gap/record/@time_gap}' ? '${/model/time_gap/record/@time_gap}' : 30);
+            
+            function WBC1110_reset() {
+                $('document_dispatch_query_ds').reset();
+            }
+            
+            function doDispatch() {
+                Aurora.request({
+                    url: $('wbc_doc_dispatching_link').getUrl(),
+                    para: {
+                        user_id: '${/session/@user_id}'
+                    },
+                    success: function(args) {
+                        $('document_dispatch_ds').query();
+                    },
+                    scope: this
+                });
+            }
+            
+            function operatingPageRenderer(value, record, name) {
+                var p_head_id = record.get('p_head_id');
+                var document_id = record.get('document_id');
+                var dispatch_head_id = record.get('dispatch_header_id');
+                var dispatch_line_id = record.get('dispatch_line_id');
+                var business_node_service_url = record.get('business_node_service_url');
+                var business_node_id = record.get('business_node_id');
+                //add by Qu yuanyuan 根据分辨率不同，打开明细页面方式不同
+                var vw = $A.getViewportWidth();
+                var url='';
+                if (vw>1800){
+                    url = $('wbc_document_dispatch_detail_link').getUrl() + '?' + 'p_head_id' + '=' + document_id + '&business_node_service_url=' + business_node_service_url + '&dispatch_head_id=' + dispatch_head_id + '&dispatch_line_id=' + dispatch_line_id + '&business_node_id=' + business_node_id;
+                }else{
+                    url = $('wbc_document_dispatch_detail_streamlined_link').getUrl() + '?' + 'p_head_id' + '=' + document_id + '&business_node_service_url=' + business_node_service_url + '&dispatch_head_id=' + dispatch_head_id + '&dispatch_line_id=' + dispatch_line_id + '&business_node_id=' + business_node_id;
+                }
+                return '<a href="javascript:openOperatingPage(\'' + url + '\')">' + value + '</a>';
+            }
+            
+            function openOperatingPage(url) {
+                new Aurora.Window({
+                    title: '我的工作台',
+                    id: 'wbc_document_dispatch_detail',
+                    url: url,
+                    fullScreen: true
+                });
+            }
+            
+            function operatingStartWork() {
+                Aurora.request({
+                    url: $('work_start_link').getUrl(),
+                    success: function() {
+                        window.autoDispatchFlag = true;
+                        if (window.autoViewFlag) {
+                            Aurora.Masker.mask(Ext.get('operating_box').dom, '正在自动取单派工中');
+                        }
+                        $('operatingStartWorkBtn').disable();
+                        $('operatingStopWorkBtn').enable();
+                    }
+                });
+            }
+            
+            function operatingStopWork() {
+                Aurora.request({
+                    url: $('work_end_link').getUrl(),
+                    success: function() {
+                        window.autoDispatchFlag = false;
+                        Aurora.Masker.unmask(Ext.get('operating_box').dom);
+                        $('operatingStartWorkBtn').enable();
+                        $('operatingStopWorkBtn').disable();
+                        $('operatingStartAutoViewBtn').enable();
+                        $('operatingStopAutoViewBtn').disable();
+                    }
+                });
+            }
+            
+            function operatingStartAutoView() {
+                window.autoViewFlag = true;
+                Aurora.Masker.mask(Ext.get('operating_box').dom, '正在自动取单派工中');
+                $('operatingStartAutoViewBtn').disable();
+                $('operatingStopAutoViewBtn').enable();
+            }
+            
+            function operatingStopAutoView() {
+                window.autoViewFlag = false;
+                Aurora.Masker.unmask(Ext.get('operating_box').dom);
+                $('operatingStartAutoViewBtn').enable();
+                $('operatingStopAutoViewBtn').disable();
+            }
+            
+            window.autoView = {
+                run: function() {
+                    if (!$A.CmpManager.get('wbc_document_dispatch_detail') && window.autoViewFlag && !window.onQuery) {
+                        var operatingRecords = $('document_dispatch_operating_ds').getAll();
+                        if (operatingRecords.length != 0) {
+                            var record = operatingRecords[0];
+                            var p_head_id = record.get('p_head_id');
+                            var document_id = record.get('document_id');
+                            var dispatch_head_id = record.get('dispatch_header_id');
+                            var dispatch_line_id = record.get('dispatch_line_id');
+                            var business_node_service_url = record.get('business_node_service_url');
+                            var business_node_id = record.get('business_node_id');
+                             //add by Qu yuanyuan 根据分辨率不同，打开明细页面方式不同
+			                var vw = $A.getViewportWidth();
+			                var url='';
+			                if (vw>1800){
+                                url = $('wbc_document_dispatch_detail_link').getUrl() + '?' + 'p_head_id' + '=' + document_id + '&business_node_service_url=' + business_node_service_url + '&dispatch_head_id=' + dispatch_head_id + '&dispatch_line_id=' + dispatch_line_id + '&business_node_id=' + business_node_id;
+			                }else{
+			                    url = $('wbc_document_dispatch_detail_streamlined_link').getUrl() + '?' + 'p_head_id' + '=' + document_id + '&business_node_service_url=' + business_node_service_url + '&dispatch_head_id=' + dispatch_head_id + '&dispatch_line_id=' + dispatch_line_id + '&business_node_id=' + business_node_id;
+			                }
+			                new Aurora.Window({
+                                title: '我的工作台',
+                                id: 'wbc_document_dispatch_detail',
+                                url: url,
+                                fullScreen: true
+                            });
+                        }
+                    }
+                },
+                interval: 1000
+            };
+            
+            window.autoDispatch = {
+                run: function() {
+                    var operatingRecords = $('document_dispatch_operating_ds').getAll();
+                    if (window.autoDispatchFlag && operatingRecords.length == 0) {
+                        Aurora.request({
+                            url: $('wbc_doc_dispatching_link').getUrl(),
+                            success: function() {
+                                $('document_dispatch_operating_ds').query();
+                                window.onQuery = true;
+                            }
+                        });
+                    }
+                },
+                interval: window.timeGap * 1000
+            };
+            
+            
+            function initStateFun() {
+                Aurora.request({
+                    url: $('wbc_work_state_query_link').getUrl(),
+                    success: function(resp) {
+                        if (resp.result.record && resp.result.record.work_state == 'WORK') {
+                            Aurora.Masker.mask(Ext.get('operating_box').dom, '正在自动取单派工中');
+                            window.autoDispatchFlag = true;
+                            window.autoViewFlag = true;
+                            $('operatingStartWorkBtn').disable();
+                            $('operatingStopWorkBtn').enable();
+                            $('operatingStartAutoViewBtn').disable();
+                            $('operatingStopAutoViewBtn').enable();
+                        } else {
+                            window.autoDispatchFlag = false;
+                            window.autoViewFlag = false;
+                            $('operatingStartWorkBtn').enable();
+                            $('operatingStopWorkBtn').disable();
+                            $('operatingStartAutoViewBtn').enable();
+                            $('operatingStopAutoViewBtn').disable();
+                        }
+                    }
+                });
+            }
+            
+            function queryOperatingList() {
+                $('document_dispatch_operating_ds').query();
+                $('document_dispatch_holding_ds').query();
+                $('document_dispatch_banc_scan_ds').query();
+                window.onQuery = true;
+            }
+            
+            function removeHoldDispatch(dispatchLineId) {
+                var records = $('document_dispatch_operating_ds').getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    if (record.get('dispatch_line_id') == dispatchLineId) {
+                        $('document_dispatch_operating_ds').removeLocal(record);
+                    }
+                }
+            }
+            
+            function onOperatingLoadFun() {
+                window.onQuery = false;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="doc_category_ds" fetchAll="true" loadData="true" lookupCode="EXP_DOCUMENT_CATEGORY"/>
+            <a:dataSet id="document_dispatch_operating_ds" autoPageSize="true" autoQuery="true" model="wbc.WBC1110.wbc_document_dispatch" queryUrl="${/request/@context_path}/autocrud/wbc.WBC1110.wbc_document_dispatch/query?hold_flag=N">
+                <a:fields>
+                    <a:field name="document_num" prompt="WBC_DISPATCH_PROCESS_AUDIT_REQUIRE_RETURN.DOCUMENT_NUM"/>
+                    <a:field name="doc_company_id"/>
+                    <a:field name="company_desc" prompt="FND_OPERATION_UNITS.COMPANY_ID"/>
+                    <a:field name="doc_category"/>
+                    <a:field name="doc_category_desc" prompt="EXP_BUS_RULE_DETAIL.DOC_CATEGORY_CODE"/>
+                    <a:field name="doc_type"/>
+                    <a:field name="doc_type_desc" prompt="WBC_BUSINESS_TYPE_ASSIGN.DOCUMENT_TYPE_DISPLAY"/>
+                    <a:field name="submited_by"/>
+                    <a:field name="submited_by_desc" prompt="CON_CONTRACT_HEADERS.SUBMITED_BY"/>
+                    <a:field name="submited_position_id"/>
+                    <a:field name="submited_position_desc" prompt="WBC_DOCUMENT_DISPATCH.SUBMITED_POSITION_DESC"/>
+                    <a:field name="start_time" prompt="WBC_DOCUMENT_DISPATCH.START_TIME"/>
+                    <a:field name="business_node_id"/>
+                    <a:field name="business_node_desc" prompt="WBC_DOCUMENT_DISPATCH.BUSINESS_NODE_DESC"/>
+                    <a:field name="last_bus_node_desc" prompt="WBC_DOCUMENT_DISPATCH.LAST_BUSINESS_NODE_DESC"/>
+                    <a:field name="last_handler_desc" prompt="WBC_DOCUMENT_DISPATCH.LAST_HANDLER"/>
+                    <a:field name="last_work_team_desc" prompt="WBC_DOCUMENT_DISPATCH.LAST_WORK_TEAM"/>
+                    <a:field name="document_id"/>
+                    <a:field name="p_head_id"/>
+                    <a:field name="business_node_service_url"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="onOperatingLoadFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="document_dispatch_holding_ds" autoPageSize="true" autoQuery="true" model="wbc.WBC1110.wbc_document_dispatch" queryUrl="${/request/@context_path}/autocrud/wbc.WBC1110.wbc_document_dispatch/query?hold_flag=Y">
+                <a:fields>
+                    <a:field name="document_num" prompt="WBC_DISPATCH_PROCESS_AUDIT_REQUIRE_RETURN.DOCUMENT_NUM"/>
+                    <a:field name="doc_type_desc" prompt="WBC_BUSINESS_TYPE_ASSIGN.DOCUMENT_TYPE_DISPLAY"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="document_dispatch_banc_scan_ds" autoPageSize="true" autoQuery="true" model="wbc.WBC1110.wbc_document_dispatch" queryUrl="${/request/@context_path}/autocrud/wbc.WBC1110.wbc_document_dispatch/query?hold_flag=R">
+                <a:fields>
+                    <a:field name="document_num" prompt="WBC_DISPATCH_PROCESS_AUDIT_REQUIRE_RETURN.DOCUMENT_NUM"/>
+                    <a:field name="doc_type_desc" prompt="WBC_BUSINESS_TYPE_ASSIGN.DOCUMENT_TYPE_DISPLAY"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton id="operatingStartWorkBtn" click="operatingStartWork" disabled="true" text="开始工作" width="80"/>
+                <a:toolbarButton id="operatingStopWorkBtn" click="operatingStopWork" disabled="true" text="结束工作" width="80"/>
+                <a:toolbarButton id="operatingStartAutoViewBtn" click="operatingStartAutoView" disabled="true" text="自动阅单" width="80"/>
+                <a:toolbarButton id="operatingStopAutoViewBtn" click="operatingStopAutoView" disabled="true" text="停止自动阅单" width="80"/>
+            </a:screenTopToolbar>
+            <a:hBox id="operating_box">
+                <a:form title="工作区">
+                    <a:grid id="WBC1115_operating_grid" bindTarget="document_dispatch_operating_ds" marginHeight="111" marginWidth="650" navBar="true">
+                        <a:columns>
+                            <a:column name="document_num" align="left" lock="true" renderer="operatingPageRenderer" sortable="true" width="130"/>
+                            <a:column name="company_desc" align="left"/>
+                            <a:column name="doc_category_desc" align="left"/>
+                            <a:column name="doc_type_desc" align="left"/>
+                            <a:column name="submited_by_desc" align="left"/>
+                            <a:column name="submited_position_desc" align="left" width="120"/>
+                            <a:column name="start_time" align="center" renderer="Aurora.formatDate"/>
+                            <a:column name="business_node_desc" align="left"/>
+                            <a:column name="last_bus_node_desc" align="left"/>
+                            <a:column name="last_handler_desc" align="left"/>
+                            <a:column name="last_work_team_desc" align="left" width="120"/>
+                        </a:columns>
+                    </a:grid>
+                </a:form>
+                <a:form title="暂挂区" width="280">
+                    <a:grid id="WBC1115_holding_grid" bindTarget="document_dispatch_holding_ds" marginHeight="111" navBar="true" width="254">
+                        <a:columns>
+                            <a:column name="document_num" align="left" renderer="operatingPageRenderer" sortable="true" width="130"/>
+                            <a:column name="doc_type_desc" align="left" width="120"/>
+                        </a:columns>
+                    </a:grid>
+                </a:form>
+                <a:form title="影像退回补扫区" width="280">
+                    <a:grid id="WBC1115_back_scan_image_grid" bindTarget="document_dispatch_banc_scan_ds" marginHeight="111" navBar="true" width="254">
+                        <a:columns>
+                            <a:column name="document_num" align="left" renderer="operatingPageRenderer" sortable="true" width="130"/>
+                            <a:column name="doc_type_desc" align="left" width="120"/>
+                        </a:columns>
+                    </a:grid>
+                </a:form>
+            </a:hBox>
+        </a:screenBody>
+        <script><![CDATA[
+        	
+        		initStateFun();
+        		
+        		Ext.TaskMgr.start(window.autoView);
+           		Ext.TaskMgr.start(window.autoDispatch);
+        	
+        ]]></script>
+    </a:view>
+</a:screen>

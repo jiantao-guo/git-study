@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lixi  
+    $Date: 2011-7-29 下午05:25:12  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="csh.csh_get_sys_import_head_id" rootPath="header"/>
+        <a:import-excel header_id="${/model/header/record/@header_id}" separator="," status_field="/parameter/@ImportSuccess" template_code="CSHIMPORT" user_id="${/session/@user_id}"/>
+        <a:model-query defaultWhereClause="header_id=${/model/header/record/@header_id} and TEMPLATE_CODE = &apos;CSHIMPORT&apos;" model="csh.CSH6010.csh_cash_plan_item_import_get_status" rootPath="status"/>
+        <a:model-query autoCount="false" defaultWhereClause="header_id=${/model/header/record/@header_id} order by line_id" fetchAll="true" model="csh.CSH6010.csh_cash_plan_item_import_get_fnd_data" rootPath="importData"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="csh_cash_plan_item_import_link" url="${/request/@context_path}/modules/csh/CSH6010/csh_cash_plan_item_import.screen"/>
+        <a:link id="csh_cash_plan_item_import_save_data_link" url="${/request/@context_path}/modules/csh/CSH6010/csh_cash_plan_item_import_save_data.svc"/>
+        <script><![CDATA[
+    		function loadComplete(){
+				
+    			if ('${/model/status/record/@status}' == 'NEW'){
+    				var importData		= $('fnd_data_ds').getAll();
+	    			var param			= {};
+	    			var saveData		= [];
+	    			var errorData		= "";
+	    			var importFlag		= true;
+	    			param['batch_id']	= '${/parameter/@batch_id}';
+	    			for(var i=1; i<importData.length; i++){
+	    				var lineErrorFlag	= true;
+	    				if (importData[i].get('attribute_1') && importData[i].get('attribute_2') && importData[i].get('attribute_4') )
+	    				{
+	    				} else{
+	    					errorData  += importData[i].get('line_id') + ",";
+	    					importFlag 	= false;
+	    				}
+	    			}
+	    			if (importFlag) {
+	    				for(var i=1; i<importData.length; i++){
+		    				var lineData	= {};
+		    				lineData['batch_id']					= '${/parameter/@batch_id}';
+		    				lineData['batch_line_id']				= importData[i].get('attribute_1');
+		    				lineData['cash_plan_item_code']		= importData[i].get('attribute_2');
+		    				lineData['cash_plan_item_desc']	= importData[i].get('attribute_3');
+		    				lineData['cash_plan_item_type_code']		= importData[i].get('attribute_4');
+		    				lineData['notes']					= importData[i].get('attribute_5');
+		    				lineData['enabled_flag']				= importData[i].get('attribute_6');
+		    				saveData.push(lineData);
+		    			}
+	    				param['details']	 = saveData;
+		    			Aurora.request({
+		    				url		: $('csh_cash_plan_item_import_save_data_link').getUrl(),
+		    				para	: param,
+		    				success	: function(){
+		    					Ext.get('failure_form').setStyle('display','none');
+		    					Ext.get('success_form').setStyle('visibility','visible');
+		    				},
+		    				scope	: this
+		    			});
+	    			} else {
+	    				errorData	 = errorData.substr(0, errorData.length-1);
+	    				Ext.get('success_form').setStyle('display','none');
+	    				Ext.get('failure_form').setStyle('visibility','visible');
+	    				$('error_ds').setQueryParameter('errorData', errorData);
+	    				$('error_ds').query();
+	    			}
+    			} else {
+    				Ext.get('success_form').setStyle('display','none');
+    				Ext.get('failure_form').setStyle('visibility','visible');
+    			}
+    		}
+    		function view(){
+    			window.location.href = $('csh_cash_plan_item_import_link').getUrl();
+    			window.close();
+    		}
+    		function back(){
+    			window.location.href = $('csh_cash_plan_item_import_link').getUrl();
+    		}
+	  	]]></script>
+        <a:dataSets>
+            <a:dataSet id="fnd_data_ds">
+                <a:datas dataSource="/model/importData"/>
+            </a:dataSet>
+            <a:dataSet id="error_ds" model="csh.CSH6010.csh_cash_plan_item_import_get_error_data">
+                <a:fields>
+                    <a:field name="batch_line_id" prompt="WFL_NODE_RECIPIENT_SET.RULE_SEQUENCE"/>
+                    <a:field name="cash_plan_item_code" prompt="CSH_CASH_PLAN_ITEMS_VL.CSH_PLAN_ITEM_CODE"/>
+                    <a:field name="cash_plan_item_desc" prompt="CSH_CASH_PLAN_ITEMS_VL.DESCRIPTION"/>
+                    <a:field name="cash_plan_item_type_code" prompt="CSH_CASH_PLAN_ITEM_TYPES.CASH_PLAN_ITEM_TYPE_CODE"/>
+                    <a:field name="notes" prompt="CSH_CASH_PLAN_ITEMS.NOTES"/>
+                    <a:field name="enabled_flag" prompt="CSH_CASH_PLAN_ITEMS.ENABLED_FLAG"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form id="success_form" style="visibility:hidden" title="IMPORT_SUCCESS" width="400">
+                <a:button click="view" text="PROMPT.VIEW"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="back" text="HAP_BACK"/>
+            </a:hBox>
+            <a:form id="failure_form" height="400" style="visibility:hidden" title="ERROR_MESSAGE" width="980">
+                <a:grid bindTarget="error_ds" height="340" navBar="true" width="980">
+                    <a:columns>
+                        <a:column name="batch_line_id"/>
+                        <a:column name="cash_plan_item_code"/>
+                        <a:column name="cash_plan_item_desc"/>
+                        <a:column name="cash_plan_item_type_code"/>
+                        <a:column name="notes"/>
+                        <a:column name="enabled_flag"/>
+                    </a:columns>
+                </a:grid>
+            </a:form>
+        </a:screenBody>
+        <script><![CDATA[
+	  		loadComplete();
+	  	]]></script>
+    </a:view>
+</a:screen>

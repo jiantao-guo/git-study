@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--20130304 添加 cash_flow_code_null_flag 字段 ，表示该报销单是否存在计划付款行的现金流量项为空的单据-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select t.* from ( select h.payment_requisition_header_id,
+             DECODE ( (SELECT *
+						   FROM dual
+						  WHERE EXISTS (SELECT *
+						           FROM csh_payment_requisition_lns es
+						          WHERE es.payment_requisition_header_id = h.payment_requisition_header_id
+						            AND es.cash_flow_code IS  NULL)),'X', 'Y','N') cash_flow_code_null_flag,
+		       h.requisition_number,
+		       h.payment_req_type_id ,
+		       typ.description req_type_desc, 
+		       to_char(h.requisition_date,'YYYY-MM-DD') requisition_date,
+		       h.employee_id,
+		       ee.name employee_name,
+		       h.partner_category,
+		       (select b.code_value_name 
+					  from sys_codes_vl a, sys_code_values_vl b
+					 where a.code_id = b.code_id
+					   and a.code = 'PAYMENT_OBJECT'
+		         and b.code_value = h.partner_category) category_desc,
+		       h.partner_id,
+		       decode(h.partner_category,
+		                'EMPLOYEE',
+		                (select ee.employee_code || '-' || ee.name
+		                 from exp_employees ee
+		                where ee.employee_id = h.partner_id),
+		                'VENDER',
+		                (select svv.vender_code || '-' || svv.description
+		                 from pur_system_venders_vl svv
+										where svv.vender_id = h.partner_id),
+									  'CUSTOMER',
+									  (select scv.customer_code || '-' || scv.description
+										 from ord_system_customers_vl scv
+										where scv.customer_id = h.partner_id),
+										null)  p_partner_name,
+		       h.currency_code,
+               gld.currency_name,
+		       h.amount,
+		       h.description  , 
+		       decode(h.je_creation_status,'SUCCESS','Y','N') je_creation_status,
+		       h.status         
+		  from csh_payment_requisition_hds h,
+		       csh_pay_req_types_vl typ ,
+		       exp_employees ee,
+		       gld_currency_vl gld,
+		       (select sys_parameter_pkg.value('SYS_INTERFACE_TYPE') as interface_type from dual ) erp
+		  where h.company_id =${/session/@company_id}
+		    and h.employee_id = ee.employee_id
+		    and typ.type_id = h.payment_req_type_id 
+		    and h.status ='APPROVED'
+		    and (h.audit_flag ='N' or h.audit_flag is null)
+		    and h.closed_date is null 
+		    and h.currency_code=gld.currency_code(+)
+		    
+		) t
+	    #WHERE_CLAUSE# 
+	    order by requisition_number desc
+	    ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="t.employee_id =${@employee_id}"/>
+        <bm:query-field name="requisition_number" dataType="java.lang.String" queryExpression="t.requisition_number like &apos;%&apos;||${@requisition_number}||&apos;%&apos;"/>
+        <bm:query-field name="requisition_date_from" dataType="java.lang.String" queryExpression="t.requisition_date &gt;= ${@requisition_date_from}"/>
+        <bm:query-field name="requisition_date_to" dataType="java.lang.String" queryExpression="t.requisition_date &lt;= ${@requisition_date_to}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="t.currency_code like &apos;%&apos;||${@currency_code}||&apos;%&apos;"/>
+        <bm:query-field name="partner_category" dataType="java.lang.String" queryExpression="t.partner_category = ${@partner_category}"/>
+        <bm:query-field name="partner_id" dataType="java.lang.String" queryExpression="t.partner_id = ${@partner_id}"/>
+    </bm:query-fields>
+</bm:model>

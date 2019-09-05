@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: majianjian  
+    $Date: 2015-4-29 下午3:07:54  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script">
+    <a:init-procedure>
+        <!-- 去ES查询，将返回结果插入到结果表中 -->
+        <s:server-script><![CDATA[
+            (function() {
+            
+                function numberToString(num) {
+                    var str = java.lang.String.valueOf(num);
+                    var dotIndex = str.indexOf('.');
+                    return str.substring(0, dotIndex == -1 ? str.length() : dotIndex);
+                }
+            
+                // 进行配置，及获取ES客户端
+                var settings = Packages.org.elasticsearch.common.settings.ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
+                var client = new Packages.org.elasticsearch.client.transport.TransportClient(settings).addTransportAddress(new Packages.org.elasticsearch.common.transport.InetSocketTransportAddress("localhost", 9300));
+                if (client == null) {
+                    throw java.lang.Exception('获取ES客户端失败');
+                }
+                try {
+                    // 删除ES中的数据，稍后重新加载数据
+                    var qb = Packages.org.elasticsearch.index.query.QueryBuilders.matchAllQuery();
+                    client.prepareDeleteByQuery('hec').setQuery(qb).setTypes('es_news').execute().actionGet();
+                    var dataMap = $bm('es.es_news').queryAsMap();
+                    var dataArray = dataMap.getChildren();
+                    for (var i = 0;i < dataArray.length;i++) {
+                        var title = dataArray[i].title;
+                        var content = dataArray[i].content;
+                        var id = dataArray[i].id;
+                        var data = Packages.org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder().startObject().field("title", title).field("content", content).endObject();
+                        var response = client.prepareIndex('hec', 'es_news', numberToString(id)).setSource(data).execute().actionGet();
+                        if (numberToString(response.getId()) != numberToString(id)) {
+                            throw new java.lang.Exception('同步ES失败');
+                        }
+                    }
+                } finally {
+                    if (client != null) {
+                        client.close();
+                    }
+                }
+            })();
+        ]]></s:server-script>
+    </a:init-procedure>
+</a:service>

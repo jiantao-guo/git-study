@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Administrator  
+    $Date: 2017-5-16 上午9:37:05  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="csh.csh_payment_terms" rootPath="payment_terms"/>
+        <a:model-query autoCount="false" defaultwhereclause="enabled_flag=&apos;Y&apos;" fetchAll="true" model="csh.csh_payment_methods" rootPath="payment_methods"/>
+        <a:model-query autoCount="false" fetchAll="true" model="gld.gld_currency_lov" rootPath="currency"/>
+        <a:model-query autoCount="false" fetchAll="true" model="fnd.fnd_tax_type_codes" rootPath="tax_type"/>
+        <a:model-query autoCount="false" defaultWhereClause="enabled_flag=&apos;Y&apos;" fetchAll="true" model="fnd.pur_vender_types" rootPath="vender_types"/>
+        <a:model-query model="fnd.FND5050.pur_if_edit_check" rootPath="edit_check"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur_sys_venders_company_assigned_batch_link" url="${/request/@context_path}/modules/fnd/FND2410/pur_sys_venders_company_assigned_batch.screen"/>
+        <a:link id="pur_sys_vender_batch_assign_com_temp_link" url="${/request/@context_path}/modules/fnd/FND2410/pur_sys_vender_batch_assign_com_temp.svc"/>
+        <a:link id="pur_system_venders_assign_com_link" url="${/request/@context_path}/modules/fnd/FND2410/pur_system_venders_assign_com.screen"/>
+        <a:link id="exp_bank_assign_link" url="${/request/@context_path}/modules/fnd/FND5050/pur_wlzq_ve_accounts.screen"/>
+        <script><![CDATA[
+        
+            function queryWlzqVenders() {
+                $('pur_wlzq_venders_result_ds').query();
+            }
+            
+            function resetWlzqVenders() {
+                $('pur_wlzq_venders_query_ds').reset();
+            }
+            
+            function systemVenderEditer(record, name) {
+                if (record.isNew) {
+                    return 'pur_system_venders_code_grid_tf';
+                } else {
+                    return '';
+                }
+            }
+            
+            function rateMethodEditer(record, name) {
+                if (record.isNew) {
+                    return 'gld_exchangerate_type_result_grid_cob';
+                } else {
+                    return '';
+                }
+            }
+            
+            function assignCompany(value, record, name) {
+            
+                //alert(record.get('vender_id'));
+                if (record.isNew) {
+                    return '';
+                }
+            
+                return '<a href="javascript:openAssignCM(' + record.get('vender_id') + ',\'' + (record.get('approved_vender_flag') ? record.get('approved_vender_flag') : '') + '\',\'' + (record.get('bank_branch_code') ? record.get('bank_branch_code') : '') + '\',\'' + (record.get('bank_account_code') ? record.get('bank_account_code') : '') + '\')">${l:INV_SYSTEM_ITEM_TYPES.ALLOCATE}</>';
+            }
+            
+            function openAssignCM(id, vender_flag, bank_branch_code, bank_account_code) {
+                new Aurora.Window({
+                    id: 'pur_system_venders_company',
+                    url: /*pur_system_venders_assign_com.screen*/
+                    $('pur_system_venders_assign_com_link').getUrl() + '?vender_id=' + id + '&approved_vender_flag=' + encodeURIComponent(vender_flag) + '&bank_branch_code=' + encodeURIComponent(bank_branch_code) + '&bank_account_code=' + encodeURIComponent(bank_account_code),
+                    title: '${l:INV_SYSTEM_ITEM_TYPES.ALLOCATE}',
+                    fullScreen: true
+                });
+            }
+            
+            function gridEditorFunction(record, name) {
+                if (name == 'vender_type_code') {
+                    if (record.isNew) {
+                        return 'pur_system_venders_code_grid_cb';
+                    }
+                } else if (name == 'vender_code') {
+                    if (record.isNew) {
+                        return 'pur_system_venders_code_grid_tf_upper_case';
+                    }
+                }
+            
+                return '';
+            }
+            
+            
+            function batchAssignCompany() {
+                var lineDs = $('pur_wlzq_venders_result_ds');
+                var lineData = lineDs.getJsonData(true);
+                if (lineData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}', null, 250, 100);
+                    return;
+                }
+            
+                var param = lineData;
+                Aurora.request({
+                    url: /*pur_sys_vender_batch_assign_com_temp.svc*/
+                    $('pur_sys_vender_batch_assign_com_temp_link').getUrl(),
+                    para: param,
+                    success: jumpAssignCom,
+                    scope: this
+                });
+            }
+            
+            function jumpAssignCom() {
+                new Aurora.Window({
+                    id: 'pur_sys_venders_company_assigned_batch_screen',
+                    url: /*pur_sys_venders_company_assigned_batch.screen*/
+                    $('pur_sys_venders_company_assigned_batch_link').getUrl(),
+                    title: '${l:FND_SYS_VENDERS.BATCH_DISP_COMPANY}',
+                    fullScreen: true
+                });
+            }
+            
+            
+            function venderCodeValidator(record, name, value) {
+            
+                var allRecords = $('pur_wlzq_venders_result_ds').getAll();
+                for (var i = 0;i < allRecords.length;i++) {
+                    var r = allRecords[i];
+                    if (r != record) {
+                        if (r.get('vender_code') == value) {
+                            return '${l:VENDER_CODE_DUPLICATE}';
+                        }
+                    }
+                }
+                return true;
+            }
+            
+            function bankAssign(value, record, name) {
+                var venderId = record.get('vender_id');
+                var vender_code = record.get('vender_code');
+                if (venderId) {
+                    return '<a href="javascript:bankAssignInfo(' + venderId + ',\'' +vender_code +'\')">${l:CSH_PAYMENT.BANK_ACCOUNT_CODE}</a>';
+                }
+            }
+            
+            function bankAssignInfo(venderId,vender_code) {
+                new Aurora.Window({
+                    id: 'exp_bank_assign_window',
+                    url: $('exp_bank_assign_link').getUrl() + '?vender_id=' + venderId +'&vender_code='+vender_code,
+                    title: '${l:CSH_PAYMENT.BANK_ACCOUNT_CODE}',
+                    fullScreen: true
+                });
+            }
+            
+            function loadFunction(ds) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('exist_number') > 0) {
+                        records[i].getMeta().getField('vender_type_name').setReadOnly(true);
+                        records[i].getMeta().getField('description').setReadOnly(true);
+                    }
+                }
+            }
+            
+            function setinitdata(ds,record,index){
+                var records = ds.getAll();
+                var vender_type_code = '${/model/vender_types/record/@vender_type_code}';
+                var description = '${/model/vender_types/record/@description}';
+                var vender_type_id = '${/model/vender_types/record/@vender_type_id}';
+                var vender_name = vender_type_code +'-'+ description;
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('count_number') == 1) {
+                        record.set('vender_type_name',vender_name);
+                        record.set('vender_type_id',vender_type_id);
+                    }
+                }
+        	}
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="payment_terms_ds">
+                <a:datas dataSource="/model/payment_terms"/>
+            </a:dataSet>
+            <a:dataSet id="payment_methods_ds">
+                <a:datas dataSource="/model/payment_methods"/>
+            </a:dataSet>
+            <a:dataSet id="currency_ds">
+                <a:datas dataSource="/model/currency"/>
+            </a:dataSet>
+            <a:dataSet id="tax_type_ds">
+                <a:datas dataSource="/model/tax_type"/>
+            </a:dataSet>
+            <a:dataSet id="pur_system_venders_type_ds">
+                <a:datas dataSource="/model/vender_types"/>
+            </a:dataSet>
+            <a:dataSet id="pur_wlzq_venders_query_ds">
+                <a:fields>
+                    <a:field name="vender_type_name" displayField="code_name" options="pur_system_venders_type_ds" returnField="vender_type_id" valueField="vender_type_id"/>
+                    <a:field name="vender_code"/>
+                    <a:field name="description"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_wlzq_venders_result_ds" autoPageSize="true" autoQuery="true" fetchAll="false" model="fnd.FND5050.pur_wlzq_venders" queryDataSet="pur_wlzq_venders_query_ds" queryUrl="${/request/@context_path}/autocrud/fnd.FND5050.pur_wlzq_venders/query?ORDER_FIELD=vender_code" selectable="true">
+                <a:fields>
+                    <a:field name="vender_id"/>
+                    <a:field name="vender_type_name" displayField="code_name" options="pur_system_venders_type_ds" required="true">
+                        <a:mapping>
+                            <a:map from="vender_type_id" to="vender_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vender_type_id"/>
+                    <a:field name="vender_type_code"/>
+                    <a:field name="vender_code" validator="venderCodeValidator"/>
+                    <a:field name="description" required="true"/>
+                    <a:field name="description_id"/>
+                    <a:field name="address"/>
+                    <a:field name="artificial_person"/>
+                    <a:field name="tax_id_number"/>
+                    <a:field name="bank_branch_code"/>
+                    <a:field name="bank_account_code"/>
+                    <a:field name="tax_number"/>
+                    <a:field name="payment_term_name" autoComplete="true" autoCompleteField="payment_term_code_name" lovGridHeight="320" lovHeight="450" lovService="csh.csh_payment_terms" lovWidth="500" title="ACP_INVOICE_HEADERS.PAYMENT_TERM_ID">
+                        <a:mapping>
+                            <a:map from="payment_term_id" to="payment_term_id"/>
+                            <a:map from="payment_term_code" to="payment_term_code"/>
+                            <a:map from="description" to="payment_term_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="payment_method_display" displayField="description" options="payment_methods_ds">
+                        <a:mapping>
+                            <a:map from="description" to="payment_method_display"/>
+                            <a:map from="payment_method_code" to="payment_method"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="payment_method"/>
+                    <a:field name="currency_code_display" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="gld.gld_currency_venders_lov" lovWidth="500" title="ACP_INVOICE_HEADERS.CURRENCY_CODE">
+                        <a:mapping>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="currency_name" to="currency_code_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency_code"/>
+                    <a:field name="tax_type_name" displayField="description" options="tax_type_ds">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_type_id"/>
+                            <a:map from="description" to="tax_type_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="approved_vender_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="exist_number"/>
+                    <a:field name="count_number"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitSuccess" handler="queryWlzqVenders"/>
+                    <a:event name="load" handler="loadFunction"/>
+                    <a:event name="add" handler="setinitdata"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="resetWlzqVenders" text="HAP_RESET" width="80"/>
+                <a:gridButton bind="grid" type="add" width="80"/>
+                <a:gridButton bind="grid" type="save" width="80"/>
+                <a:gridButton bind="grid" type="clear" width="80"/>
+                <!-- <a:toolbarButton click="batchAssignCompany" text="FND_SYS_VENDERS.BATCH_DISP_COMPANY" width="100"/> -->
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="pur_wlzq_venders_query_ds" resultTarget="pur_wlzq_venders_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:comboBox name="vender_type_name" bindTarget="pur_wlzq_venders_query_ds" prompt="PUR_SYSTEM_VENDERS.VENDER_TYPE_ID">
+                        <a:events>
+                            <a:event name="enterdown" handler="queryWlzqVenders"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:textField name="vender_code" bindTarget="pur_wlzq_venders_query_ds" prompt="PUR_SYSTEM_VENDERS.VENDER_CODE" typeCase="upper">
+                        <a:events>
+                            <a:event name="enterdown" handler="queryWlzqVenders"/>
+                        </a:events>
+                    </a:textField>
+                    <a:textField name="description" bindTarget="pur_wlzq_venders_query_ds" prompt="PUR_SYSTEM_VENDERS.DESCRIPTION">
+                        <a:events>
+                            <a:event name="enterdown" handler="queryWlzqVenders"/>
+                        </a:events>
+                    </a:textField>
+                </a:formToolBar>
+            </a:queryForm>
+            <a:grid id="grid" bindTarget="pur_wlzq_venders_result_ds" marginHeight="121" navBar="true">
+                <a:columns>
+                    <a:column name="vender_type_name" align="center" editor="pur_system_venders_code_grid_cb" prompt="PUR_SYSTEM_VENDERS.VENDER_TYPE_ID" width="80"/>
+                    <a:column name="vender_code" align="center" prompt="PUR_SYSTEM_VENDERS.VENDER_CODE" width="100"/>
+                    <a:column name="description" align="left" editor="pur_system_venders_code_grid_tf" prompt="PUR_SYSTEM_VENDERS.DESCRIPTION" width="120"/>
+                    <a:column name="tax_number" align="center" editor="pur_system_venders_code_grid_tf" prompt="纳税人识别号"/>
+                    <a:column name="address" align="left" editor="pur_system_venders_code_grid_tf" prompt="PUR_SYSTEM_VENDERS.ADDRESS" width="120"/>
+                    <!-- <a:column name="artificial_person" align="left" editor="pur_system_venders_code_grid_tf" prompt="PUR_SYSTEM_VENDERS.ARTIFICIAL_PERSON" width="120"/>
+                    <a:column name="tax_id_number" align="left" editor="pur_system_venders_code_grid_tf" prompt="PUR_SYSTEM_VENDERS.TAX_ID_NUMBER" width="120"/>
+                    <a:column name="payment_term_name" align="left" editor="pur_system_venders_code_grid_lv" prompt="PUR_SYSTEM_VENDERS.PAYMENT_TERM_ID" width="80"/>
+                    <a:column name="payment_method_display" align="center" editor="pur_system_venders_code_grid_cb" prompt="PUR_SYSTEM_VENDERS.PAYMENT_METHOD" width="80"/>
+                    <a:column name="currency_code_display" align="center" editor="pur_system_venders_code_grid_lv" prompt="PUR_SYSTEM_VENDERS.CURRENCY_CODE" width="80"/>
+                    <a:column name="tax_type_name" align="center" editor="pur_system_venders_code_grid_cb" prompt="PUR_SYSTEM_VENDERS.TAX_TYPE_ID" width="80"/>
+                    <a:column name="approved_vender_flag" align="center" editor="pur_system_venders_code_grid_checkbox" prompt="PUR_SYSTEM_VENDERS.APPROVED_VENDER_FLAG" width="51"/> -->
+                    <a:column name="enabled_flag" align="center" editor="chb_enabled_flag" prompt="PUR_SYSTEM_VENDERS.ENABLED_FLAG" width="51"/>
+                    <a:column name="asignbank" align="center" prompt="CSH_PAYMENT.BANK_ACCOUNT_CODE" renderer="bankAssign" width="80"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="pur_system_venders_code_grid_cb"/>
+                    <a:textField id="pur_system_venders_code_grid_tf"/>
+                    <a:textField id="pur_system_venders_code_grid_tf_upper_case" typeCase="upper"/>
+                    <a:numberField id="pur_system_venders_code_grid_nf" allowdecimals="false"/>
+                    <a:lov id="pur_system_venders_code_grid_lv"/>
+                    <a:checkBox id="pur_system_venders_code_grid_checkbox"/>
+                    <a:checkBox id="chb_enabled_flag"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function PurSystemVendersInitSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                var vh = $A.getViewportHeight();
+                //留白宽度
+                var marginWidth = 35;
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                $('grid').setWidth(autoWidth);
+            }
+            //Ext.fly(window).on('resize', PurSystemVendersInitSize);
+            PurSystemVendersInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

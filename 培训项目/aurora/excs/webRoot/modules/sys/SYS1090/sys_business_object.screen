@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure></a:init-procedure>
+    <a:view>
+        <a:link id="flexfield_editor_url" url="${/request/@context_path}/modules/sys/SYS1090/sys_business_flexfield_editors.screen"/>
+        <a:link id="business_object_maintain_window_url" url="${/request/@context_path}/modules/sys/SYS1090/sys_business_object_maintain.screen"/>
+        <script><![CDATA[
+            function editorRenderer(value, record, name){
+                return '<a href="javascript:openEditorWindow(\'' + (record.get('editor_type')||'') + '\');" >属性</a>'; 
+            }
+            
+            function openEditorWindow(type){
+                if(Ext.isEmpty(type)){
+                    Aurora.showWarningMessage('警告','请先选择编辑器!')
+                    return;
+                }
+                var w = 500,h=400;
+                switch(type){
+                    case 'TEXTFIELD':
+                      w=300;
+                      h=150;
+                      break;
+                    case 'NUMBERFIELD':
+                      w=300;
+                      h=200;
+                      break;
+                    case 'DATEPICKER':
+                      w=300;
+                      h=150;
+                      break;
+                    case 'COMBOBOX':
+                      w=460;
+                      h=360;
+                      break;  
+                }
+                
+                new Aurora.Window({
+                    url:$('flexfield_editor_url').getUrl()+'?type='+type,
+                    title:'编辑器设置',
+                    id:'flexfield_editor_window',
+                    closeable:false,
+                    width:w,
+                    height:h
+                });
+            }
+            
+            function linkrenderer(text, record, node) {
+                if(record.get('type')=='flex'){
+                    return '<a href="javascript:loadFlex(' + record.get('pid') + ');" >' + text + '</a>'; 
+                }else {
+                    return '<a href="javascript:updateBusinessObject(' + record.get('object_id') + ');" >' + text + '</a>'; 
+                }
+                return text;
+            }
+            
+            function updateBusinessObject(id){
+                new Aurora.Window({
+                    url:$('business_object_maintain_window_url').getUrl()+'?type=update&object_id='+id,
+                    title:'业务对象新建',
+                    id:'businessObjectWindow',
+                    width:400,
+                    height:200
+                });
+            }
+            
+            
+            function loadFlex(id){
+                $('flex_field_ds').setQueryParameter('business_object_id',id);
+                $('flex_field_ds').query();
+            }
+            
+            function processFlexDatas(datas){
+                var list = [];
+                for(var i=1;i<=30;i++){
+                    list.add({
+                        name:'attribute' + i
+                    })
+                }
+                return list;
+            }
+            
+            function processObjectDatas(datas){
+                var flexdatas = [];
+                for(var i=0;i<datas.length;i++){
+                    var bo = datas[i].data;
+                    bo['icon']='images/entity.png'
+                    var id = bo['object_id'];
+                    flexdatas.add({
+                        pid:id,
+                        object_id:id+'_flexs',
+                        object_name:'弹性域',
+                        type:'flex',
+                        icon:'images/details.png'
+                    })
+                }                
+                return datas.concat(flexdatas);
+            }
+            
+            function onComboboxDatasourceChange( ds, record, name, value, oldvalue){
+                if(name=='combobox_datasource_type'){
+                    record.getField('combobox_value_field').setReadOnly(false);
+                    record.getField('combobox_display_field').setReadOnly(false);
+                    record.set('combobox_value_field','')
+                    record.set('combobox_display_field','')
+                    if(value=='LOOKUP'){
+                        record.getField('combobox_value_field').setReadOnly(true);
+                        record.getField('combobox_display_field').setReadOnly(true);
+                        record.set('combobox_value_field','code_value')
+                        record.set('combobox_display_field','code_value_name')
+                    }
+                }else if(name=='editor_type'){
+                    record.set('database_type','');
+                    if(value=='TEXTFIELD'){
+                        record.set('database_type','VARCHAR2');
+                    }else if(value=='NUMBERFIELD') {
+                        record.set('database_type','NUMBER');
+                    }else if(value=='DATEPICKER') {
+                        record.set('database_type','DATE');
+                    }                    
+                }else if(name=='database_type'){
+                    initDataBaseTypeDisplay(record);
+                }
+            }
+            
+            function initDataBaseTypeDisplay(record){
+                var value = record.get('database_type');
+                record.set('data_type_display',null);
+                if(value=='VARCHAR2'){
+                    record.set('data_type_display','文本类型');
+                }else if(value=='NUMBER') {
+                    record.set('data_type_display','数字类型');
+                }else if(value=='DATE') {
+                    record.set('data_type_display','日期类型');
+                }
+            }
+            
+            function onFlexFieldAdd(ds, record, index){
+                var item = $('objects_tree_s').getCurrentRecord();
+                record.set('business_object_id',item.get('pid'))
+            }
+            
+            function openBusinessCreationWindow(){
+                new Aurora.Window({
+                    url:$('business_object_maintain_window_url').getUrl()+'?type=add',
+                    title:'业务对象新建',
+                    id:'businessObjectWindow',
+                    width:400,
+                    height:200
+                });
+            }
+            
+            function onFlexFieldCellClick(grid, row, name, record){
+                if(name =='field_name'){
+                    var field_name=record.getMeta().getField('field_name');
+                    var item = $('objects_tree_s').getCurrentRecord();
+                    var pid = item.get('pid');
+                    var record = $('objects_tree_s').find('object_id',pid);
+                    if(record){
+                        var table_name = record.get('table_name');
+                        field_name.setLovPara('table_name',table_name);
+                    }
+                }
+            }
+                    
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="flex_fields" processfunction="processFlexDatas">
+                <a:datas>
+                    <a:record/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="data_type_ds">
+                <a:datas>
+                    <a:record value="VARCHAR2" name="文本类型"/>
+                    <a:record value="NUMBER" name="数字类型"/>
+                    <a:record value="DATE" name="日期类型"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="type_ds">
+                <a:datas>
+                    <a:record value="TEXTFIELD" name="文本编辑器"/>
+                    <a:record value="NUMBERFIELD" name="数字编辑器"/>
+                    <a:record value="DATEPICKER" name="日期编辑器"/>
+                    <a:record value="COMBOBOX" name="下拉框编辑器"/>
+                    <a:record value="LOV" name="值列表"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="combobox_datasource_type_ds">
+                <a:datas>
+                    <a:record value="LOOKUP" name="lookup"/>
+                    <a:record value="BM" name="bm"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="textfield_typecase_ds">
+                <a:datas>
+                    <a:record value="" name="无限制"/>
+                    <a:record value="upper" name="大写限制"/>
+                    <a:record value="lower" name="小写限制"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="objects_tree_s" model="sys.SYS1090.sys_business_objects" autoQuery="true" fetchall="true" autocount="false" processfunction="processObjectDatas"/>
+            <a:dataSet id="flex_field_ds" autoQuery="false" submitUrl="${/request/@context_path}/modules/sys/SYS1090/sys_business_flexfields_submit.svc"  model="sys.SYS1090.sys_business_flexfields" >
+                <a:fields>                    
+                    <a:field name="field_name" lovUrl="${/request/@context_path}/modules/sys/SYS1090/sys_business_flexfields_lov.screen" lovGridHeight="300" lovHeight="400" lovWidth="375" title="字段选择">
+                        <a:mapping>
+                            <a:map from="column_name" to="field_name"/>
+                            <a:map from="data_type" to="database_type"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="field_description"  required="true"/>
+                    <a:field name="type_display" options="type_ds" valueField="value" displayField="name" returnField="editor_type"/> 
+                    <a:field name="data_type_display" options="data_type_ds" valueField="value" displayField="name" returnField="database_type" required="true"/> 
+                    <a:field name="string_case_dis" options="textfield_typecase_ds" valueField="value" displayField="name" returnField="string_case"/> 
+                    <a:field name="number_allowdecimals" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="number_allownegative" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="number_allowformat" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="number_allowpad" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="datepicker_size" defaultValue="1" datatype="int"/>
+                    <a:field name="datepicker_format" defaultValue="yyyy-mm-dd"/>
+                    <a:field name="combobox_datasource_type_display" options="combobox_datasource_type_ds" valueField="value" displayField="name" returnField="combobox_datasource_type"/> 
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onComboboxDatasourceChange"/>
+                    <a:event name="add" handler="onFlexFieldAdd"/>
+                </a:events>
+            </a:dataSet>
+            
+        </a:dataSets>
+        <a:screenBody>
+            <a:hBox>
+                <a:button text="新增" click="openBusinessCreationWindow"/>
+            </a:hBox>
+            <a:hBox>
+                <a:form column="1" title="业务对象" width="250">
+                    <a:tree id="menu1" width="250" renderer="linkrenderer"  bindTarget="objects_tree_s" displayField="object_name" idField="object_id" parentField="pid"/>
+                </a:form>
+                <a:grid bindTarget="flex_field_ds" height="340" navBar="true" width="700" marginWidth="300" marginHeight="100">
+                    <a:toolBar>
+                        <a:button type="add"/>
+                        <a:button type="save"/>
+                    </a:toolBar>
+                    <a:columns>
+                        <a:column name="field_name" align="left" editor="com_lov" prompt="字段名" width="150"/>
+                        <a:column name="field_description" align="left" editor="com_tf" prompt="字段描述" width="100"/>
+                        <a:column name="data_type_display" align="center" prompt="字段类型" editor="com_cb" width="100"/>
+                        <a:column name="comments" align="left" prompt="备注" editor="com_tf" width="250"/>
+                        <a:column name="width" prompt="宽度" editor="com_nf" width="100"/>
+                        <a:column name="height"  prompt="高度" editor="com_nf" width="100"/>
+                        <a:column name="type_display" align="center" prompt="编辑器类型" editor="com_cb" width="100"/>
+                        <a:column name="editor" align="center" prompt="编辑器属性" width="100" renderer="editorRenderer"/>
+                    </a:columns>
+                    <a:editors>
+                    	<a:lov id="com_lov"/>
+                        <a:comboBox id="com_cb"/>
+                        <a:numberField id="com_nf"/>
+                        <a:textField id="com_tf"/>
+                    </a:editors>
+                    <a:events>
+                        <a:event name="cellClick" handler="onFlexFieldCellClick"/>
+                    </a:events>
+                </a:grid>
+            </a:hBox>
+            
+        </a:screenBody>
+    </a:view>
+</a:screen>

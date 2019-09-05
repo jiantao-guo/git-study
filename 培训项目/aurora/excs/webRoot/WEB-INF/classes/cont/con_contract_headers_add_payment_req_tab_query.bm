@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	SELECT *
+  FROM (SELECT cprh.requisition_number,
+               cprh.payment_requisition_header_id,
+               cprh.employee_id,
+               (SELECT ee.name || '-' || ee.employee_code
+                  FROM exp_employees ee
+                 WHERE ee.employee_id = cprh.employee_id) requisitor,
+               to_char(cprh.requisition_date, 'YYYY-MM-DD') requisition_date,
+               cprh.currency_code,
+               (SELECT SUM(b.amount)
+                  FROM csh_payment_requisition_lns b, con_document_flows a
+                 WHERE a.document_type = 'CON_CONTRACT'
+                   AND a.source_document_type = 'CSH_PAYMENT_REQUISITION_LNS'
+                   AND a.document_id =  ${/parameter/@contract_header_id}
+                   AND a.source_document_line_id =
+                       b.payment_requisition_line_id
+                   AND b.payment_requisition_header_id =
+                       cprh.payment_requisition_header_id) amount,
+               cprh.partner_category,
+               (SELECT b.code_value_name
+                  FROM sys_codes_vl a, sys_code_values_vl b
+                 WHERE a.code_id = b.code_id
+                   AND a.code = 'PAYMENT_OBJECT'
+                   AND b.code_value = cprl.partner_category) p_partner_category,
+               cprh.partner_id,
+               decode(cprl.partner_category,
+                      'EMPLOYEE',
+                      (SELECT ee.employee_code || '-' || ee.name
+                         FROM exp_employees ee
+                        WHERE ee.employee_id = cprl.partner_id),
+                      'VENDER',
+                      (SELECT svv.vender_code || '-' || svv.description
+                         FROM pur_system_venders_vl svv
+                        WHERE svv.vender_id = cprl.partner_id),
+                      'CUSTOMER',
+                      (SELECT scv.customer_code || '-' || scv.description
+                         FROM ord_system_customers_vl scv
+                        WHERE scv.customer_id = cprl.partner_id)) payee_name,
+               cprh.description,
+               (SELECT SUM(b.amount)
+                  FROM csh_payment_requisition_lns  a,
+                       csh_payment_requisition_refs b
+                 WHERE a.payment_requisition_line_id =
+                       b.payment_requisition_line_id
+                   AND a.payment_requisition_header_id =
+                       cprh.payment_requisition_header_id) line_sum_amount,
+               
+               cprh.amount sum_amount, --modify 20130227 总金额取单据头金额
+               (SELECT v.description
+                  FROM csh_payment_methods_vl v
+                 WHERE v.payment_method_id = cprh.payment_method_id) payment_method
+          FROM csh_payment_requisition_hds cprh,csh_payment_requisition_lns cprl
+         WHERE cprh.company_id =   ${/session/@company_id}
+           AND cprh.payment_requisition_header_id = cprl.payment_requisition_header_id
+           AND EXISTS
+         (SELECT 1
+                  FROM con_document_flows a
+                 WHERE a.document_type = 'CON_CONTRACT'
+                   AND a.source_document_type = 'CSH_PAYMENT_REQUISITION_LNS'
+                   AND a.document_id =  ${/parameter/@contract_header_id}
+                   AND a.source_document_line_id = cprl.payment_requisition_line_id
+                   AND cprh.payment_requisition_header_id =
+                       a.source_document_id)) v
+            	
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="payment_requisition_header_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="EXP_REQUISITION_HEADER_ID" required="true"/>
+        <bm:field name="requisition_number" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="EXP_REQUISITION_NUMBER"/>
+        <bm:field name="employee_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="EMPLOYEE_ID"/>
+        <bm:field name="requisitor" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="REQUISITOR"/>
+        <bm:field name="requisition_date" databaseType="DATE" datatype="java.util.Date" physicalName="REQUISITION_DATE"/>
+        <bm:field name="currency_code" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CURRENCY_CODE"/>
+        <bm:field name="amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="AMOUNT"/>
+        <bm:field name="partner_category" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PARTNER_CATEGORY"/>
+        <bm:field name="p_partner_category" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="P_PARTNER_CATEGORY"/>
+        <bm:field name="partner_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PARTNER_ID"/>
+        <bm:field name="payee_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PAYEE_NAME"/>
+        <bm:field name="description" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DESCRIPTION"/>
+        <bm:field name="sum_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="SUM_AMOUNT"/>
+        <bm:field name="payment_method" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PAYMENT_METHOD"/>
+    </bm:fields>
+</bm:model>

@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lixi  
+    $Date: 2011-6-30 上午10:44:26  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select vv.*,
+             (select (vv.need_payment_amount - vv.payed_amount)-(select decode(sum(amount), null, 0, sum(amount))
+ 			 from acp_acp_requisition_lns
+			 where  ref_document_id = vv.exp_report_header_id
+ 		     and ref_document_line_id = vv.payment_schedule_line_id
+			 and payment_status = 'NEVER')  from dual ) can_req_amount,
+            
+             (select vv.need_payment_amount - vv.payed_amount from dual ) unpayment_amount
+             from
+               ( SELECT *
+				  FROM (SELECT b.code_value_name,
+				               ss.frozen_flag,
+				               ss.company_id,
+				               fv.company_short_name company_name,
+				               b.code_value,
+				               ss.description,
+				               ss.payment_schedule_line_id,
+				               gl.currency_name,
+				               ss.due_amount,
+				               to_char(ss.schedule_start_date, 'YYYY-MM-DD') schedule_start_date,
+				               to_char(ss.schedule_due_date, 'YYYY-MM-DD') schedule_due_date,
+				               
+				               ss.exp_report_header_id,
+				               ss.currency,
+				               ss.bank_code,
+				               ss.bank_name,
+				               ss.bank_location_code,
+				               ss.bank_location_name,
+				               ss.province_code,
+				               ss.province_name,
+				               ss.city_code,
+				               ss.city_name,
+				               ss.usedes,
+				              (select usedes_id from csh_payment_usedes_vl vvv where  vvv.usedes_code = ss.usedes) usedes_id,
+				               (SELECT v.description
+				                  FROM csh_payment_usedes_vl v
+				                 WHERE v.usedes_code = ss.usedes) usedes_name,
+				               ss.payee_id,
+				               decode(b.code_value,
+				                      'EMPLOYEE',
+				                      (SELECT ees.name
+				                         FROM exp_employees ees
+				                        WHERE ees.employee_id = ss.payee_id),
+				                      'VENDER',
+				                      (SELECT pv.description
+				                         FROM pur_system_venders_vl pv
+				                        WHERE pv.vender_id = ss.payee_id),
+				                      'CUSTOMER',
+				                      (SELECT ov.description
+				                         FROM ord_system_customers_vl ov
+				                        WHERE ov.customer_id = ss.payee_id)) description_name,
+				               (SELECT fcv.company_short_name
+				                  FROM csh_doc_payment_company cc, fnd_companies_vl fcv
+				                 WHERE cc.document_line_id = ss.payment_schedule_line_id
+				                   AND cc.document_id = ss.exp_report_header_id
+				                   AND cc.document_type = 'EXP_REPORT'
+				                   AND cc.payment_company_id = fcv.company_id) company_short_name,
+				            (select nvl(sum(w.csh_write_off_amount), 0)
+                  from csh_write_off w
+                 where w.document_source = 'EXPENSE_REPORT'
+                   and w.document_header_id =
+                     ss.exp_report_header_id
+                   and w.document_line_id =
+                     ss.payment_schedule_line_id) payed_amount,
+                     ss.due_amount need_payment_amount,
+                     
+				               (SELECT cch.contract_number
+				                  FROM con_contract_headers cch
+				                 WHERE cch.contract_header_id = cdf.document_id) contract_number,
+				               cdf.document_id contract_header_id,
+				               (SELECT cps.payment_schedule_line_number
+				                  FROM con_payment_schedules cps
+				                 WHERE cps.payment_schedule_line_id = cdf.document_line_id) line_number,
+				               ss.account_number,
+				               ss.account_name,
+				               (SELECT c.description
+				                  FROM csh_payment_methods_vl c
+				                 WHERE c.payment_method_id = ss.payment_type_id) payment_method,
+				               ss.payment_type_id,
+				               (SELECT nvl(SUM(cwo.csh_write_off_amount), 0)
+				                  FROM csh_write_off cwo
+				                 WHERE cwo.document_line_id = ss.payment_schedule_line_id
+				                   AND cwo.document_header_id = ss.exp_report_header_id
+				                   AND cwo.document_source = 'EXPENSE_REPORT') AS write_off_amount,
+				               exp_report_pkg.check_pmt_schedule_ln_unwf_fun(ss.payment_schedule_line_id) AS un_write_off_flag
+				          FROM exp_report_pmt_schedules ss,
+				               sys_code_values_vl       b,
+				               sys_codes                a,
+				               gld_currency_vl          gl,
+				               fnd_companies_vl         fv,
+				               con_document_flows       cdf
+				         WHERE b.code_id = a.code_id
+				           AND cdf.source_document_id(+) = ss.exp_report_header_id
+				           AND cdf.source_document_line_id(+) = ss.payment_schedule_line_id
+				           AND a.code = 'PAYMENT_OBJECT'
+				           AND ss.payee_category = b.code_value
+				           AND ss.currency = gl.currency_code
+				           AND ss.company_id = fv.company_id))vv
+		          #WHERE_CLAUSE#
+		         ORDER BY code_value,description_name
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="code_value_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CODE_VALUE_NAME"/>
+        <bm:field name="company_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="COMPANY_NAME"/>
+        <bm:field name="code_value" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CODE_VALUE"/>
+        <bm:field name="description" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DESCRIPTION"/>
+        <bm:field name="payment_schedule_line_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="PAYMENT_SCHEDULE_LINE_ID"/>
+        <bm:field name="currency_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CURRENCY_NAME"/>
+        <bm:field name="due_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="DUE_AMOUNT"/>
+        <bm:field name="schedule_start_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="SCHEDULE_START_DATE"/>
+        <bm:field name="schedule_due_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="SCHEDULE_DUE_DATE"/>
+        <bm:field name="exp_report_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="EXP_REPORT_HEADER_ID"/>
+        <bm:field name="description_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DESCRIPTION_NAME"/>
+        <bm:field name="company_short_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="COMPANY_SHORT_NAME"/>
+        <bm:field name="contract_number" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CONTRACT_NUMBER"/>
+        <bm:field name="contract_header_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="line_number" databaseType="NUMBER" datatype="java.lang.Long" physicalName="LINE_NUMBER"/>
+        <bm:field name="currency"/>
+        <bm:field name="payee_id" datatype="java.lang.Long"/>
+        <bm:field name="company_id"/>
+        <bm:field name="payment_method"/>
+        <bm:field name="payment_type_id" datatype="java.lang.Long"/>
+        <bm:field name="account_number"/>
+        <bm:field name="account_name"/>
+        <bm:field name="bank_code"/>
+        <bm:field name="bank_name"/>
+        <bm:field name="bank_location_code"/>
+        <bm:field name="bank_location_name"/>
+        <bm:field name="city_code"/>
+        <bm:field name="city_name"/>
+        <bm:field name="province_code"/>
+        <bm:field name="province_name"/>
+        <bm:field name="usedes"/>
+        <bm:field name="usedes_name"/>
+        <bm:field name="frozen_flag"/>
+        <bm:field name="usedes_id"/>
+        <bm:field name="payed_amount"/>
+        <bm:field name="write_off_amount"/>
+        <bm:field name="un_write_off_flag"/>
+        <bm:field name="unpayment_amount"/>
+        <bm:field name="can_req_amount"/>
+    </bm:fields>
+    <!--<bm:query-fields>
+        <bm:query-field field="exp_report_header_id" queryOperator="="/>
+    </bm:query-fields>-->
+    <bm:query-fields>
+        <bm:query-field field="frozen_flag" queryOperator="="/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression=" exp_report_header_id = ${@exp_report_header_id}"/>
+    </bm:data-filters>
+</bm:model>

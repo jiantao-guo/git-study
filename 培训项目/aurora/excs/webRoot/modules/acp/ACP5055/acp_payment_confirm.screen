@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author:LZM
+    $Date: 2013/01/25
+    $Revision: 1.2 $
+    $Purpose: 待付付款单确认 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="acp.ACP5040.acp_payment_status_combo" rootPath="payment_status"/>
+        <a:model-query autoCount="false" defaultWhereClause="trunc(sysdate) between start_date_active and  nvl(end_date_active, trunc(sysdate)) and company_type=1 and set_of_books_id = (select t.set_of_books_id from fnd_companies t where t.company_id = ${/session/@company_id})" fetchAll="true" model="fnd.fnd_companies_vl_com_name" rootPath="company"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="acp_requisition_confirm_control_link_1" url="${/request/@context_path}/modules/acp/ACP5040/acp_requisition_confirm_control.svc"/>
+        <a:link id="exp_report_readonly_wfl_link_4" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl.screen"/>
+        <a:link id="acp_req_maintain_submit_link_6" model="acp.acp_req_maintain_submit" modelaction="batch_update"/>
+        <a:link id="acp_acp_req_maintain_view_link_4" url="${/request/@context_path}/modules/acp/public/acp_req_maintain_view.screen"/>
+        <a:link id="acp_acp_req_maintain_create_link_5" url="${/request/@context_path}/modules/acp/public/acp_acp_req_maintain_create.screen"/>
+        <script><![CDATA[
+            function paymentStatusEdit(record, name) {
+                if (record.get('payment_status') == 'PENDING') {
+                    return 'payment_status_cmb';
+                }
+                return '';
+            }
+            
+            function newWindowAssignComFunction(url) {
+                new Aurora.Window({
+                    title: '',
+                    id: 'acp_acp_req_detail_screen',
+                    fullScreen: true,
+                    url: url
+                });
+            }
+            
+            function requestNoRenderFunction(value, record, name) {
+                var url = $('acp_acp_req_maintain_view_link_4').getUrl() + '?acp_requisition_header_id=' + record.get('acp_requisition_header_id');
+                return '<a href="javascript:newWindowAssignComFunction(\'' + url + '\');">' + value + '</a>';
+            }
+            
+            function expRepNumRenderer(value, record, name) {
+                if (value == null) {
+                    return '';
+                } else {
+                    var header_id = record.get('exp_report_header_id');
+                    return '<a href="javascript:detailNewWindow(' + header_id + ');">' + value + '</a>';
+                }
+            }
+            
+            function detailNewWindow(header_id) {
+                new Aurora.Window({
+                    title: '',
+                    id: 'exp_report_maintain_screen',
+                    fullScreen: true,
+                    url: /*${/request/@context_path}/modules/expm/exp_report_readonly_wfl.screen*/
+                    $('exp_report_readonly_wfl_link_4').getUrl() + '?exp_report_header_id=' + header_id + '&canUploadFlag=false',
+                    width: 950,
+                    height: 600
+                });
+            }
+            
+            function resetFunction() {
+                var dataSet = $('acp_query_ds');
+                var record = dataSet.getCurrentRecord();
+                dataSet.reset();
+                record.getField('partner_name').setLovService('');
+                record.getField('partner_name').setReadOnly(true);
+            
+            }
+            
+            function confirmFun() {
+                var expReportData = new Array();
+                var cmpArray = $('acp_result_ds').getSelected();
+                if (cmpArray.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                } else {
+                    for (var i = 0;i < cmpArray.length;i++) {
+                        if (cmpArray[i].get('payment_status1') == 'ALLOWED') {
+                            cmpArray[i].set('_status', 'update');
+                            expReportData.push(cmpArray[i].data);
+                        }
+                    }
+                }
+                var param = expReportData;
+                Aurora.request({
+                    url: $('acp_requisition_confirm_control_link_1').getUrl(),
+                    para: param,
+                    success: function() {
+                        $('acp_result_ds').query();
+            
+                    },
+                    scope: this
+                });
+            }
+            
+            
+            function cancelconfirmFun() {
+            
+                var expReportData = [];
+                var cmpArray = $('acp_result_ds').getSelected();
+                if (cmpArray.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                } else {
+                    for (var i = 0;i < cmpArray.length;i++) {
+                        if (cmpArray[i].get('payment_status1') == 'PENDING') {
+                            cmpArray[i].set('_status', 'update');
+                            expReportData.push(cmpArray[i].data);
+                        }
+                    }
+                }
+                var param = expReportData;
+                Aurora.request({
+                    url: $('acp_requisition_confirm_control_link_1').getUrl(),
+                    para: param,
+                    success: function() {
+                        $('acp_result_ds').query();
+                    },
+                    scope: this
+                });
+            }
+            
+            function onUpdate(ds, record, name, value) {
+                if (name == 'partner_category') {
+                    if (value != null && value != '') {
+                        record.getField('partner_name').setLovPara('partner_category', value);
+                        record.getField('partner_name').setLovService('acp.acp_partner_name');
+                        record.getField('partner_name').setReadOnly(false);
+                    } else {
+                        record.getField('partner_name').setLovService('');
+                        record.getField('partner_name').setReadOnly(true);
+                    }
+                    record.set('partner_name', '');
+                    record.set('partner_id', '');
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="gld_set_of_applicant_ds" loadData="true" model="acp.acp_applicant"/>
+            <a:dataSet id="payment_object_ds" lookupcode="PAYMENT_OBJECT"/>
+            <a:dataSet id="payment_status_ds" lookupcode="PAYMENT_STATUS"/>
+            <a:dataSet id="partner_name_ds" model="acp.acp_partner_name"/>
+            <a:dataSet id="company_list_ds" loadData="true" model="acp.acp_company_list"/>
+            <a:dataSet id="pay_req_type" loadData="true" model="acp.acp_pay_req_type">
+                <a:fields>
+                    <a:field name="description"/>
+                    <a:field name="id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="payment_req_type" loadData="true" model="acp.acp_payment_type"/>
+            <a:dataSet id="pay_req_com" loadData="true" model="acp.ACP5040.acp_com_req_types"/>
+            <a:dataSet id="payment_status_combo_ds">
+                <a:datas dataSource="/model/payment_status"/>
+            </a:dataSet>
+            <a:dataSet id="exp_report_type" loadData="true" model="acp.exp_report_type">
+                <a:fields>
+                    <a:field name="description"/>
+                    <a:field name="expense_report_type_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="gld_set_of_currency_list_ds" loadData="true" model="exp.exp_currency_code"/>
+            <a:dataSet id="gld_set_of_status_query_list_ds" loadData="true" lookupcode="PAYMENT_REQUISITION_STATUS"/>
+            <a:dataSet id="acp_query_ds" model="acp.acp_requisition_query">
+                <a:fields>
+                    <a:field name="applicant" displayField="name" options="gld_set_of_applicant_ds" returnField="employee_id" valueField="employee_id"/>
+                    <a:field name="currency_name" displayField="currency_name" options="gld_set_of_currency_list_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="status_name" displayField="code_value_name" options="gld_set_of_status_query_list_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="status"/>
+                    <a:field name="partner_category_display" displayfield="code_value_name" options="payment_object_ds" returnfield="partner_category" valuefield="code_value"/>
+                    <a:field name="partner_name" autoComplete="true" autoCompleteField="name_code" lovGridHeight="300" lovHeight="450" lovWidth="500" readOnly="true" title="CSH_TRANSACTION_LINES.PARTNER_ID_ONE">
+                        <a:mapping>
+                            <a:map from="name_code" to="partner_name"/>
+                            <a:map from="id" to="partner_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_id"/>
+                    <a:field name="transaction_class_desc" displayfield="description" options="pay_req_type" returnfield="req_type" valuefield="description"/>
+                    <a:field name="csh_type_id"/>
+                    <a:field name="acp_company" displayField="company_short_name" options="pay_req_com" returnField="company_id" valueField="company_id"/>
+                    <a:field name="expense_report_type_id"/>
+                    <a:field name="already_paying_f"/>
+                    <a:field name="already_paying_t"/>
+                    <a:field name="payment_status_display" displayField="code_value_name" options="payment_status_combo_ds" returnField="payment_status" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="company_ds">
+                <a:datas dataSource="/model/company"/>
+            </a:dataSet>
+            <a:dataSet id="acp_result_ds" autoPageSize="true" autoQuery="true" fetchAll="false" model="acp.ACP5040.acp_payment_requisition_payment_confirm_query" queryDataSet="acp_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="payment_status_display" displayField="code_value_name" options="payment_status_combo_ds" returnField="payment_status" valueField="code_value"/>
+                    <a:field name="payment_status"/>
+                    <a:field name="exp_report_header_id"/>
+                    <!--    <a:field name="payment_company_id_display" displayfield="company_short_name" options="company_list_ds" required="true" returnfield="payment_com_id" valuefield="company_id">
+                        <a:mapping>
+                            <a:map from="company_id" to="payment_com_id"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="payment_company_id_display" displayField="company_name" options="company_ds" prompt="CSH_DOC_PAYMENT_COMPANY.COMPANY_SHORT_NAME" returnField="payment_company_id" valueField="company_id"/>
+                    <a:field name="payment_com_id"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="resetFunction" text="HAP_RESET" width="80"/>
+                <a:toolbarButton click="confirmFun" text="CONFIRM" width="80"/>
+                <a:toolbarButton click="cancelconfirmFun" text="CANCEL_CONFIRM" width="80"/>
+                <a:gridButton bind="result_grid" type="save" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="acp_query_ds" resultTarget="acp_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="csh_payment_number" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.REQUISITION_NUMBER"/>
+                    <a:comboBox name="transaction_class_desc" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.ACP_REQ_TYPE_ID"/>
+                    <a:comboBox name="partner_category_display" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.PARTNER_TARGET"/>
+                </a:formToolBar>
+                <a:formBody column="4" labelWidth="90">
+                    <a:lov name="partner_name" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.PARTNER_NAME"/>
+                    <a:datePicker name="requisition_date_f" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.REQUISITION_DATE_F"/>
+                    <a:datePicker name="requisition_date_t" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.REQUISITION_DATE_T"/>
+                    <a:textField name="amount_f" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.AMOUNT_F"/>
+                    <a:textField name="amount_t" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.AMOUNT_T"/>
+                    <a:comboBox name="payment_status_display" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.PAYMENT_STATUS"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="result_grid" bindTarget="acp_result_ds" marginHeight="121" marginWidth="42" navBar="true">
+                <a:columns>
+                    <a:column name="csh_payment_number" align="left" prompt="ACP_REQUISITION.REQUISITION_NUMBER" renderer="requestNoRenderFunction" sortable="true" width="120"/>
+                    <a:column name="req_type" align="left" prompt="ACP_REQUISITION.ACP_REQ_TYPE_ID" sortable="true" width="120"/>
+                    <a:column name="employee_name" align="left" prompt="ACP_REQUISITION.APPLICANT" sortable="true" width="120"/>
+                    <a:column name="document_number" align="left" prompt="ACP_REQ_MAINTAIN.REF_REQ_NUM" renderer="expRepNumRenderer" width="120"/>
+                    <a:column name="requisition_date" align="center" prompt="ACP_REQUISITION.REQUISITION_DATE" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="amount" align="right" prompt="ACP_REQUISITION.AMOUNT" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="paid_amount" align="right" prompt="ACP_REQUISITION.ALREADY_PAYING" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="payment_status_display" align="center" prompt="ACP_REQUISITION.PAYMENT_STATUS" width="80"/>
+                    <a:column name="payment_company_id_display" align="left" editorFunction="paymentStatusEdit" prompt="ACP_ACP_REQUISITION_HDS.PAYMENT_COM_ID" width="120"/>
+                    <a:column name="payee_category" align="center" prompt="ACP_REQUISITION.PARTNER_TARGET" sortable="true" width="80"/>
+                    <a:column name="payee_code" align="left" prompt="ACP_REQUISITION.PARTNER_NAME" sortable="true" width="120"/>
+                    <a:column name="account_number" align="left" prompt="EXP_EMPLOYEE.BANK_ACCOUNT" width="120"/>
+                    <a:column name="account_name" align="left" prompt="CSH_BANK_BALANCES.BANK_ACCOUNT_ID" width="120"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="payment_status_cmb"/>
+                    <a:textField id="payment_amount_tf"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

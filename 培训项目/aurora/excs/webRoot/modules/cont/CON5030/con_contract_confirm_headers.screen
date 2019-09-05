@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Robin  
+    $Date: 2011-6-8 下午05:37:42  
+    $Revision: 1.0  
+    $Purpose: 合同审批
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" defaultWhereClause="cpy.company_id=${/session/@company_id}" fetchAll="false" model="cont.con_contract_header_company_lov" rootPath="default_company"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="con_contract_headers_details_query_link" url="${/request/@context_path}/modules/cont/public/con_contract_headers_details_query.screen"/>
+        <script><![CDATA[
+            function queryContract() {
+                $('con_contract_headers_query_reault_ds').query();
+            }
+            
+            function reset() {
+                $('con_contract_headers_query_form_ds').reset();
+            }
+            
+            function seedetail(value, record, name) {
+            
+                var url = '';
+                if (record.get('status') == 'GENERATE' || record.get('status') == 'REJECTED') {
+                    url = /*con_contract_headers_details_query.screen*/
+                    $('con_contract_headers_details_query_link').getUrl() + '?contract_header_id=' + record.get('contract_header_id') + '&MODIFY_FLAG=true';
+                } else {
+                    url = /*con_contract_headers_details_query.screen*/
+                    $('con_contract_headers_details_query_link').getUrl() + '?contract_header_id=' + record.get('contract_header_id') + '&MODIFY_FLAG=false';
+                }
+            
+                //return '<a href="javascript:newWindow(\''+url+'\')">'+value+'</a>';
+                return '<a href="javascript:openWindow(\'' + url + '\')">' + value + '</a>';
+            }
+            
+            function openWindow(url) {
+                //window.open(url);
+                location.href = url;
+            }
+            
+            function onCommit(lov, r1, r2) {
+                var partner_category = r1.get('partner_category_code')
+                if (partner_category == null || partner_category == undefined || partner_category == '') {
+                    return;
+                } else if (partner_category == 'EMPLOYEE') {
+                    r1.set('partner_id', r2.get('employee_id'));
+                    r1.set("partner_code", r2.get('employee_code'));
+                    r1.set("partner_name", r2.get('name'));
+                } else if (partner_category == 'VENDER') {
+                    r1.set('partner_id', r2.get('vender_id'));
+                    r1.set("partner_code", r2.get('vender_code'));
+                    r1.set("partner_name", r2.get('vender_name'));
+                } else {
+                    r1.set('partner_id', r2.get('customer_id'));
+                    r1.set("partner_code", r2.get('customer_code'));
+                    r1.set("partner_name", r2.get('customer_name'));
+                }
+            }
+            
+            function getCompany_id(value) {
+                var ds = $('con_contract_headers_query_form_ds');
+                var records = ds.getAll();
+                records[0].set('company_id', value);
+            }
+            
+            function onUpdate(ds, record, name, value) {
+                if (name == 'partner_category_code') {
+                    var company_id = record.get('company_id');
+                    var partner_category_code = record.get('partner_category_code');
+                    if (partner_category_code == 'EMPLOYEE') {
+                        var employeeUrl = 'cont.con_contract_header_employees?company_id=' + company_id;
+                        record.getMeta().getField('partner_code').setLovService(employeeUrl);
+                    } else if (partner_category_code == 'CUSTOMER') {
+                        var customerUrl = 'cont.CON5010.con_contract_header_ord_customers_lov?company_id' + company_id;
+                        record.getMeta().getField('partner_code').setLovService(customerUrl);
+                    } else if (partner_category_code == 'VENDER') {
+                        var venderUrl = 'cont.CON5010.con_contract_header_vender_lov?company_id' + company_id;
+                        record.getMeta().getField('partner_code').setLovService(venderUrl);
+                    }
+                } else if (name == 'company_id') {
+            
+                    record.set('unit_id', null);
+                    record.set('unit_id_display', null);
+                    record.set('employee_id', null);
+                    record.set('employee_id_display', null);
+                    $('unit_display_ds').setQueryParameter('company_id', value);
+                    $('unit_display_ds').query();
+            
+                } else if (name == 'unit_id') {
+            
+                    $('employee_display_ds').setQueryParameter('unit_id', value);
+                    $('employee_display_ds').query();
+            
+                }
+            }
+            
+            function approved() {
+                changeAll('CONFIRM');
+            
+            }
+            
+            function refuse() {
+                var reject_record = $('con_contract_reject_reason_ds').getAt(0);
+                reject_record.getMeta().getField('reject_reason').setRequired(true);
+                var reject_reason = reject_record.get('reject_reason');
+                if(reject_reason){
+                	changeAll('REJECTED');
+                }
+            }
+            
+            
+            function changeAll(status) {
+                var ds = $('con_contract_headers_query_reault_ds');
+                var records = ds.getSelected();
+                if (records.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT_PERIOD.PLEASE_CHOOSE_LINE}');
+                    return;
+                }
+                var reject_reason = $('con_contract_reject_reason_ds').getAt(0).get('reject_reason');
+                for (i = 0;i < records.length;i++) {
+                    records[i].set('newstatus', status);
+                    records[i].set('dirty', true);
+                    
+                    records[i].set('reject_reason',reject_reason);
+                }
+                ds.submitSelected();
+            }
+            
+            function resultQuery() {
+                $('con_contract_headers_query_reault_ds').query();
+                $('con_contract_reject_reason_ds').reset();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="contract_type_dispaly_ds" loadData="true" model="cont.con_contract_type_cbx"/>
+            <a:dataSet id="status_display_ds" lookupCode="CONTRACT_STATUS"/>
+            <a:dataSet id="created_by_display" loadData="true" model="cont.con_contract_createdby_query"/>
+            <a:dataSet id="company_display_ds" loadData="true" model="cont.con_contract_company_cbx"/>
+            <a:dataSet id="unit_display_ds" autoQuery="true" model="cont.con_contract_unit_cbx"/>
+            <a:dataSet id="employee_display_ds" autoQuery="false" model="cont.con_contract_unit_enployee_cbx"/>
+            <a:dataSet id="partner_category_ds" lookupCode="PAYMENT_OBJECT"/>
+            <a:dataSet id="con_contract_headers_query_form_ds">
+                <a:datas dataSource="default_company"/>
+                <a:fields>
+                    <!--                    <a:field name="contract_type_display" displayField="code" options="contract_type_dispaly_ds" returnField="contract_type_id" valueField="id"/>
+-->
+                    <a:field name="contract_type_display" lovGridHeight="310" lovHeight="430" lovService="cont.con_contract_type_dists_all_query" lovWidth="550" title="CON_CONTRACT_TYPES.CONTRACT_TYPE_CODE">
+                        <a:mapping>
+                            <a:map from="code_and_description" to="contract_type_display"/>
+                            <a:map from="contract_type_id" to="contract_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contract_type_id"/>
+                    <a:field name="status_display" displayField="code_value_name" options="status_display_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="status"/>
+                    <!--                    <a:field name="created_by_display" displayField="description_and_code" options="created_by_display" returnField="created_by" valueField="user_id"/>
+-->
+                    <a:field name="created_by_display" Title="CON_CONTRACT_HEADERS.CREATED_BY" lovGridHeight="310" lovHeight="430" lovService="cont.con_contract_createdby_query" lovWidth="550" prompt="CON_CONTRACT_HEADERS.CREATED_BY">
+                        <a:mapping>
+                            <a:map from="description_and_code" to="created_by_display"/>
+                            <a:map from="user_id" to="created_by"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="created_by"/>
+                    <a:field name="company_code_display" lovGridHeight="310" lovHeight="430" lovService="cont.con_contract_company_cbx" lovWidth="550" title="FND_COMPANIES.QUERY">
+                        <a:mapping>
+                            <a:map from="code" to="company_code_display"/>
+                            <a:map from="id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id"/>
+                    <a:field name="unit_display" lovGridHeight="310" lovHeight="430" lovService="cont.con_contract_unit_cbx" lovWidth="550" title="FND_RESP_CENTER.RESP_QUERY">
+                        <a:mapping>
+                            <a:map from="code" to="unit_display"/>
+                            <a:map from="id" to="unit_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_id"/>
+                    <!--                    <a:field name="employee_display" displayField="code" options="employee_display_ds" returnField="employee_id" valueField="id"/>
+-->
+                    <a:field name="employee_display" lovHeight="430" lovService="cont.con_contract_header_employees" lovWidth="550" prompt="PERSON_IN_CHARGE" title="CON_CONTRACT_HEADERS.EMPLOYEE_ID">
+                        <a:mapping>
+                            <a:map from="name_and_code" to="employee_display"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="employee_id"/>
+                    <a:field name="partner_category_display" displayField="code_value_name" options="partner_category_ds" returnField="partner_category_code" valueField="code_value"/>
+                    <a:field name="partner_category_code"/>
+                    <a:field name="partner_code" lovGridHeight="310" lovHeight="430" lovWidth="550" title="CUSTOMER_QUERY">
+                        <a:mapping>
+                            <a:map from="1" to="partner_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_id"/>
+                    <a:field name="partner_name"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="con_contract_headers_query_reault_ds" autoQuery="true" model="cont.CON5030.con_contract_headers_query_submmit" queryDataSet="con_contract_headers_query_form_ds" selectable="true">
+                <a:events>
+                    <a:event name="submitsuccess" handler="resultQuery"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="con_contract_reject_reason_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="reject_reason"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="1" style="width:99%;margin-left:5px;margin-top:5px;" title="CONTRACT_QUERY">
+                <a:hBox>
+                    <a:lov name="contract_type_display" bindTarget="con_contract_headers_query_form_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_TYPE_ID"/>
+                    <a:textField name="contract_number" bindTarget="con_contract_headers_query_form_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER"/>
+                    <a:comboBox name="status_display" bindTarget="con_contract_headers_query_form_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_STATUS"/>
+                    <a:lov name="created_by_display" bindTarget="con_contract_headers_query_form_ds" prompt="SYS_USER.DESCRIPTION_USER_NAME"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:textField name="document_number" bindTarget="con_contract_headers_query_form_ds" prompt="CSH_PREPAYMENT_WRITE_OFF.CONTACT_NUMBER"/>
+                    <a:textField name="document_desc" bindTarget="con_contract_headers_query_form_ds" prompt="CON_CONTRACT_HEADERS.DOCUMENT_DESC"/>
+                    <a:comboBox name="partner_category_display" bindTarget="con_contract_headers_query_form_ds" prompt="EXP_EXPENSE_OBJ.OBJ_TYPE"/>
+                    <a:lov name="partner_code" bindTarget="con_contract_headers_query_form_ds" prompt="CONT_CONTRACT_HEADERS.PARTNER_CODE">
+                        <a:events>
+                            <a:event name="commit" handler="onCommit"/>
+                        </a:events>
+                    </a:lov>
+                    <!-- <a:datePicker name="creation_date" bindTarget="con_contract_headers_query_form_ds" prompt="CREATE_DATE"/> -->
+                </a:hBox>
+                <a:hBox>
+                    <a:lov name="company_code_display" bindTarget="con_contract_headers_query_form_ds" prompt="SYS_PARAMETER.COMPANY_ENABLED_FLAG"/>
+                    <a:lov name="unit_display" bindTarget="con_contract_headers_query_form_ds" prompt="RESPONSIBLE_DEPARTMENT"/>
+                    <a:lov name="employee_display" bindTarget="con_contract_headers_query_form_ds" prompt="PERSON_IN_CHARGE"/>
+                    <a:datePicker name="document_date" bindTarget="con_contract_headers_query_form_ds" prompt="合同日期"/>
+                </a:hBox>
+            </a:form>
+            <a:hBox>
+                <a:toolbarButton click="queryContract" text="HAP_QUERY"/>
+                <a:toolbarButton click="reset" text="HAP_RESET"/>
+                <a:toolbarButton click="approved" text="PROMPT.APPROVE"/>
+                <a:toolbarButton click="refuse" text="PROMPT.REJECT"/>
+                <a:box id="reject_reason_box" labelWidth="90" style="margin-left:12px;">
+                    <a:textField name="reject_reason" id="reject_reason_tf" bindTarget="con_contract_reject_reason_ds" prompt="拒绝原因" width="240"/>
+                </a:box>
+            </a:hBox>
+            <a:grid bindTarget="con_contract_headers_query_reault_ds" height="350" marginHeight="250" marginWidth="30" navBar="true" style="margin-left:5px;margin-top:5px;">
+                <a:toolBar>
+                    <a:button type="excel"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="contract_number" align="center" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER" renderer="seedetail" width="110"/>
+                    <a:column name="contract_type_id_display" align="center" prompt="CON_CONTRACT_TYPES.CONTRACT_TYPE_CODE" width="90"/>
+                    <a:column name="document_number" align="center" prompt="CSH_PREPAYMENT_WRITE_OFF.CONTACT_NUMBER" width="90"/>
+                    <a:column name="document_desc" align="center" prompt="CON_CONTRACT_HEADERS.DOCUMENT_DESC" width="90"/>
+                    <a:column name="created_by_display" align="center" prompt="CON_CONTRACT_HEADERS.CREATED_BY" width="110"/>
+                    <a:column name="creation_date_display" align="center" prompt="CON_CONTRACT_HEADERS.CREATION_DATE" width="90"/>
+                    <a:column name="document_date_display" align="center" prompt="CON_CONTRACT_HEADERS.DOCUMENT_DATE" width="90"/>
+                    <a:column name="company_id_display" align="center" prompt="CON_CONTRACT_HEADERS.COMPANY_ID" width="90"/>
+                    <a:column name="unit_id_display" align="center" prompt="CON_CONTRACT_HEADERS.UNIT_ID" width="90"/>
+                    <a:column name="employee_id_display" align="center" prompt="CON_CONTRACT_HEADERS.EMPLOYEE_ID" width="90"/>
+                    <a:column name="partner_category_display" align="center" prompt="CON_CONTRACT_HEADERS.PAYMENT_OBJECT" width="80"/>
+                    <a:column name="partner_code" align="center" prompt="CONT_CONTRACT_HEADERS.PARTNER_CODE" width="90"/>
+                    <a:column name="status_display" align="center" prompt="CON_CONTRACT_HEADERS.CONTRACT_STATUS" width="60"/>
+                    <a:column name="note" align="center" prompt="CON_CONTRACT_HEADERS.NOTE" width="93"/>
+                </a:columns>
+            </a:grid>
+            <script><![CDATA[
+            	getCompany_id(${/session/@company_id});
+            ]]></script>
+        </a:screenBody>
+    </a:view>
+</a:screen>

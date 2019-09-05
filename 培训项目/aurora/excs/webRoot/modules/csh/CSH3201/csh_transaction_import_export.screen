@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: liu bo  
+    $Date: 2018年4月8日16:16:42  
+    $Revision:   
+    $Purpose: 付款文件导入导出
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="1=1 order by code_value" fetchAll="true" model="csh.csh_payment_requisition_init_pay_obj_list" rootpath="pay_obj_list"/>
+        <a:model-query fetchAll="true" model="gld.gld_currency_vl" rootpath="currency_list"/>
+        <a:model-query fetchAll="true" model="csh.csh_payment_methods_vl" rootpath="payment_methods_list"/>
+        <a:model-query fetchAll="true" model="sys.CSH3200.csh_get_transaction_type_list" rootpath="transaction_type_list"/>
+        <a:model-query model="csh.CSH5240.csh_payment_from_to_date_query" rootPath="from_to_date"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="csh_payment_transaction_detail_link_6" url="${/request/@context_path}/modules/csh/public/csh_payment_transaction_detail.screen"/>
+        <a:link id="exp_report_detail_link" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl.screen"/>
+        <a:link id="payment_rquisition_detail_link" url="${/request/@context_path}/modules/csh/public/csh_pay_req_query_detail.screen"/>
+        <a:link id="acp_acp_req_detail_link" url="${/request/@context_path}/modules/acp/public/acp_req_maintain_view.screen"/>
+        <a:link id="csh_payment_document_details_link" url="${/request/@context_path}/modules/csh/public/csh_payment_document_details.screen"/>
+        <a:link id="csh_transaction_import_link" url="${/request/@context_path}/modules/csh/CSH3201/csh_transaction_import.screen"/>
+        <a:link id="pay_failure_link" model="db.pay_failure_pkg.update_transaction" modelaction="batch_update"/>
+        <script><![CDATA[
+            // function paymentdetail(value, record, name) {
+            // url = /*csh_payment_transaction_detail.screen*/
+            // $('csh_payment_transaction_detail_link_6').getUrl() + '?transaction_header_id=' + record.get('payment_header_id');
+            // return '<a href="javascript:openTransactionWindow(\'' + url + '\')">' + value + '</a>';
+            // }
+            // function openTransactionWindow(url) {
+            // new Aurora.Window({
+            // id: 'csh_payment_transaction_detail_window',
+            // url: url,
+            // fullScreen: true,
+            // title: '${l:CSH_PAYMENT_TRANSACTION_DETAIL.TITLE}',
+            // height: 520,
+            // width: 850
+            // });
+            // }
+            // function docdetail(value, record, name) {
+            // var doc_count = record.get('doc_count');
+            // if (doc_count > 1) {
+            // var transaction_header_id = record.get('transaction_header_id');
+            // return '<a href="javascript:openDocumentDetails(' + transaction_header_id + ')">单据明细</a>';
+            // }
+            // var doc_type = record.get('doc_type');
+            // if (doc_type == 'EXP_REPORT') {
+            // url = /*csh_payment_transaction_detail.screen*/
+            // $('exp_report_detail_link').getUrl() + '?exp_report_header_id=' + record.get('doc_header_id');
+            // }
+            // if (doc_type == 'PAYMENT_REQUISITION') {
+            // url = /*csh_payment_transaction_detail.screen*/
+            // $('payment_rquisition_detail_link').getUrl() + '?payment_requisition_header_id=' + record.get('doc_header_id');
+            // }
+            // if (doc_type == 'ACP_REQUISITION') {
+            // url = /*csh_payment_transaction_detail.screen*/
+            // $('acp_acp_req_detail_link').getUrl() + '?acp_requisition_header_id=' + record.get('doc_header_id');
+            // }
+            // return '<a href="javascript:opendocWindow(\'' + url + '\')">' + value + '</a>';
+            // }
+            // function openDocumentDetails(transaction_header_id) {
+            // new Aurora.Window({
+            // url: $('csh_payment_document_details_link').getUrl() + '?transaction_header_id=' + transaction_header_id,
+            // title: '付款单据明细',
+            // id: 'document_details_window',
+            // width: 320,
+            // height: 300
+            // });
+            // }
+            // function opendocWindow(url) {
+            // new Aurora.Window({
+            // id: 'csh_payment_doc_detail_window',
+            // url: url,
+            // fullScreen: true,
+            // title: '',
+            // height: 520,
+            // width: 850
+            // });
+            // }
+            
+            function doQuery() {
+                $('csh_transaction_reuslt_ds').query();
+            }
+            
+            function doReset() {
+                $('csh_transaction_query_ds').reset();
+                var record = $('csh_transaction_query_ds').getCurrentRecord();
+                record.getField('partner_id_display').setLovService('');
+                record.getField('partner_id_display').setReadOnly(true);
+                record.set('partner_id', '');
+                record.set('partner_id_display', '');
+            }
+            
+            function updateFunction(ds, record, name, value) {
+                if (name == 'partner_category') {
+                    ds.getAt(0).set('partner_id', '');
+                    ds.getAt(0).set('partner_id_display', '');
+                    if (value != null && value != '') {
+                        record.getField('partner_id_display').setLovPara('partner_category', value);
+                        record.getField('partner_id_display').setLovService('csh.csh_vender_customer_list');
+                        record.getField('partner_id_display').setReadOnly(false);
+                    } else {
+                        record.getField('partner_id_display').setLovService('');
+                        record.getField('partner_id_display').setReadOnly(true);
+                    }
+                }
+                if (name == 'pay_fail_flag') {
+                    $('csh_transaction_reuslt_ds').query();
+                }
+            }
+            
+            function exportFun() {
+                var ds = $('csh_transaction_reuslt_ds');
+                var columnTitles = ['编号', '开户行', '户名', '银行账户', '金额', '同城标志', '同行标志', '用途', '证件类型', '证件号码', '申请组织', '部门', '备注', '计划项目'];
+                var columnNames = ['rownum', 'open_bank', 's_bank_account_name', 's_bank_account_num', 'transaction_amount', 'same_city_sign', 'same_bank_sign', 'use', 'document_type', 'id_number', 'application_organization', 'department', 'remarks', 'plan_project'];
+                var columns = [];
+                var recs = ds.getSelected();
+                for (var i = 0;i < columnTitles.length;i++) {
+                    //选取文件启用的列
+                    columns.push({
+                        prompt: columnTitles[i],
+                        name: columnNames[i],
+                        width: 100
+                    });
+                }
+                // var query_ids = '';
+                // if (recs.length == 0) {
+                // query_ids = 0;
+                // } else {
+                // for (i = 0;i < recs.length;i++) {
+                // if (i != 0) {
+                // query_ids = query_ids + ',';
+                // }
+                // query_ids += recs[i].get('id');
+                // }
+                // $('csh_transaction_reuslt_ds').query();
+                // }
+                // $('download_model_ds').setQueryParameter('query_ids', query_ids);
+                $A.doExport($('csh_transaction_reuslt_ds'), columns, '', '', '', '导出的付款文件');
+            }
+            
+            function uploadFunction() {
+                new Aurora.Window({
+                    id: 'loadData_window',
+                    url: $('csh_transaction_import_link').getUrl(),
+                    title: '付款文件导入',
+                    fullScreen: true,
+                    width: 420,
+                    height: 275
+                });
+            }
+            
+            function downloadFunction() {
+                var columnTitles = ['编号', '付款交易编号', '付款状态'];
+                var columns = [];
+                for (var i = 0;i < columnTitles.length;i++) {
+                    //选取文件启用的列
+                    columns.push({
+                        prompt: columnTitles[i],
+                        width: 100
+                    });
+                }
+                $A.doExport($('csh_transaction_reuslt_ds'), columns, '', '', '', '付款文件导入模板');
+            }
+            
+            function update_reuslt_ds(dataSet, record, name, value, oldvalue) {
+                if ('partner_category' == name) {
+                    record.getField('parener_code_name').setLovPara('partner_category', value);
+                    record.getField('parener_code_name').setLovService('csh.csh_vender_employee_list');
+                }
+            }
+            
+            function save() {
+                selectRecords = $('csh_transaction_reuslt_ds').getSelected();
+                if (selectRecords.length == 0) {
+                    Aurora.showInfoMessage('错误', '请选择被修改的行数据！');
+                    return;
+                }
+                var param = $('csh_transaction_reuslt_ds').getJsonData(true);
+                Aurora.request({
+                    url: $('pay_failure_link').getUrl(),
+                    para: param,
+                    success: function(res) {
+                        doQuery();
+                    },
+                    scope: this
+                });
+            }
+            
+            function Gridcellclick(grid, row, name, record) {
+                if ('s_bank_account_num' == name) {
+                    var r = record.getMeta();
+                    var f = r.getField('s_bank_account_num');
+                    var payee_category = record.get('partner_category');
+                    if (payee_category == null || payee_category == undefined || payee_category == '') {
+                        f.setLovService('');
+                    } else if (payee_category == 'EMPLOYEE') {
+                        f.setLovService('expm.exp_employee_accounts_ext');
+                        record.getMeta().getField('s_bank_account_num').setLovPara('employee_id', record.get('partner_id'));
+                    } else if (payee_category == 'VENDER') {
+                        f.setLovService('expm.pur_vender_accounts');
+                        record.getMeta().getField('s_bank_account_num').setLovPara('vender_id', record.get('partner_id'));
+                    }
+                }
+                if ('parener_code_name' == name) {
+                    var payee_cate = record.get('partner_category');
+                    record.getField('parener_code_name').setLovPara('partner_category', payee_cate);
+                    record.getField('parener_code_name').setLovService('csh.csh_vender_employee_list');
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="payee_category_ds" lookupCode="PAYMENT_OBJECT"/>
+            <a:dataSet id="partner_category_ds">
+                <a:datas dataSource="/model/pay_obj_list"/>
+            </a:dataSet>
+            <a:dataSet id="bank_account_code_ds">
+                <a:datas dataSource="/model/bank_accounts_list"/>
+            </a:dataSet>
+            <a:dataSet id="currency_code_ds">
+                <a:datas dataSource="/model/currency_list"/>
+            </a:dataSet>
+            <a:dataSet id="doc_type_ds">
+                <a:datas>
+                    <a:record name="费用报销单" code="EXP_REPORT"/>
+                    <a:record name="借款申请单" code="PAYMENT_REQUISITION"/>
+                    <a:record name="付款单" code="ACP_REQUISITION"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="pay_status_ds">
+                <a:datas>
+                    <a:record name="支付中" code="支付中"/>
+                    <a:record name="已支付" code="已支付"/>
+                    <a:record name="支付失败" code="支付失败"/>
+                    <a:record name="退票" code="退票"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="payment_method_id_ds">
+                <a:datas dataSource="/model/payment_methods_list"/>
+            </a:dataSet>
+            <a:dataSet id="transaction_type_ds">
+                <a:datas dataSource="/model/transaction_type_list"/>
+            </a:dataSet>
+            <a:dataSet id="posted_flag_desc_ds">
+                <a:datas>
+                    <a:record name="已过账" code="已过账"/>
+                    <a:record name="未过账" code="未过账"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="csh_transaction_query_ds" model="csh.CSH3200.csh_transaction">
+                <a:fields>
+                    <a:field name="partner_category_display" displayField="code_value_name" options="partner_category_ds" returnField="partner_category" valueField="code_value"/>
+                    <a:field name="partner_id_display" autoComplete="true" autoCompleteField="name" lovGridHeight="320" lovHeight="450" lovWidth="500" readOnly="true" title="CSH_TRANSACTION_LINES.PARTNER_SELECT">
+                        <a:mapping>
+                            <a:map from="id" to="partner_id"/>
+                            <a:map from="name" to="partner_id_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="agent_name_display" autoComplete="true" autoCompleteField="name_code" lovGridHeight="320" lovHeight="450" lovService="exp.CSH3200.csh_get_employee_list" lovWidth="500" title="CSH_TRANSACTION_LINES.AGENT_EMPLOYEE_SELECT">
+                        <a:mapping>
+                            <a:map from="name" to="agent_name"/>
+                            <a:map from="name_code" to="agent_name_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bank_account_code_display" lovGridHeight="320" lovHeight="450" lovService="csh.csh_bank_accounts_vl?company_id=${/session/@company_id}&amp;account_type=COMPANY_BANK_ACCOUNT" lovWidth="500" title="CSH_BANK_ACCOUNTS_VL.BANK_ACCOUNT_SELECT">
+                        <a:mapping>
+                            <a:map from="bank_account_code" to="bank_account_code"/>
+                            <a:map from="bank_account_name" to="bank_account_code_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pay_status_desc" displayField="name" options="pay_status_ds" returnField="pay_status_desc" valueField="code"/>
+                    <a:field name="doc_type_code"/>
+                    <a:field name="doc_type" displayField="name" options="doc_type_ds" returnField="doc_type_code" valueField="code"/>
+                    <a:field name="currency_code_display" displayField="currency_name" options="currency_code_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="payment_method_id_display" displayField="description" options="payment_method_id_ds" returnField="payment_method_id" valueField="payment_method_id"/>
+                    <a:field name="transaction_type_display" displayField="transaction_type_desc" options="transaction_type_ds" returnField="transaction_type" valueField="transaction_type"/>
+                    <a:field name="transaction_date_from" defaultValue="${/model/from_to_date/record/@from_date}" required="true"/>
+                    <a:field name="transaction_date_to" defaultValue="${/model/from_to_date/record/@to_date}" required="true"/>
+                    <a:field name="posted_flag_desc" displayField="name" options="posted_flag_desc_ds" returnField="posted_flag_desc" valueField="code"/>
+                    <a:field name="pay_fail_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="csh_transaction_reuslt_ds" autoPageSize="true" autoQuery="true" model="csh.CSH3200.csh_transaction" queryDataSet="csh_transaction_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="currency_name"/>
+                    <a:field name="partner_category"/>
+                    <a:field name="p_partner_category" displayField="code_value_name" options="payee_category_ds" prompt="EXP_REQUISITION_LINES.PAYEE_CATEGORY">
+                        <a:mapping>
+                            <a:map from="code_value" to="partner_category"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_id"/>
+                    <a:field name="s_bank_account_num" autoComplete="true" autoCompleteField="name" lovGridHeight="350" lovHeight="500" lovWidth="500">
+                        <a:mapping>
+                            <a:map from="bank_location" to="open_bank"/>
+                            <a:map from="account_number" to="s_bank_account_num"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="s_bank_account_name"/>
+                    <a:field name="parener_code_name" autoComplete="true" autoCompleteField="name" lovGridHeight="350" lovHeight="500" lovWidth="500" prompt="EXP_REPORT_LINES.PAYEE_CATEGORY" title="CSH_TRANSACTION_LINES.PARTNER_SELECT">
+                        <a:mapping>
+                            <a:map from="id" to="partner_id"/>
+                            <a:map from="name" to="parener_code_name"/>
+                            <a:map from="account_number" to="s_bank_account_num"/>
+                            <a:map from="payee_name" to="s_bank_account_name"/>
+                            <a:map from="bank_location" to="open_bank"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="update_reuslt_ds"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="doReset" text="HAP_RESET" width="80"/>
+                <a:toolbarButton id="exportBtn" click="exportFun" text="导出付款文件"/>
+                <a:gridButton click="downloadFunction" text="导入模板下载" width="80"/>
+                <a:gridButton click="uploadFunction" text="导入支付结果" width="80"/>
+                <a:toolbarButton click="save" text="HAP_SAVE" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="csh_transaction_query_ds" resultTarget="csh_transaction_reuslt_ds" style="width:100%;border:none">
+                <a:formToolBar labelWidth="100">
+                    <a:datePicker name="transaction_date_from" bindTarget="csh_transaction_query_ds" prompt="CSH_PREPAYMENT_WRITE_OFF.TRANSACTION_DATE_FROM" width="120"/>
+                    <a:datePicker name="transaction_date_to" bindTarget="csh_transaction_query_ds" prompt="CSH_PREPAYMENT_WRITE_OFF.TRANSACTION_DATE_TO" width="120"/>
+                    <a:textField name="transaction_num" bindTarget="csh_transaction_query_ds" prompt="付款交易编号" width="160"/>
+                    <a:comboBox name="pay_status_desc" bindTarget="csh_transaction_query_ds" prompt="支付状态" width="120"/>
+                    <a:checkBox name="pay_fail_flag" prompt="支付未成功"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:comboBox name="partner_category_display" bindTarget="csh_transaction_query_ds" prompt="CSH_TRANSACTION_LINES.PARTNER_CATEGORY"/>
+                    <a:lov name="partner_id_display" bindTarget="csh_transaction_query_ds" prompt="CSH_TRANSACTION_LINES.PARTNER_ID"/>
+                    <a:lov name="agent_name_display" bindTarget="csh_transaction_query_ds" prompt="CSH_TRANSACTION_LINES.AGENT_EMPLOYEE_ID" width="200"/>
+                    <a:lov name="bank_account_code_display" bindTarget="csh_transaction_query_ds" prompt="CSH_TRANSACTION_LINES.BANK_ACCOUNT_ID" width="200"/>
+                    <a:comboBox name="currency_code_display" bindTarget="csh_transaction_query_ds" prompt="CSH_TRANSACTION_LINES.CURRENCY_CODE" width="200"/>
+                    <a:comboBox name="payment_method_id_display" bindTarget="csh_transaction_query_ds" prompt="CSH_TRANSACTION_HEADERS.PAYMENT_METHOD_ID" width="200"/>
+                    <a:comboBox name="transaction_type_display" bindTarget="csh_transaction_query_ds" prompt="CSH_TRANSACTION_HEADERS.TRANSACTION_TYPE" width="200"/>
+                    <a:numberField name="number_from" bindTarget="csh_transaction_query_ds" prompt="CSH_PREPAYMENT_WRITE_OFF.NUMBER_FROM" width="200"/>
+                    <a:numberField name="number_to" bindTarget="csh_transaction_query_ds" prompt="CSH_PREPAYMENT_WRITE_OFF.NUMBER_TO" width="200"/>
+                    <a:textField name="doc_number" bindTarget="csh_transaction_query_ds" prompt="EXP_REPORT_QUERY.DANJUBIANHAO" width="200"/>
+                    <a:comboBox name="doc_type" bindTarget="csh_transaction_query_ds" prompt="PAY_REQ_TYPE" width="200"/>
+                    <a:comboBox name="posted_flag_desc" bindTarget="csh_transaction_query_ds" prompt="过账状态" width="200"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="CSH3200_grid" bindTarget="csh_transaction_reuslt_ds" marginHeight="121" navBar="true">
+                <a:columns>
+                    <a:column name="transaction_num" align="left" prompt="付款交易编号" width="150"/>
+                    <a:column name="pay_status_desc" align="left" prompt="付款状态" width="150"/>
+                    <a:column name="open_bank" align="left" prompt="开户行" width="150"/>
+                    <a:column name="s_bank_account_name" align="left" prompt="户名" width="110"/>
+                    <a:column name="s_bank_account_num" align="center" editor="lov" prompt="银行账户" width="100"/>
+                    <a:column name="transaction_amount" align="right" prompt="金额" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="same_city_sign" align="left" prompt="同城标志" width="150"/>
+                    <a:column name="same_bank_sign" align="left" prompt="同行标志" width="150"/>
+                    <a:column name="use" align="left" prompt="用途" width="150"/>
+                    <a:column name="document_type" align="left" prompt="证件类型" width="150"/>
+                    <a:column name="id_number" align="left" prompt="证件号码" width="150"/>
+                    <a:column name="application_organization" align="left" prompt="申请组织" width="150"/>
+                    <a:column name="department" align="left" prompt="部门" width="150"/>
+                    <a:column name="remarks" align="left" prompt="备注" width="150"/>
+                    <a:column name="plan_project" align="left" prompt="计划项目" width="150"/>
+                    <a:column name="p_transaction_date" align="center" prompt="CSH_TRANSACTION_HEADERS.TRANSACTION_DATE" width="80"/>
+                    <a:column name="doc_number" align="center" prompt="EXP_REPORT_QUERY.DANJUBIANHAO" width="120"/>
+                    <a:column name="doc_type_name" align="left" prompt="PAY_REQ_TYPE" width="100"/>
+                    <a:column name="transaction_type_desc" align="left" prompt="CSH_TRANSACTION_HEADERS.TRANSACTION_TYPE" width="80"/>
+                    <a:column name="currency_name" align="left" prompt="CSH_TRANSACTION_LINES.CURRENCY_CODE" width="50"/>
+                    <a:column name="bank_account_name" align="left" prompt="账户名称" width="110"/>
+                    <a:column name="bank_account_code" align="center" prompt="账户编码" width="100"/>
+                    <a:column name="bank_account_num" align="left" prompt="CSH_BANK_ACCOUNTS_VL.BANK_ACCOUNT_ID"/>
+                    <a:column name="p_partner_category" align="left" prompt="CSH_TRANSACTION_LINES.PARTNER_CATEGORY" width="90"/>
+                    <a:column name="parener_code_name" align="left" prompt="CSH_TRANSACTION_LINES.PARTNER_ID" width="100"/>
+                    <a:column name="document_num" align="left" prompt="CSH_TRANSACTION_LINES.DOCUMENT_NUM" width="95"/>
+                    <a:column name="agent_name" align="left" prompt="CSH_TRANSACTION_LINES.AGENT_EMPLOYEE_ID" width="75"/>
+                    <a:column name="user_desc" align="left" prompt="CSH_TRANSACTION_LINES.CREATED_BY" width="75"/>
+                    <a:column name="returned_flag" align="center" prompt="PROMPT.RETURNED" width="50"/>
+                    <a:column name="reversed_flag" align="center" prompt="PROMPT.REVERSE" width="50"/>
+                    <a:column name="posted_flag_desc" align="center" prompt="过账状态" width="50"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="comboBox"/>
+                    <a:lov id="lov"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="Gridcellclick"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[                
+            function CSH3200_InitSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                var vh = $A.getViewportHeight();
+                //留白宽度
+                var marginWidth = 35 ;
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = autoWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置组件的自适应宽度
+                $('CSH3200_grid').setWidth(autoWidth);
+                //设置TextArea的自适应宽度,别问我最后那个6是哪里来的，试出来的
+            }
+            //Ext.fly(window).on('resize', CSH3200_InitSize);
+            CSH3200_InitSize();
+            ]]></script>
+    </a:view>
+</a:screen>

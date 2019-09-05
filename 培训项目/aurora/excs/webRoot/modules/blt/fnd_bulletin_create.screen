@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: likun  
+    $Date: 2011-7-1 下午04:36:26  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <script charset="utf-8" src="${/request/@context_path}/kindeditor/kindeditor.js"><![CDATA[ ]]></script>
+        <script><![CDATA[
+            function init() {
+                $('bulletin_info_ds').getCurrentRecord().getField('bulletin_type_desc').setReadOnly(true);
+                $('bulletin_info_ds').getCurrentRecord().getField('bulletin_type_desc').setRequired(false);
+            }
+            
+            KE.show({
+                id: 'content1',
+                imageUploadJson : '${/request/@context_path}/upload_json.jsp',
+		        fileManagerJson : '${/request/@context_path}/file_manager_json.jsp',
+		        allowFileManager : true,
+                width: '100%'
+            });
+            
+            function date_Validator(record, name, value) {
+                if (name == 'date_from' || name == 'date_to') {
+                    var date_from = record.get('date_from');
+                    var date_to = record.get('date_to');
+                    if (typeof(date_to) != 'undefined' && !Ext.isEmpty(date_to)) {
+                        if (!compareDate(date_from, date_to)) {
+                            return '起始日期从不能大于终止日期';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function returnQeury() {
+                //$('fnd_bulletin_create_window').close();
+                window.open('${/request/@context_path}/modules/blt/fnd_bulletin_query.screen','_self');
+            }
+            
+            function save() {
+                var fnd_bulletin_list_ds = $('fnd_bulletin_list_ds');
+                fnd_bulletin_list_ds.getCurrentRecord().set('bulletin_content',KE.html('content1'));
+                if (fnd_bulletin_list_ds.validate) {
+                    record = $('bulletin_info_ds').getCurrentRecord();
+                    if (record.get('potential_flag') == 'N' && record.get('formal_flag') == 'N' && record.get('homepage_flag') == 'N' && record.get('internal_flag') == 'N') {
+                        Aurora.showMessage('提示', '请选择公告发布对象');
+                        return;
+                    }
+                    
+                    fnd_bulletin_list_ds.submit();
+                }
+            }
+            
+            function onSubmitSuccess(dataSet, res) {
+            
+                $('bulletin_info_ds').getCurrentRecord().set('bulletin_id', res.result.record.bulletin_id);
+            
+            
+                $('bulletin_info_ds').submit();
+            
+            }
+            
+            function onInfoSubmitSuccess() {
+                Aurora.showMessage('提示', '公告创建成功!', function() {
+                    $('save_btn').disable();
+                    $('release_btn').enable();
+                    $('upload_btn').enable();
+                });
+            }
+            
+            function release() {
+                var fnd_bulletin_list_ds = $('fnd_bulletin_list_ds');
+                var record = fnd_bulletin_list_ds.getCurrentRecord();
+                var bulletin_id = record.get('bulletin_id');
+                if (!Ext.isEmpty(bulletin_id)) {
+                    var confirm = new Aurora.showConfirm("提示", "确认发布公告？", function() {
+                        confirm.close();
+                        Aurora.Masker.mask(Ext.getBody(), '正在加载...');
+                        doRelease(record.get('bulletin_id'));
+                    });
+                }
+            }
+            
+            function doRelease(id) {
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/blt.fnd_bulletin_list/execute',
+                    para: {
+                        bulletin_id: id
+                    },
+                    success: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        Aurora.showMessage('提示', '发布成功!', function() {
+                            returnQeury();
+                            queryCountryCode();
+                        });
+                    },
+                    failure: Aurora.Masker.unmask(Ext.getBody()),
+                    error: Aurora.Masker.unmask(Ext.getBody()),
+                    scope: this
+                });
+            }
+            
+            function uploadFile() {
+                var fnd_bulletin_list_ds = $('fnd_bulletin_list_ds');
+                var record = fnd_bulletin_list_ds.getCurrentRecord();
+                var bulletin_id = record.get('bulletin_id');
+                if (!Ext.isEmpty(bulletin_id)) {
+                    var url = "${/request/@context_path}/uploadFile.screen?table_name=FND_BULLETIN_LIST&header_id=" + bulletin_id;
+                    new Aurora.Window({
+                        url: url,
+                        title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                        id: 'hsp_fnd_bulletin_upload_file_window',
+                        width: 400,
+                        height: 200
+                    });
+                }
+            
+            }
+            
+            function homepage_cb_change(cb, value, oldvalue) {
+                if (value == 'N') {
+                    $('bulletin_info_ds').getCurrentRecord().set('bulletin_type_desc', '');
+                    $('bulletin_info_ds').getCurrentRecord().set('bulletin_type', '');
+                    $('bulletin_info_ds').getCurrentRecord().getField('bulletin_type_desc').setReadOnly(true);
+                    $('bulletin_info_ds').getCurrentRecord().getField('bulletin_type_desc').setRequired(false);
+                } else {
+                    $('bulletin_info_ds').getCurrentRecord().getField('bulletin_type_desc').setReadOnly(false);
+                    $('bulletin_info_ds').getCurrentRecord().getField('bulletin_type_desc').setRequired(true);
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="bulletin_type_ds" lookupCode="SCF_BULLETIN_TYPE"/>
+            <a:dataSet id="bulletin_info_ds" autoCreate="true" model="blt.fnd_bulletin_info">
+                <a:fields>
+                    <a:field name="bulletin_id"/>
+                    <a:field name="bulletin_type"/>
+                    <a:field name="bulletin_type_desc" displayField="code_value_name" options="bulletin_type_ds" returnField="bulletin_type" valueField="code_value"/>
+                    <a:field name="potential_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="formal_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="homepage_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="internal_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="onInfoSubmitSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="fnd_bulletin_list_ds" autoCreate="true" model="blt.fnd_bulletin_list">
+                <a:fields>
+                    <a:field name="bulletin_title" maxLength="1000" required="true"/>
+                    <a:field name="date_from" required="true" validator="date_Validator"/>
+                    <a:field name="date_to" required="true" validator="date_Validator"/>
+                    <a:field name="bulletin_content" maxLength="4000" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="onSubmitSuccess"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:screenTitle/>
+            <a:gridButton id="save_btn" click="save" text="保存"/>
+            <a:gridButton click="returnQeury" text="返回"/>
+            <a:gridButton id="release_btn" click="release" text="发布"/>
+            <a:gridButton id="upload_btn" click="uploadFile" text="ATM.UPLOAD_ATTACHMENT"/>
+        </a:screenTopToolbar>
+        <a:hBox>
+            <a:textField name="bulletin_title" bindTarget="fnd_bulletin_list_ds" prompt="标题" width="615"/>
+        </a:hBox>
+        <a:hBox>
+            <a:datePicker name="date_from" bindTarget="fnd_bulletin_list_ds" prompt="起始日期" width="150"/>
+            <a:datePicker name="date_to" bindTarget="fnd_bulletin_list_ds" prompt="终止日期" width="150"/>
+            <a:comboBox name="bulletin_type_desc" bindTarget="bulletin_info_ds" prompt="公告类型" width="150"/>
+        </a:hBox>
+        <a:hBox>
+            <a:checkBox name="homepage_flag" id="homepage_cb_id" bindTarget="bulletin_info_ds" label="发布到首页" prompt="" width="150">
+                <a:events>
+                    <a:event name="change" handler="homepage_cb_change"/>
+                </a:events>
+            </a:checkBox>
+            <a:checkBox name="internal_flag" bindTarget="bulletin_info_ds" label="发布给内部用户" prompt="" width="150"/>
+            <a:checkBox name="formal_flag" bindTarget="bulletin_info_ds" label="发布给正式供应商" prompt="" width="150"/>
+            <a:checkBox name="potential_flag" bindTarget="bulletin_info_ds" label="发布给潜在供应商" prompt="" width="150"/>
+        </a:hBox>
+        <a:textArea name="bulletin_content" id="content1" bindTarget="fnd_bulletin_list_ds" marginHeight="130" marginWidth="65" prompt="内容" style="visibility:hidden;"/>
+        <script><![CDATA[
+        	$('release_btn').disable();
+        	$('upload_btn').disable();
+        	Aurora.onReady(function(){
+                init();
+                });
+        ]]></script>
+    </a:view>
+</a:screen>

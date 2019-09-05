@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zhouxh  
+    $Date: 2012-5-28 上午11:30:38  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" dataSourceName="hr">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				select t.*,
+					   t.project_contract_amount contract_amount,
+					   ltrim(to_char(decode(nvl(t.man_day_total,
+												0),
+											0,
+											0,
+											round(t.project_contract_amount /
+												  t.man_day_total *
+												  hand_sys_pkg.get_work_days(to_date(to_char(t.begin_date,
+																							 'yyyy') ||
+																					 '-1-1',
+																					 'yyyy-mm-dd'),
+																			 to_date(to_char(t.begin_date,
+																							 'yyyy') ||
+																					 '-12-31',
+																					 'yyyy-mm-dd')),
+												  2),
+											'9,999,999,999.00'))) man_year_amount,
+					   round((bgt_journal_pkg.get_project_funamount(t.project_id) -
+							 (t.expense_total + t.manday_cost)) /
+							 decode(bgt_journal_pkg.get_project_funamount(t.project_id),
+									0,
+									1,
+									bgt_journal_pkg.get_project_funamount(t.project_id)),
+							 2) * 100 as ratio_m
+				  from (select v.*,
+							   p.full_name,
+							   p.project_code,
+							   p.begin_date,
+							   p.end_date,
+							   h.status,
+							   h.journal_header_notes,
+							   h.manday_notes,
+							   h.ticket_notes,
+							   h.expense_notes,
+							   (select sum(l.amount) as manday_cost
+								  from bgt_journal_lines l
+								 where l.project_id = h.project_id
+								   and l.budget_item = 'PRJ_RESOURCE'
+								   and l.journal_header_id = h.journal_header_id
+								 group by l.journal_header_id) manday_cost,
+							   
+							   decode(nvl(bgt_journal_pkg.get_project_funamount(h.project_id),
+										  0),
+									  0,
+									  p.contract_amount,
+									  bgt_journal_pkg.get_project_funamount(h.project_id)) project_contract_amount
+						
+						  from (select a.*
+								
+								  from bgt_project_budget_versions a) v,
+							   
+							   bgt_journal_headers h,
+							   
+							   prj_project                 p,
+							   wfl_workflow_instance       i 
+						 where v.journal_header_id = h.journal_header_id
+						   and v.project_id = h.project_id
+						   and p.project_id = h.project_id
+						   and h.journal_header_id = i.instance_param
+							  
+						   and i.instance_id = ${@instance_id} ) t
+						   
+					   
+]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

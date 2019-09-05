@@ -1,0 +1,1184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" cacheEnabled="true" cacheKey="${/session/@company_id}.${/session/@user_id}.${/parameter/@exp_requisition_type_id}" tag="exp_requisition" trace="true">
+    <a:init-procedure>
+        <!--<a:model-query autoCount="false" defaultWhereClause="currency_code=${/parameter/@currency_code}" fetchAll="true" model="gld.gld_currency_vl" rootPath="precision"/>-->
+        <!--<a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_sid_init" rootPath="sid"/>-->
+        <a:model-query autoCount="false" defaultWhereClause="exists (select *  from exp_req_ref_user_groups egs where egs.expense_requisition_type_id = t1.expense_requisition_type_id  and exists (select 1 from exp_user_group_lines el where el.expense_user_group_id = egs.expense_user_group_id and el.employee_id = (select employee_id from  sys_user where user_id=${/session/@user_id}))) and t1.ENABLED_FLAG = &apos;Y&apos; and t1.expense_requisition_type_id=${/parameter/@exp_requisition_type_id}" fetchAll="true" model="expm.exp_expense_req_types_vl" rootPath="type"/>
+        <a:model-query autoCount="false" fetchAll="true" model="exp.exp_requisition_report_type_init" rootPath="report_type"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_exchange_type_init" rootPath="exchange_type"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_currency_code_init" rootPath="currency_code"/>
+        <a:model-query autoCount="false" defaultWhereClause="employee_id=${/parameter/@employee_id}" fetchAll="true" model="exp.exp_employees" rootPath="employee_info"/>
+        <!--<a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_policy_init" rootPath="policy_enabled"/>-->
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_employee_positionlist_init" rootPath="emp_position_list"/>
+        <!--<a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_head_object" rootPath="head_object"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_proxy_dimension" rootPath="head_dimension"/>
+        <a:model-query autoCount="false" fetchall="true" model="expm.exp_proxy_dimension_line" rootpath="line_dimension"/>
+        <a:model-query autoCount="false" fetchall="true" model="expm.exp_requisition_line_object" rootpath="line_object"/>-->
+        <a:model-query autoCount="false" defaultWhereClause="gc_lov.currency_code = ${/parameter/@currency_code}" fetchAll="true" model="gld.gld_currency_lov" rootPath="currency"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_document_req_policy_query_link_3" url="${/request/@context_path}/modules/expm/public/exp_document_req_policy_query.screen"/>
+        <a:link id="exp_requisition_type_choice_link" url="${/request/@context_path}/modules/expm/public/exp_requisition_type_choice.screen"/>
+        <a:link id="exp_requisition_head_delete_link" model="db.exp_requisition_pkg.delete_exp_requisition_headers" modelaction="delete"/>
+        <a:link id="exp_requisition_update_link_1" url="${/request/@context_path}/modules/expm/public/exp_requisition_update_pt.screen"/>
+        <a:link id="exp_requisition_create_control_link" url="${/request/@context_path}/modules/expm/public/exp_requisition_create_control_pt.svc"/>
+        <a:link id="exp_req_policy_infoinit_link" model="expm.exp_req_policy_infoinit" modelaction="update"/>
+        <a:link id="sys_fun_get_period_name_link_5" model="csh.sys_fun_get_period_name" modelaction="query"/>
+        <a:link id="sys_fun_get_period_name_link_6" model="csh.sys_fun_get_bgt_period_name" modelaction="query"/>
+        <a:link id="get_exchange_rate_link_10" model="expm.get_exchange_rate" modelaction="query"/>
+        <a:link id="exp_employee_info_init_link" model="db.exp_requisition_pkg.get_employee_info" modelaction="batch_update"/>
+        <a:link id="exp_requisition_head_delete_link_1" model="db.exp_requisition_pkg.delete_exp_requisition_headers" modelaction="delete"/>
+        <style><![CDATA[
+            .accordion-box td{
+                vertical-align:top;
+            }
+        ]]></style>
+        <script><![CDATA[
+            var headFields = ['exp_requisition_type_name', 'exp_requisition_number', 'requisition_date', 'period_name', 'employee_name', 'position_id_display',
+            // 'payee_category_display',
+            // 'payee_code',
+            'currency_code', 'exchange_rate_type_name', 'exchange_rate_quotation_display', 'exchange_rate', 'description', 'attachment', 'created_by'];
+            
+            var lineFields = ['line_number', 'description', 'city', 'place', 'place_type', 'date_from', 'date_to', 'company_code', 'expense_type_id_display', 'exp_req_item_id_display', 'price', 'primary_quantity', 'requisition_amount', 'period_num', 'requisition_functional_amount', 'payment_flag', 'exchange_rate', 'responsibility_center_code', 'unit_code', 'employee_code', 'position_id_display',
+            // 'payee_category_display',
+            // 'payee_id_display',
+            'contract_header_code', 'payment_schedule_line_code'];
+            
+            var headDim = [];
+            var lineDim = [];
+            var headObj = [];
+            var lineObj = [];
+            
+            var emp_info = {};
+            
+            function sumRenderer(records, name) {
+                var sum = 0;
+                for (var i = 0;i < records.length;i++) {
+                    var r = records[i].get(name);
+                    var n = parseFloat(r);
+                    if (!isNaN(n)) {
+                        sum += n;
+                    }
+                }
+                sum = Math.round(sum * 100) / 100; /*var total = (typeof(sum) == 'undefined' ? '' : parseFloat(sum).toFixed(Precision));*/
+                return '<font>${l:PUR_ORDER_LINES.SUM_AMOUNT}：<label style="color:red">' + sum + '</label></font>';
+            }
+            
+            function loadComplete() {
+                var dataSet = $('exp_requisition_head_ds');
+                dataSet.create();
+                var record = dataSet.getAt(0);
+                record.set('head_id', $('sid_ds').getAt(0).get('head_id'));
+                record.set('exp_requisition_type_id', '${/parameter/@exp_requisition_type_id}');
+                record.set('employee_id', '${/parameter/@employee_id}');
+                record.set('employee_code', '${/parameter/@employee_id}');
+                record.set('exp_requisition_type_name', '${/model/type/record/@description}');
+                record.set('employee_name', '${/model/employee_info/record/@namecode}');
+                record.set('currency_name', '${/model/currency/record/@currency_name}');
+                record.set('currency_code', '${/model/currency/record/@currency_code}');
+                record.set('created_by', $('sid_ds').getAt(0).get('name'));
+                record.set('requisition_date', $('sid_ds').getAt(0).get('requisition_date'));
+                record.set('period_name', $('sid_ds').getAt(0).get('period_name'));
+                initPayeeCode(record);
+                //根据收款对象类型，动态设置收款方lov   沈阳黎明
+                var field = record.getMeta().getField('payee_code');
+                var value = record.get('payee_category');
+                if (value == 'EMPLOYEE') {
+                    record.set('payee_code', '${/model/employee_info/record/@namecode}');
+                    field.setLovService('expm.exp_employee_req_lov');
+                } else if (value == 'CUSTOMER') {
+                    record.set('payee_code', '');
+                    field.setLovService('expm.exp_customer_req_lov');
+                } else if (value == 'VENDER') {
+                    record.set('payee_code', '');
+                    field.setLovService('expm.exp_vender_req_lov');
+                } else {
+                    record.set('payee_code', '');
+                }
+                record.set('payee_id', '${/model/employee_info/record/@employee_id}');
+                record.set('position_id_display', $('emp_position_list_ds').getAt(0).get('position_code'));
+                var policyEnabled = '${/model/policy_enabled/record/@policy_enabled}';
+                if (policyEnabled == 'Y') {
+                    $('exp_req_grid').hideColumn('city');
+                } else {
+                    $('exp_req_grid').hideColumn('place');
+                }
+                //if the functional_currency_code != currency_currency_code set the default exchange rate type and quotation
+                if ('${/model/currency_code/record/@functional_currency_code}' != '${/model/currency/record/@currency_code}') {
+            
+                    var rateMethodCode = '${/model/exchange_type/record/@rate_method_code}';
+                    var meta = record.getMeta();
+                    if (rateMethodCode == 'PERIOD' || rateMethodCode == 'DAILY' || rateMethodCode == 'FIXED') {
+                        meta.getField('exchange_rate_quotation_display').setReadOnly(true);
+                        meta.getField('exchange_rate').setReadOnly(true);
+                        meta.getField('exchange_rate_type_name').setRequired(true);
+                    } else {
+                        meta.getField('exchange_rate_type_name').setReadOnly(false);
+                        meta.getField('exchange_rate_type_name').setRequired(true);
+                        meta.getField('exchange_rate').setReadOnly(false);
+                        meta.getField('exchange_rate').setRequired(true);
+                    }
+                    record.set('exchange_rate_type_name', '${/model/exchange_type/record/@type_name}');
+                    record.set('exchange_rate_type', '${/model/exchange_type/record/@value_code}');
+                    getExchangeRate({
+                        fromCur: '${/model/currency_code/record/@functional_currency_code}',
+                        toCur: '${/parameter/@currency_code}',
+                        exchangeRateType: '${/model/exchange_type/record/@value_code}',
+                        exchangeDate: record.get('requisition_date'),
+                        periodName: record.get('period_name')
+                    });
+                }
+            
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.exp_employee_info_init/batch_update*/
+                    $('exp_employee_info_init_link').getUrl(),
+                    para: [{
+                        employee_id: '${/parameter/@employee_id}',
+                        _status: 'update'
+                    }],
+                    success: function(res) {
+                        emp_info = res.result.record;
+                    },
+                    scope: this
+                });
+                initDynamic();
+            }
+            
+            function initPayeeCode(record) {
+                record.set('payee_id', '');
+                var field = record.getMeta().getField('payee_code');
+                field.setLovService('expm.exp_employee_req_lov');
+                field.setMapping([{
+                    from: 'employee_code',
+                    to: 'payee_code'
+                }, {
+                    from: 'employee_id',
+                    to: 'payee_id'
+                }]);
+            }
+            
+            function headUpdateFunction(dataSet, record, name, value, oldValue) {
+                if (name == 'requisition_date') {
+                    showPeriod(record);
+                } else if (name == 'payee_category') {
+                    var field = record.getMeta().getField('payee_code');
+                    record.set('payee_code', '');
+                    record.set('payee_id', '');
+                    if (value == 'EMPLOYEE') {
+                        field.setLovService('expm.exp_employee_req_lov');
+                    } else if (value == 'CUSTOMER') {
+                        field.setLovService('expm.exp_customer_req_lov');
+                    } else if (value == 'VENDER') {
+                        field.setLovService('expm.exp_vender_req_lov');
+                    }
+                } else if (name == 'currency_code') {
+                    var meta = record.getMeta();
+                    if (value == '${/model/currency_code/record/@functional_currency_code}') {
+                        meta.getField('exchange_rate_type_name').setReadOnly(true);
+                        meta.getField('exchange_rate_quotation_display').setReadOnly(true);
+                        meta.getField('exchange_rate').setReadOnly(true);
+                        meta.getField('exchange_rate_type_name').setRequired(false);
+                        record.set('exchange_rate', 1);
+                    } else {
+                        meta.getField('exchange_rate_type_name').setReadOnly(false);
+                        meta.getField('exchange_rate_type_name').setRequired(true);
+                    }
+                } else if (name == 'rate_method_code') {
+                    var meta = record.getMeta();
+                    if (value == 'PERIOD' || value == 'DAILY' || value == 'FIXED') {
+                        meta.getField('exchange_rate_quotation_display').setReadOnly(true);
+                        meta.getField('exchange_rate_quotation_display').setRequired(false);
+                        meta.getField('exchange_rate').setReadOnly(true);
+                        record.set('exchange_rate', '');
+                        getExchangeRate({
+                            fromCur: '${/model/currency_code/record/@functional_currency_code}',
+                            toCur: record.get('currency_code'),
+                            exchangeRateType: record.get('exchange_rate_type'),
+                            exchangeDate: record.get('requisition_date'),
+                            periodName: record.get('period_name')
+                        });
+                    } else {
+                        meta.getField('exchange_rate_quotation_display').setReadOnly(false);
+                        meta.getField('exchange_rate').setReadOnly(false);
+                        meta.getField('exchange_rate_quotation_display').setRequired(true);
+                        meta.getField('exchange_rate').setRequired(true);
+                        record.set('exchange_rate_quotation_display', '');
+                        record.set('exchange_rate', '');
+                    }
+                } else if (name == 'period_name') {
+                    var meta = record.getMeta();
+                    var rateQuotation = record.get('exchange_rate_quotation');
+                    if (rateQuotation == 'PERIOD' || rateQuotation == 'DAILY' || rateQuotation == 'FIXED') {
+                        meta.getField('exchange_rate_quotation_display').setReadOnly(true);
+                        meta.getField('exchange_rate_quotation_display').setRequired(false);
+                        meta.getField('exchange_rate').setReadOnly(true);
+                        record.set('exchange_rate', '');
+                        getExchangeRate({
+                            fromCur: '${/model/currency_code/record/@functional_currency_code}',
+                            toCur: record.get('currency_code'),
+                            exchangeRateType: record.get('exchange_rate_type'),
+                            exchangeDate: record.get('requisition_date'),
+                            periodName: record.get('period_name')
+                        });
+                    }
+                }
+            }
+            
+            function getExchangeRate(param) {
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/
+                    $('get_exchange_rate_link_10').getUrl(),
+                    para: {
+                        from_currency: param.fromCur,
+                        to_currency: param.toCur,
+                        exchange_date: param.exchangeDate,
+                        exchange_period_name: param.periodName,
+                        exchange_rate_type: param.exchangeRateType
+                    },
+                    success: setRateAndQuotation,
+                    scope: this
+                });
+            }
+            
+            function showPeriod(record) {
+                var r_date = record.get('requisition_date');
+                r_date = Aurora.formatDate(r_date);
+                if ('${/model/type/record/@budget_control_enabled}' == 'N') {
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/csh.sys_fun_get_period_name/query*/
+                        $('sys_fun_get_period_name_link_5').getUrl(),
+                        para: {
+                            p_date: r_date
+                        },
+                        success: periodname,
+                        scope: this
+                    });
+                } else {
+                    Aurora.request({
+                        url: $('sys_fun_get_period_name_link_6').getUrl() + '?_cachekey=${/session/@company_id}.' + r_date,
+                        para: {
+                            p_date: r_date
+                        },
+                        success: periodname,
+                        scope: this
+                    });
+                }
+            }
+            
+            function periodname(res) {
+                if (res) {
+                    var pluscols = res.result.record.period_name;
+                    if (pluscols) {
+                        $('exp_requisition_head_ds').getAt(0).set('period_name', pluscols);
+                    } else {
+                        $('exp_requisition_head_ds').getAt(0).set('period_name', '');
+                    }
+            
+                }
+            }
+            
+            function payeeCodeCommitFunction(lov, r1, r2) {
+                var type = r1.get('payee_category');
+                if (type == 'EMPLOYEE') {
+                    r1.set('payee_code', r2.get('code_name'));
+                    r1.set('payee_id', r2.get('employee_id'));
+                } else if (type == 'CUSTOMER') {
+                    r1.set('payee_code', r2.get('code_name'));
+                    r1.set('payee_id', r2.get('customer_id'));
+                } else {
+                    r1.set('payee_code', r2.get('code_name'));
+                    r1.set('payee_id', r2.get('vender_id'));
+                }
+            }
+            
+            function setRateAndQuotation(res) {
+            
+                var record = $('exp_requisition_head_ds').getAt(0);
+                record.set('exchange_rate', res.result.record.exchange_rate);
+                record.set('exchange_rate_quotation_display', getDisplayByValue(res.result.record.exchange_rate_quotation, 'code_value', 'code_value_name', 'exchange_rate_quotation_ds'));
+            }
+            
+            function getDisplayByValue(value, valueName, displayName, dsName) {
+                var dataSet = $(dsName);
+                var records = dataSet.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get(valueName) == value) {
+                        return records[i].get(displayName);
+                    }
+                }
+            }
+            
+            function lineUpdateFunction(dataSet, record, name, value, oldValue) {
+                if (name == 'company_id') {
+                    var meta = record.getMeta();
+                    meta.getField('responsibility_center_code').setLovPara('company_id', value);
+                    meta.getField('unit_code').setLovPara('company_id', value);
+                    meta.getField('employee_code').setLovPara('company_id', value);
+                }
+                // else if(name == 'payment_flag'){
+                // var meta = record.getMeta();
+                // if(value == 'Y'){
+                // meta.getField('payee_category_display').setRequired(true);
+                // meta.getField('payee_id_display').setRequired(true);
+                // }else{
+                // meta.getField('payee_category_display').setRequired(false);
+                // meta.getField('payee_id_display').setRequired(false);
+                // }
+                // }
+                else if (name == 'payee_category') {
+                    var field = record.getMeta().getField('payee_id_display');
+                    record.set('payee_id_display', '');
+                    record.set('payee_id', '');
+                    if (value == 'EMPLOYEE') {
+                        field.setLovService('expm.exp_employee_req_lov');
+                    } else if (value == 'CUSTOMER') {
+                        field.setLovService('expm.exp_customer_req_lov');
+                    } else if (value == 'VENDER') {
+                        field.setLovService('expm.exp_vender_req_lov');
+                    }
+                } else if (name == 'contract_header_id' || name == 'payee_category' || name == 'payee_id') {
+                    if (name == 'payee_category' || name == 'payee_id') {
+                        record.set('contract_header_code', '');
+                        record.set('contract_header_id', '');
+                    }
+                    record.set('payment_schedule_line_id', '');
+                    record.set('payment_schedule_line_code', '');
+                } else if (name == 'price' || name == 'primary_quantity') {
+                    if (name == 'price') {
+                        var price = value;
+                        var rate = record.get('exchange_rate');
+                        var quantity = record.get('primary_quantity');
+                        var req_amount = (price * quantity).toFixed(3);
+                        if (record.get('exchange_rate_quotation') == '') {
+                            var result = (price * rate).toFixed(3);
+                            record.set('requisition_functional_amount', result);
+                        } else if (record.get('exchange_rate_quotation') == 'DIRECT QUOTATION') {
+                            var result = (price * rate * quantity).toFixed(3);
+                            record.set('requisition_functional_amount', result);
+                        } else {
+                            var result = (price * quantity / rate).toFixed(3);
+                            record.set('requisition_functional_amount', result);
+                        }
+                        record.set('requisition_amount', req_amount);
+                    } else if (name == 'primary_quantity') {
+                        var price = record.get('price');
+                        var rate = record.get('exchange_rate');
+                        var quantity = value;
+                        var req_amount = (price * quantity).toFixed(3);
+                        if (record.get('exchange_rate_quotation') == '') {
+                            var result = (price * rate).toFixed(3);
+                            record.set('requisition_functional_amount', result);
+                        } else if (record.get('exchange_rate_quotation') == 'DIRECT QUOTATION') {
+                            var result = (price * rate * quantity).toFixed(3);
+                            record.set('requisition_functional_amount', result);
+                        } else {
+                            var result = (price * quantity / rate).toFixed(3);
+                            record.set('requisition_functional_amount', result);
+                        }
+                        record.set('requisition_amount', req_amount);
+                    }
+                }
+            
+                if (name == 'employee_id' || name == 'city' || name == 'place_id' || name == 'place_type_id' || name == 'exp_req_item_id' || name == 'position_id') {
+                    //lineInfoInit(record);
+                }
+            }
+            
+            function lineInfoInit(record) {
+                if (record.get('employee_id')) {
+                    record.set('expense_item_id', record.get('exp_req_item_id'));
+                    record.set('p_rep_date', $('exp_requisition_head_ds').getAt(0).get('requisition_date'));
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/expm.exp_req_policy_infoinit/update*/
+                        $('exp_req_policy_infoinit_link').getUrl(),
+                        para: record.data,
+                        success: function(res) {
+                            var resData = res.result;
+                            record.set('p_upper_limit', resData['p_upper_limit']);
+                            record.set('p_lower_limit', resData['p_lower_limit']);
+                            if (resData['p_count'] == 1) {
+                                record.set('p_event_name', resData['p_event_name']);
+                                record.set('p_commit_flag', resData['p_commit_flag']);
+                                record.set('p_changeable_flag', resData['p_changeable_flag']);
+                                record.set('p_id', resData['p_id']);
+                                if (resData['p_default_flag'] == 'Y' && record.isNew) {
+                                    record.set('price', resData['p_expense_standard']);
+                                }
+                            } else {
+                                record.set('p_changeable_flag', resData['p_changeable_flag']);
+                            }
+                            if (record.get('p_changeable_flag') && record.get('p_changeable_flag') == 'N') {
+                                record.getMeta().getField('price').setReadOnly(true);
+                            } else {
+                                record.getMeta().getField('price').setReadOnly(false);
+                            }
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function payeeIdDisplayCommitFunction(lov, r1, r2) {
+            
+                var type = r1.get('payee_category');
+                if (type == 'EMPLOYEE') {
+                    r1.set('payee_id_display', r2.get('code_name'));
+                    r1.set('payee_id', r2.get('employee_id'));
+                } else if (type == 'CUSTOMER') {
+                    r1.set('payee_id_display', r2.get('code_name'));
+                    r1.set('payee_id', r2.get('customer_id'));
+                } else {
+                    r1.set('payee_id_display', r2.get('code_name'));
+                    r1.set('payee_id', r2.get('vender_id'));
+                }
+            }
+            
+            function cellClickFunction(grid, row, name, record) {
+                if (name == 'position_id_display') {
+                    $('position_ds').setQueryParameter('company_id', record.get('company_id'));
+                    $('position_ds').setQueryParameter('employee_id', record.get('employee_id'));
+                    $('position_ds').query();
+                } else if (name == 'contract_header_code') {
+                    var meta = record.getMeta();
+                    var field = meta.getField('contract_header_code');
+                    field.setLovPara('currency_code', $('exp_requisition_head_ds').getAt(0).get('currency_code'));
+                    field.setLovPara('partner_category', record.get('payee_category') || '');
+                    field.setLovPara('partner_id', record.get('payee_id') || '');
+                    field.setLovPara('company_id', record.get('company_id') || '');
+                } else if (name == 'payment_schedule_line_code') {
+            
+                    var meta = record.getMeta();
+                    var field = meta.getField('payment_schedule_line_code');
+                    if (!record.get('contract_header_id') || record.get('contract_header_id') == '') {
+                        field.setLovService('');
+                    } else {
+                        field.setLovService('csh.csh_payment_schedule_lov');
+                        field.setLovPara('contract_header_id', record.get('contract_header_id') || '');
+                        field.setLovPara('currency_code', $('exp_requisition_head_ds').getAt(0).get('currency_code'));
+                        field.setLovPara('partner_category', record.get('payee_category') || '');
+                    }
+                } else if (name == 'exp_req_item_id_display') {
+                    var ds = $('expense_type_ds');
+   
+                    ds.setQueryUrl('${/request/@context_path}/autocrud/csh.exp_expense_type_query/query?' + '_cachekey=' + (record.get('expense_type_id') +'.' +record.get('company_id')) +'&type_id=' + (record.get('expense_type_id')|| -1) +'&company_id=' + (record.get('company_id') || -1) );
+                    
+                    ds.query();
+                } else if (name == 'period_num') {
+                    var meta = record.getMeta();
+                    var field = meta.getField('period_num');
+                    if ('${/model/type/record/@budget_control_enabled}' == 'N') {
+                        field.setLovService('bgt.bgt_periods_detail_lov');
+                    } else {
+                        field.setLovService('expm.bgt_periods_detail_lov');
+                    }
+                }
+            }
+            
+            function lineAddFunction(dataSet, record, index) {
+            
+                var headDataSet = $('exp_requisition_head_ds');
+                var headRecord = headDataSet.getAt(0);
+                var headMeta = headRecord.getMeta();
+                for (var i = 0;i < headFields.length;i++) {
+                    if (headFields[i] != 'description' && headFields[i] != 'attachment') {
+                        headMeta.getField(headFields[i]).setReadOnly(true);
+                    }
+                }
+                var selectedLines = dataSet.getSelected();
+                if (!selectedLines || selectedLines.length == 0) {
+                    record.set('line_number', index * 10);
+                    record.set('head_id', headRecord.get('head_id'));
+                    record.set('primary_quantity', 1);
+                    record.set('company_code', emp_info.company_code || '');
+                    record.set('responsibility_center_code', emp_info.responsibility_center_code || '');
+                    record.set('unit_code', emp_info.unit_code || '');
+                    record.set('employee_code', emp_info.employee_code || '');
+                    record.set('company_id', emp_info.company_id || '');
+                    record.set('responsibility_center_id', emp_info.responsibility_center_id || '');
+                    record.set('unit_id', emp_info.unit_id || '');
+                    record.set('employee_id', emp_info.employee_id || '');
+                    record.set('period_num', headRecord.get('period_name'));
+                    record.set('exchange_rate', headRecord.get('exchange_rate'));
+                    record.set('payment_flag', 'Y');
+                    // record.set('payee_category_display',headRecord.get('payee_category_display'));
+                    // record.set('payee_category',headRecord.get('payee_category'));
+                    // record.set('payee_id_display',headRecord.get('payee_code'));
+                    // record.set('payee_id',headRecord.get('payee_id'));
+                    record.set('currency_code', headRecord.get('currency_code'));
+                    record.set('exchange_rate_type', headRecord.get('exchange_rate_type'));
+                    record.set('exchange_rate_quotation', headRecord.get('exchange_rate_quotation'));
+                    record.set('position_id_display', headRecord.get('position_id_display'));
+                    record.set('position_id', headRecord.get('position_id'));
+                    record.set('requisition_amount', '');
+                    record.set('requisition_functional_amount', '');
+                } else {
+                    record.set('line_number', index * 10);
+                    record.set('head_id', selectedLines[0].get('head_id'));
+                    record.set('description', selectedLines[0].get('description'));
+                    record.set('city', selectedLines[0].get('city'));
+                    record.set('place', selectedLines[0].get('place'));
+                    record.set('place_id', selectedLines[0].get('place_id'));
+                    record.set('place_type_id', selectedLines[0].get('place_type_id'));
+                    record.set('place_type', selectedLines[0].get('place_type'));
+                    record.set('date_to', selectedLines[0].get('date_to'));
+                    record.set('date_from', selectedLines[0].get('date_from'));
+                    record.set('company_code', selectedLines[0].get('company_code'));
+                    record.set('company_id', selectedLines[0].get('company_id'));
+                    record.set('payment_schedule_line_code', selectedLines[0].get('payment_schedule_line_code'));
+                    record.set('payment_schedule_line_id', selectedLines[0].get('payment_schedule_line_id'));
+                    record.set('expense_type_id_display', selectedLines[0].get('expense_type_id_display'));
+                    record.set('expense_type_id', selectedLines[0].get('expense_type_id'));
+                    record.set('exp_req_item_id_display', selectedLines[0].get('exp_req_item_id_display'));
+                    record.set('exp_req_item_id', selectedLines[0].get('exp_req_item_id'));
+                    record.set('price', selectedLines[0].get('price'));
+                    record.set('primary_quantity', selectedLines[0].get('primary_quantity'));
+                    record.set('period_num', selectedLines[0].get('period_num'));
+                    record.set('requisition_amount', selectedLines[0].get('requisition_amount'));
+                    record.set('requisition_functional_amount', selectedLines[0].get('requisition_functional_amount'));
+                    record.set('payment_flag', selectedLines[0].get('payment_flag'));
+                    record.set('exchange_rate', selectedLines[0].get('exchange_rate'));
+                    record.set('responsibility_center_code', selectedLines[0].get('responsibility_center_code'));
+                    record.set('responsibility_center_id', selectedLines[0].get('responsibility_center_id'));
+                    record.set('unit_code', selectedLines[0].get('unit_code'));
+                    record.set('employee_code', selectedLines[0].get('employee_code'));
+                    record.set('unit_id', selectedLines[0].get('unit_id'));
+                    record.set('currency_code', selectedLines[0].get('currency_code'));
+            
+                    record.set('employee_id', selectedLines[0].get('employee_id'));
+                    record.set('position_id_display', selectedLines[0].get('position_id_display'));
+                    record.set('position_id', selectedLines[0].get('position_id'));
+                    // record.set('payee_category_display', selectedLines[0].get('payee_category_display'));
+                    // record.set('payee_category', selectedLines[0].get('payee_category'));
+                    // record.set('payee_id_display', selectedLines[0].get('payee_id_display'));
+                    // record.set('payee_id', selectedLines[0].get('payee_id'));
+                    record.set('contract_header_code', selectedLines[0].get('contract_header_code'));
+                    record.set('contract_header_id', selectedLines[0].get('contract_header_id'));
+                    record.set('payment_schedule_line_code', selectedLines[0].get('payment_schedule_line_code'));
+                    record.set('payment_schedule_line_id', selectedLines[0].get('payment_schedule_line_id'));
+                    for (i = 1;i <= 10;i++) {
+                        var dim = 'd' + i;
+                        var dime = 'e' + i;
+                        record.set(dim, selectedLines[0].get(dim));
+                        record.set(dime, selectedLines[0].get(dime));
+                    }
+                }
+            }
+            
+            function lineNewFunction() {
+                if (!$('exp_requisition_head_ds').validate()) {
+                    return;
+                }
+                $('exp_requisition_line_ds').create();
+            }
+            
+            function initDynamic() {
+                var headObjRecords = $('head_object_ds').getAll();
+                for (var i = 0;i < headObjRecords.length;i++) {
+                    headObj.push(headObjRecords[i].data);
+                }
+                var lineObjRecords = $('line_object_ds').getAll();
+                for (var i = 0;i < lineObjRecords.length;i++) {
+                    lineObj.push(lineObjRecords[i].data);
+                }
+                var headDimRecords = $('head_dimension_ds').getAll();
+                for (var i = 0;i < headDimRecords.length;i++) {
+                    headDim.push(headDimRecords[i].data);
+                }
+                var lineDimRecords = $('line_dimension_ds').getAll();
+                for (var i = 0;i < lineDimRecords.length;i++) {
+                    lineDim.push(lineDimRecords[i].data);
+                }
+            }
+            
+            function setHeadObj() {
+                var records = $('exp_report_head_object').getAll();
+                for (var i = 0;i < headObj.length;i++) {
+                    headObj[i]['default_object_id'] = records[0].get(headObj[i].forname);
+                    headObj[i]['p_desc'] = records[0].get(headObj[i].expense_object_type_code);
+                    headObj[i]['head_id'] = $('sid_ds').getAt(0).get('head_id');
+                }
+            }
+            
+            function saveFunction(newoneDispatch) {
+            
+                if (!$('exp_requisition_head_ds').validate()) {
+                    return;
+                }
+                if (!$('exp_requisition_line_ds').validate()) {
+                    return;
+                }
+                if (!$('exp_report_head_dimension').validate()) {
+                    return;
+                }
+                if (!$('exp_report_head_object').validate()) {
+                    return;
+                }
+                if ($('exp_requisition_line_ds').getAll().length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PLEASE_INSERT_LINE_DATA}', null, 250, 100);
+                    return;
+                }
+                var headRecord = $('exp_requisition_head_ds').getAt(0);
+                var lineRecords = $('exp_requisition_line_ds').getAll();
+                var param = headRecord.data;
+                var headDimData = $('exp_report_head_dimension').getAt(0).data;
+                var headObjData = $('exp_report_head_object').getAt(0).data;
+                for (var key in headDimData) {
+                    param[key] = headDimData[key];
+                }
+                for (var key in headObjData) {
+                    param[key] = headObjData[key];
+                }
+                param['details'] = [];
+                for (var i = 0;i < lineRecords.length;i++) {
+                    var record = lineRecords[i];
+                    for (var j = 0;j < headDim.length;j++) {
+                        record.set(headDim[j].dimension_code1, headRecord.get(headDim[j].dimension_code1));
+                    }
+                    record.set('source_document_type', 'EXP_REQUISITION_LINES');
+                    var los = [];
+                    for (field in record.data) {
+                        for (var k = 0;k < lineObj.length;k++) {
+                            var loKey = '_' + lineObj[k]['expense_object_type_code'];
+                            var loKey1 = lineObj[k]['expense_object_type_id'];
+                            var loKey2 = lineObj[k]['expense_object_type_code'];
+                            if (field == loKey) {
+                                var llo = {};
+                                llo['expense_object_type_id'] = loKey1;
+                                llo['default_object_id'] = record.data[field];
+                                llo['head_id'] = $('sid_ds').getAt(0).get('head_id');
+                                llo['p_desc'] = record.data[loKey2];
+                                los.push(llo);
+                                break;
+                            }
+                        }
+                    }
+                    record.data['details'] = los;
+                    param['details'].push(record.data);
+                }
+                setHeadObj();
+                param['obj_details'] = headObj;
+                Aurora.request({
+                    url: /*exp_requisition_create_control.svc*/
+                    $('exp_requisition_create_control_link').getUrl(),
+                    para: param,
+                    success: function() {
+            
+                        if (typeof(newoneDispatch) == 'function') {
+                            newoneDispatch();
+                        } else {
+                            //window.location.href = /*exp_requisition_update.screen*/$('exp_requisition_update_link_1').getUrl()+'?head_id='+$('exp_requisition_head_ds').getAt(0).get('head_id') + '&exp_requisition_type_id=' + '${/parameter/@exp_requisition_type_id}' + '&employee_id=' + '${/parameter/@employee_id}' + '&company_id=' + '${/session/@company_id}';
+                            $('exp_requisition_head_ds').setQueryUrl('${/request/@context_path}/autocrud/expm.exp_requisition_exp_record_init/query?head_id=' + $('sid_ds').getAt(0).get('head_id'));
+                            $('exp_requisition_head_ds').query();
+                        }
+                    },
+                    scope: this
+                });
+            }
+            
+            function getValueByKey(propName, key, dataSet, valueName) {
+                var records = dataSet.getAll();
+            
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    if (record.get(propName) == key) {
+                        return record.get(valueName);
+                    }
+                }
+                return null;
+            }
+            
+            function deleteAllFunction() {
+                var okCan = Aurora.showConfirm('${l:PROMPT}', '${l:EXP_REQUESTION_READONLY.SURE_DELETE_REQ}', function() {
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/expm.exp_requisition_head_delete/delete*/
+                        $('exp_requisition_head_delete_link').getUrl(),
+                        para: {
+                            exp_requisition_header_id: $('exp_requisition_head_ds').getAt(0).get('head_id')
+                        },
+                        success: function() {
+                            okCan.close();
+                            window.location.href = /*exp_requisition_type_choice.screen*/
+                            $('exp_requisition_type_choice_link').getUrl();
+                        },
+                        scope: this
+                    });
+                }, function() {
+                    okCan.close();
+                }, 250, 100);
+            }
+            
+            
+            function newoneFunction() {
+                var okCan = Aurora.showConfirm('${l:PROMPT}', '${l:PROMPTS.SAVE_CONTINUE}', function() {
+                    saveFunction(newoneDispatch);
+                    okCan.close();
+                }, null, 250, 100);
+            }
+            
+            function newoneDispatch() {
+                window.location.href = /*exp_requisition_type_choice.screen*/
+                $('exp_requisition_type_choice_link').getUrl();
+            }
+            
+            function policyFunction() {
+                window.open( /*exp_document_req_policy_query.screen*/
+                $('exp_document_req_policy_query_link_3').getUrl() + '?exp_requisition_header_id=' + $('exp_requisition_head_ds').getAt(0).get('head_id'), '', 'fullscreen=no,resizable=yes,width=970,height=530');
+            }
+            
+            function priceValidator(record, name, value) {
+            
+                if (record.get('p_upper_limit')) {
+                    if (parseFloat(value) > parseFloat(record.get('p_upper_limit')) && record.get('p_commit_flag') && record.get('p_commit_flag') == 'N') {
+                        return '${l:EXP_REPORT_CREATE.CHECK1}';
+                    }
+                }
+            
+                if (record.get('p_lower_limit')) {
+                    if (parseFloat(value) < parseFloat(record.get('p_lower_limit')) && record.get('p_commit_flag') && record.get('p_commit_flag') == 'N') {
+                        return '${l:EXP_REPORT_CREATE.CHECK2}';
+                    }
+                }
+            
+                return true;
+            }
+            
+            function dateValidator(record, name, value) {
+                var dateFrom = record.get('date_from');
+                var dateTo = record.get('date_to');
+                if (!dateFrom || !dateTo || dateFrom == '' || dateTo == '') {
+                    return true;
+                } else if (dateFrom <= dateTo) {
+                    return true;
+                } else {
+                    return '${l:START_GREATER_THAN_END}';
+                }
+            }
+            
+            
+            function submitFunction() {
+                //saveFunction(bgtCheck);
+                if ($('exp_requisition_head_ds').getAt(0).get('budget_control_enabled') == 'Y') {
+                    Aurora.request({
+                        url: '${/request/@context_path}/modules/pt/exp_req_check_submit.svc',
+                        para: {
+                            exp_req_header_id: $('exp_requisition_head_ds').getAt(0).get('head_id')
+                        },
+                        success: function() {
+                            window.location.href = '${/request/@context_path}/modules/expm/public/exp_requisition_type_choice_pt.screen';
+                        },
+                        scope: this
+                    });
+                } else {
+                    Aurora.request({
+                        url: '${/request/@context_path}/modules/pt/exp_req_submit.svc',
+                        para: {
+                            exp_req_header_id: $('exp_requisition_head_ds').getAt(0).get('head_id')
+                        },
+                        success: function() {
+                            window.location.href = '${/request/@context_path}/modules/expm/public/exp_requisition_type_choice_pt.screen';
+                        },
+                        scope: this
+                    });
+                }
+            
+            }
+            
+            function headLoadFunction() {
+                var headDataSet = $('exp_requisition_head_ds');
+                var headRecord = headDataSet.getAt(0);
+                var headMeta = headRecord.getMeta();
+                for (var i = 0;i < headFields.length;i++) {
+                    if (headFields[i] != 'description' && headFields[i] != 'attachment') {
+                        headMeta.getField(headFields[i]).setReadOnly(true);
+                    }
+                }
+            
+            
+                $('submitBtn').enable();
+                $('deleteBtn').enable();
+            
+                Aurora.showInfoMessage('${l:EXP1900_ASK_COMMIT}', '${l:EBS_SAVE_SUCCESS}', null, 250, 100);
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="sid_ds" autoQuery="true" model="expm.exp_requisition_sid_init">
+                <a:events>
+                    <a:event name="load" handler="loadComplete"/>
+                </a:events>
+            </a:dataSet>
+            <!-- <a:dataSet id="type_list_ds" lookupCode="PAYMENT_OBJECT"/> -->
+            <a:dataSet id="exchange_rate_quotation_ds" lookupCode="EXCHANGE_RATE_QUOTATION"/>
+            <a:dataSet id="status_list_ds" lookupCode="EXP_EXPENSE_REPORT_STATUS"/>
+            <a:dataSet id="emp_position_list_ds">
+                <a:datas dataSource="/model/emp_position_list"/>
+            </a:dataSet>
+            <a:dataSet id="report_type_ds" fetchAll="true">
+                <a:datas dataSource="/model/report_type"/>
+            </a:dataSet>
+            <a:dataSet id="position_ds" model="exp.exp_org_position"/>
+            <a:dataSet id="expense_type_ds" fetchAll="true"/>
+            <a:dataSet id="line_dimension_ds">
+                <a:datas dataSource="/model/line_dimension"/>
+            </a:dataSet>
+            <a:dataSet id="line_object_ds">
+                <a:datas dataSource="/model/line_object"/>
+            </a:dataSet>
+            <a:dataSet id="head_dimension_ds">
+                <a:datas dataSource="/model/head_dimension"/>
+            </a:dataSet>
+            <a:dataSet id="head_object_ds">
+                <a:datas dataSource="/model/head_object"/>
+            </a:dataSet>
+            <a:dataSet id="exp_requisition_head_ds">
+                <a:fields>
+                    <a:field name="head_id"/>
+                    <a:field name="exp_requisition_type_id"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="employee_code"/>
+                    <a:field name="contract_header_id"/>
+                    <a:field name="exp_requisition_type_name" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_TYPE_ID" readOnly="true"/>
+                    <a:field name="exp_requisition_number" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_NUMBER" readOnly="true"/>
+                    <a:field name="requisition_date" prompt="EXP_REQUISITION_HEADERS.REQUISITION_DATE" required="true"/>
+                    <a:field name="period_name" prompt="EXP_REQUISITION_HEADERS.PERIOD_NAME" readOnly="true"/>
+                    <a:field name="employee_name" prompt="EXP_REQUISITION_HEADERS.EMPLOYEE_ID" readOnly="true"/>
+                    <a:field name="position_id_display" displayField="position_code" options="emp_position_list_ds" prompt="EXP_REQUISITION_HEADERS.POSITION_ID" required="true" returnField="position_id" valueField="position_id"/>
+                    <a:field name="position_id"/>
+                    <!--  <a:field name="payee_category_display" displayField="code_value_name" options="type_list_ds" prompt="EXP_REQUISITION_HEADERS.PAYEE_CATEGORY" required="true" returnField="payee_category" valueField="code_value"/>
+                    <a:field name="payee_category"/>
+                    <a:field name="payee_code" lovGridHeight="320" lovHeight="440" lovWidth="790" prompt="EXP_REQUISITION_HEADERS.PAYEE_ID" required="true" title="EXP_REQUISITION_HEADERS.PAYEE_ID"/>
+                    <a:field name="payee_id"/> -->
+                    <a:field name="currency_name" prompt="EXP_REQUISITION_HEADERS.CURRENCY_CODE" readOnly="true"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="exchange_rate_type_name" lovGridHeight="320" lovHeight="440" lovService="gld.gld_exchage_rate_types" lovWidth="550" prompt="EXP_REQUISITION_HEADERS.EXCHANGE_RATE_TYPE" title="EXP_REQUISITION_HEADERS.EXCHANGE_RATE_TYPE">
+                        <a:mapping>
+                            <a:map from="type_name" to="exchange_rate_type_name"/>
+                            <a:map from="type_code" to="exchange_rate_type"/>
+                            <a:map from="rate_method_code" to="rate_method_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate_type"/>
+                    <a:field name="rate_method_code"/>
+                    <a:field name="exchange_rate_quotation_display" displayField="code_value_name" options="exchange_rate_quotation_ds" prompt="EXP_REQUISITION_HEADERS.EXCHANGE_RATE_QUOTATION" returnField="exchange_rate_quotation" valueField="code_value"/>
+                    <a:field name="exchange_rate_quotation"/>
+                    <a:field name="exchange_rate" prompt="EXP_REQUISITION_HEADERS.EXCHANGE_RATE" required="true"/>
+                    <a:field name="description" prompt="EXP_REQUISITION_HEADERS.DESCRIPTION"/>
+                    <a:field name="attachment" prompt="EXP_REQUISITION_HEADERS.ATTACHMENT_NUM"/>
+                    <a:field name="created_by" prompt="EXP_REQUISITION_HEADERS.CREATED_BY" readOnly="true" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="headUpdateFunction"/>
+                    <a:event name="load" handler="headLoadFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_report_head_dimension" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="dynamicHeadFields"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exp_report_head_object" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="dynamicHeadObjects"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exp_requisition_line_ds" fetchAll="true" pageSize="15" selectable="true">
+                <a:fields>
+                    <a:field name="line_number" prompt="EXP_REQUISITION_LINES.LINE_NUMBER" required="true"/>
+                    <a:field name="description" prompt="EXP_REQUISITION_LINES.DESCRIPTION" required="true"/>
+                    <a:field name="city" prompt="EXP_REQUISITION_LINES.PLACE_ID"/>
+                    <a:field name="place" lovGridHeight="320" lovHeight="460" lovService="expm.exp_expense_policy_place_lov" lovWidth="500" prompt="EXP_REQUISITION_LINES.PLACE_ID" title="EXP_REQUISITION_LINES.PLACE_ID">
+                        <a:mapping>
+                            <a:map from="place_desc" to="place"/>
+                            <a:map from="place_id" to="place_id"/>
+                            <a:map from="place_type_id" to="place_type_id"/>
+                            <a:map from="place_type_desc" to="place_type"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="place_id"/>
+                    <a:field name="place_type" lovGridHeight="320" lovHeight="460" lovService="expm.exp_expense_policy_place_type_lov" lovWidth="500" prompt="EXP_REQUISITION_LINES.PLACE_TYPE_ID" title="EXP_REQUISITION_LINES.PLACE_TYPE_ID">
+                        <a:mapping>
+                            <a:map from="place_type_id" to="place_type_id"/>
+                            <a:map from="description" to="place_type"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="place_type_id"/>
+                    <a:field name="date_from" prompt="EXP_REQUISITION_LINES.DATE_FROM" validator="dateValidator"/>
+                    <a:field name="date_to" prompt="EXP_REQUISITION_LINES.DATE_TO" validator="dateValidator"/>
+                    <a:field name="company_code" lovGridHeight="320" lovHeight="460" lovService="fnd.fnd_companies_lov" lovWidth="500" prompt="EXP_REQUISITION_LINES.COMPANY_ID" title="EXP_REQUISITION_LINES.COMPANY_ID">
+                        <a:mapping>
+                            <a:map from="code_name" to="company_code"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id"/>
+                    <a:field name="expense_type_id_display" displayField="description" options="report_type_ds" prompt="EXP_REQUISITION_LINES.EXPENSE_TYPE_ID" required="true" returnField="expense_type_id" valueField="expense_type_id"/>
+                    <a:field name="expense_type_id"/>
+                    <a:field name="exp_req_item_id_display" displayField="description" options="expense_type_ds" prompt="EXP_REQUISITION_LINES.EXP_REQ_ITEM_ID" required="true" returnField="exp_req_item_id" valueField="req_item_id"/>
+                    <a:field name="exp_req_item_id"/>
+                    <a:field name="price" prompt="EXP_REQUISITION_LINES.PRICE" required="true" validator="priceValidator"/>
+                    <a:field name="primary_quantity" prompt="EXP_REQUISITION_LINES.PRIMARY_QUANTITY" required="true"/>
+                    <a:field name="requisition_amount" prompt="EXP_REQUISITION_LINES.REQUISITION_AMOUNT"/>
+                    <a:field name="period_num" lovGridHeight="320" lovHeight="460" lovWidth="500" prompt="EXP_REQUISITION_LINES.PERIOD_NAME" required="true" title="EXP_REQUISITION_LINES.PERIOD_NAME">
+                        <a:mapping>
+                            <a:map from="period_name" to="period_num"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="requisition_functional_amount" prompt="EXP_REQUISITION_LINES.REQUISITION_FUNCTIONAL_AMOUNT"/>
+                    <a:field name="payment_flag" checkedValue="Y" prompt="EXP_REQUISITION_LINES.PAYMENT_FLAG" uncheckedValue="N"/>
+                    <a:field name="exchange_rate" prompt="EXP_REQUISITION_LINES.EXCHANGE_RATE"/>
+                    <a:field name="responsibility_center_code" lovGridHeight="320" lovHeight="460" lovService="fnd.fnd_responsibility_centers_lov" lovWidth="500" prompt="EXP_REQUISITION_LINES.RESPONSIBILITY_CENTER_ID" required="true" title="EXP_REQUISITION_LINES.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="res_cen_code_name" to="responsibility_center_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="unit_code" lovGridHeight="320" lovHeight="460" lovService="exp.exp_org_unit" lovWidth="500" prompt="EXP_REQUISITION_LINES.UNIT_ID" title="EXP_REQUISITION_LINES.UNIT_ID">
+                        <a:mapping>
+                            <a:map from="unit_code_name" to="unit_code"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_id"/>
+                    <a:field name="employee_code" lovGridHeight="320" lovHeight="460" lovService="exp.exp_employees_exp_req?doc_type=01&amp;auth_type=MAINTENANCE" lovWidth="500" prompt="EXP_REQUISITION_LINES.EMPLOYEE_ID" title="EXP_REQUISITION_LINES.EMPLOYEE_ID">
+                        <a:mapping>
+                            <a:map from="namecode" to="employee_code"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="employee_id"/>
+                    <a:field name="position_id_display" displayField="position_name" options="position_ds" prompt="EXP_REQUISITION_LINES.POSITION_ID" returnField="position_id" valueField="position_id"/>
+                    <a:field name="position_id"/>
+                    <!-- <a:field name="payee_category_display" displayField="code_value_name" options="type_list_ds" prompt="EXP_REQUISITION_LINES.PAYEE_CATEGORY" returnField="payee_category" valueField="code_value"/>
+                    <a:field name="payee_category"/> -->
+                    <!-- <a:field name="payee_id_display" lovGridHeight="320" lovHeight="460" lovWidth="520" prompt="EXP_REQUISITION_LINES.PAYEE_ID" required="320" title="EXP_REQUISITION_LINES.PAYEE_ID"/>
+                    <a:field name="payee_id"/> -->
+                    <a:field name="contract_header_code" lovGridHeight="320" lovHeight="460" lovService="csh.csh_contract_lov" lovWidth="500" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER" title="CON_CONTRACT_HEADERS.CONTRACT_NUMBER">
+                        <a:mapping>
+                            <a:map from="contract_number" to="contract_header_code"/>
+                            <a:map from="contract_header_id" to="contract_header_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contract_header_id" prompt="PAYMENT_SCHEDULE_LINE_CODE"/>
+                    <a:field name="payment_schedule_line_code" lovGridHeight="320" lovHeight="460" lovService="csh.csh_payment_schedule_lov" lovWidth="500" prompt="CON_PAYMENT_SCHEDULES.PAYMENT_SCHEDULE_LINE_NUMBER" title="CON_PAYMENT_SCHEDULES.PAYMENT_SCHEDULE_LINE_NUMBER">
+                        <a:mapping>
+                            <a:map from="payment_schedule_line_number" to="payment_schedule_line_code"/>
+                            <a:map from="payment_schedule_line_id" to="payment_schedule_line_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="payment_schedule_line_id"/>
+                    <a:field name="line_id"/>
+                    <a:field name="head_id"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="exchange_rate_type"/>
+                    <a:field name="exchange_rate_quotation"/>
+                    <a:placeHolder id="dynamicLineFields"/>
+                    <a:placeHolder id="dynamicLineFieldsObj"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="lineUpdateFunction"/>
+                    <a:event name="add" handler="lineAddFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:form column="1" style="margin-left:10px;margin-top:10px;" title="EXP_REQUISITION_CREATE.TITLE" width="980">
+            <a:box column="4">
+                <a:textField name="exp_requisition_number" bindTarget="exp_requisition_head_ds"/>
+                <a:textField name="exp_requisition_type_name" bindTarget="exp_requisition_head_ds"/>
+                <a:datePicker name="requisition_date" bindTarget="exp_requisition_head_ds"/>
+                <a:textField name="period_name" bindTarget="exp_requisition_head_ds"/>
+                <a:textField name="employee_name" bindTarget="exp_requisition_head_ds"/>
+                <a:comboBox name="position_id_display" bindTarget="exp_requisition_head_ds"/>
+                <a:textField name="attachment" bindTarget="exp_requisition_head_ds"/>
+                <a:textField name="created_by" bindTarget="exp_requisition_head_ds"/>
+                <a:textField name="currency_name" bindTarget="exp_requisition_head_ds"/>
+                <a:lov name="exchange_rate_type_name" bindTarget="exp_requisition_head_ds"/>
+                <a:comboBox name="exchange_rate_quotation_display" bindTarget="exp_requisition_head_ds"/>
+                <a:textField name="exchange_rate" bindTarget="exp_requisition_head_ds"/>
+            </a:box>
+            <a:box>
+                <a:textArea name="description" bindTarget="exp_requisition_head_ds" width="845"/>
+            </a:box>
+        </a:form>
+        <!--<a:hBox className="accordion-box" style="margin-left:8px;">
+            <a:accordionPanel id="accordion_dim" height="90" singleMode="false" width="487">
+                <a:accordions>
+                    <a:accordion prompt="EXP_REQUESTION_CREATE_SERVICE.DIMENSION" selected="false">
+                        <a:box column="2">
+                            <a:placeHolder id="dynamicHeadColumn"/>
+                        </a:box>
+                    </a:accordion>
+                </a:accordions>
+            </a:accordionPanel>
+            <a:accordionPanel id="accordion_obj" height="90" singleMode="false" width="487">
+                <a:accordions>
+                    <a:accordion prompt="EXP_REQUESTION_CREATE_SERVICE.OBJECT" selected="false">
+                        <a:box column="2">
+                            <a:placeHolder id="dynamicHeadObject"/>
+                        </a:box>
+                    </a:accordion>
+                </a:accordions>
+            </a:accordionPanel>
+        </a:hBox>-->
+        <a:hBox style="margin-left:10px;margin-top:10px;">
+            <a:button click="saveFunction" text="EXP_REQUESTION_CREATE_SERVICE.SAVE"/>
+            <a:button id="submitBtn" click="submitFunction" disabled="true" text="EXP_REQUESTION_CREATE_SERVICE.SUBMIT"/>
+            <a:button id="deleteBtn" click="deleteAllFunction" disabled="true" text="EXP_REQUESTION_CREATE_SERVICE.DELETE"/>
+            <a:button click="newoneFunction" text="EXP_REQUESTION_CREATE_SERVICE.NEW"/>
+            <a:button click="policyFunction" text="EXP_REQUESTION_CREATE_SERVICE.POLICY"/>
+        </a:hBox>
+        <a:grid id="exp_req_grid" bindTarget="exp_requisition_line_ds" height="190" style="margin-left:10px;margin-top:10px;" width="980">
+            <a:toolBar>
+                <a:button click="lineNewFunction" icon="${/request/@context_path}/images/add.gif" text="PROMPT.NEW"/>
+                <a:button type="clear"/>
+            </a:toolBar>
+            <a:columns>
+                <a:column name="line_number" align="center" editor="text_field_editor" width="40"/>
+                <a:column name="description" align="center" editor="text_field_editor" width="80"/>
+                <a:column name="city" align="center" editor="text_field_editor" width="80"/>
+                <a:column name="place" align="center" editor="lov_editor" width="80"/>
+                <a:column name="place_type" align="center" editor="lov_editor" width="80"/>
+                <a:column name="date_from" align="center" editor="date_picker_editor" renderer="Aurora.formatDate" width="80"/>
+                <a:column name="date_to" align="center" editor="date_picker_editor" renderer="Aurora.formatDate" width="80"/>
+                <a:column name="company_code" align="center" editor="lov_editor" width="150"/>
+                <a:column name="expense_type_id_display" align="center" editor="combobox_editor" width="100"/>
+                <a:column name="exp_req_item_id_display" align="center" editor="combobox_editor" width="100"/>
+                <a:column name="price" align="right" editor="number_editor" width="80"/>
+                <a:column name="primary_quantity" align="right" editor="quantity_editor" width="80"/>
+                <a:column name="requisition_amount" align="right" footerRenderer="sumRenderer" width="100"/>
+                <a:column name="requisition_functional_amount" align="right" width="80"/>
+                <a:column name="period_num" align="center" editor="lov_editor" width="80"/>
+                <!--  <a:column name="payment_flag" align="right" editor="checkbox_editor" width="50"/> -->
+                <a:column name="exchange_rate" align="center" width="40"/>
+                <a:column name="responsibility_center_code" align="center" editor="lov_editor" width="80"/>
+                <a:column name="unit_code" align="center" editor="lov_editor" width="80"/>
+                <a:column name="employee_code" align="center" editor="lov_editor" width="80"/>
+                <a:column name="position_id_display" align="center" editor="combobox_editor" width="100"/>
+                <!-- <a:column name="payee_category_display" align="center" editor="combobox_editor" width="80"/>
+                <a:column name="payee_id_display" align="center" editor="payee_id_lov" width="120"/> -->
+                <a:column name="contract_header_code" align="center" editor="lov_editor" width="100"/>
+                <a:column name="payment_schedule_line_code" align="center" editor="lov_editor" width="100"/>
+                <!--<a:placeHolder id="dynamicLineColumn"/>
+                <a:placeHolder id="dynamicLineColumnObj"/>-->
+            </a:columns>
+            <a:events>
+                <a:event name="cellclick" handler="cellClickFunction"/>
+            </a:events>
+            <a:editors>
+                <a:textField id="text_field_editor"/>
+                <a:numberField id="number_editor" allowNegative="false" decimalPrecision="3"/>
+                <a:numberField id="quantity_editor" allowDecimals="false" allowNegative="false"/>
+                <a:lov id="lov_editor"/>
+                <a:checkBox id="checkbox_editor"/>
+                <a:comboBox id="combobox_editor"/>
+                <a:datePicker id="date_picker_editor"/>
+                <a:lov id="payee_id_lov">
+                    <a:events>
+                        <a:event name="commit" handler="payeeIdDisplayCommitFunction"/>
+                    </a:events>
+                </a:lov>
+            </a:editors>
+        </a:grid>
+        <script><![CDATA[
+        		new function(){
+					var line_obj_records = $('line_object_ds').getAll();
+					var line_dim_records = $('line_dimension_ds').getAll();
+					for(var  i = 0 ; i < line_obj_records.length; i ++){
+						var r = line_obj_records[i];
+						lineFields.push(r.get('expense_object_type_code'));
+					}
+					for(var  i = 0 ; i < line_dim_records.length; i ++){
+						var r = line_dim_records[i];
+						lineFields.push(r.get('dimension_code'));
+					}
+					var obj_length=$('head_object_ds').getAll().length;
+                    if(obj_length!=0){
+                        $('accordion_obj').selectAccordionIndex(0);
+                    }
+                    var dim_length=$('head_dimension_ds').getAll().length;
+                    if(dim_length!=0){
+                        $('accordion_dim').selectAccordionIndex(0);
+                    }
+				}();
+				
+        ]]></script>
+    </a:view>
+    <!--    <a:view-config>
+        <c:batch-config source="/model/head_dimension" targetId="dynamicHeadColumn">
+            <a:lov name="${@dimension_code}" bindTarget="exp_report_head_dimension"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicHeadFields">
+            <p:loop source="/model/head_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" defaultValue="${@value_description}" lovGridHeight="320" lovHeight="440" lovService="expm.EXP2010.exp_req_ref_dimension_dvc_lov?dimension_id=${@dimension_id}&amp;enabled_flag=Y" lovWidth="500" prompt="${@description}" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="dimension_value_id" to="${@dimension_code1}"/>
+                            <a:map from="description" to="${@dimension_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@dimension_code1}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dynamicHeadObject">
+            <p:loop source="/model/head_object">
+                <p:switch test="@expense_object_method">
+                    <p:case value="VALUE_LIST">
+                        <c:process-config>
+                            <a:lov name="${@expense_object_type_code}" bindTarget="exp_report_head_object"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="*">
+                        <c:process-config>
+                            <a:textField name="${@expense_object_type_code}" bindTarget="exp_report_head_object"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dynamicHeadObjects">
+            <p:loop source="/model/head_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovGridHeight="320" lovHeight="440" lovUrl="${/request/@context_path}/modules/expm/public/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" lovWidth="500" prompt="${@description}" required="${@required_flag}" title=" ">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/line_dimension" targetId="dynamicLineColumn">
+            <a:column name="${@dimension_code}" align="center" editor="lov_editor" prompt="${@description}" width="80"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicLineFields">
+            <p:loop source="/model/line_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" defaultValue="${@value_description}" lovGridHeight="320" lovHeight="440" lovService="expm.EXP2010.exp_req_ref_dimension_dvc_lov?dimension_id=${@dimension_id}&amp;enabled_flag=Y" lovWidth="500" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="dimension_value_id" to="${@dimension_code1}"/>
+                            <a:map from="description" to="${@dimension_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@dimension_code1}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/line_object" targetId="dynamicLineColumnObj">
+            <a:column name="${@expense_object_type_code}" align="center" editor="${@editor}" width="80"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicLineFieldsObj">
+            <p:loop source="/model/line_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovGridHeight="320" lovHeight="440" lovUrl="${/request/@context_path}/modules/expm/public/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" lovWidth="500" prompt="${@description}" required="${@required_flag}" title=" ">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+    </a:view-config>-->
+</a:screen>

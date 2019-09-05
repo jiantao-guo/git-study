@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="transaction_header_id" datatype="java.lang.Long"/>
+        <bm:field name="transaction_id" datatype="java.lang.Long"/>
+        <bm:field name="write_off_id" datatype="java.lang.Long"/>
+        <bm:field name="source_header_id" datatype="java.lang.Long"/>
+        <bm:field name="write_off_date" datatype="java.lang.String" prompt="CSH_TRANSACTION_HEADERS.WRITE_OFF_COMPLETED_DATE"/>
+        <bm:field name="period_name" datatype="java.lang.String" prompt="CSH_TRANSACTION_HEADERS.PERIOD_NAME"/>
+        <bm:field name="write_off_type" datatype="java.lang.String" prompt="EXP_PREPAYMENT_POST.WRITE_OFF_TYPE"/>
+        <bm:field name="exp_report_number" datatype="java.lang.String" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER"/>
+        <bm:field name="transaction_num" datatype="java.lang.String" prompt="CSH_TRANSACTION_HEADERS.TRANSACTION_NUM"/>
+        <bm:field name="transaction_class" datatype="java.lang.String"/>
+        <bm:field name="csh_write_off_amount" datatype="java.lang.Double" prompt="EXP_PREPAYMENT_POST.TRANSACTION_AMOUNT"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	select v.write_off_date,
+				       v.period_name,
+				       v.write_off_type,
+				       v.exp_report_number,
+				       v.transaction_num,
+				       v.transaction_class,
+				       v.transaction_id,
+				       v.csh_write_off_amount,
+				       v.write_off_id,
+				       v.transaction_header_id,
+				       v.source_header_id
+				  from (select to_char(cwo.write_off_date, 'YYYY-MM-DD') write_off_date,
+				               bgt_common_pkg.get_bgt_period_name(${/session/@company_id},cwo.write_off_date) period_name,
+				               (select b.code_value_name
+				                  from sys_codes_vl a, sys_code_values_vl b
+				                 where a.code_id = b.code_id
+				                   and a.code = 'CSH_WRITE_OFF_TYPE'
+				                   and b.code_value = cwo.write_off_type) write_off_type,
+				               (select erh.exp_report_number
+				                  from exp_report_headers erh, exp_report_pmt_schedules erps
+				                 where erps.payment_schedule_line_id = cwo.document_line_id
+				                   and erps.exp_report_header_id = erh.exp_report_header_id) exp_report_number,
+				               decode(cwo.write_off_type,
+				                      'PAYMENT_PREPAYMENT',
+				                      (select cth.transaction_num
+				                         from csh_transaction_headers cth,
+				                              csh_transaction_lines   ctl
+				                        where cth.transaction_header_id =
+				                              ctl.transaction_header_id
+				                          and ctl.transaction_line_id =
+				                              cwo.source_csh_trx_line_id
+				                          and cth.transaction_type = 'PREPAYMENT'),
+				                      'PAYMENT_RESERVATION_FUND',
+				                      (select cth.transaction_num
+				                         from csh_transaction_headers cth,
+				                              csh_transaction_lines   ctl
+				                        where cth.transaction_header_id =
+				                              ctl.transaction_header_id
+				                          and ctl.transaction_line_id =
+				                              cwo.source_csh_trx_line_id
+				                          and cth.transaction_type = 'RESERVATION_FUND'),
+				                      'PAYMENT_DEPOSIT',
+				                      (select cth.transaction_num
+				                         from csh_transaction_headers cth,
+				                              csh_transaction_lines   ctl
+				                        where cth.transaction_header_id =
+				                              ctl.transaction_header_id
+				                          and ctl.transaction_line_id =
+				                              cwo.source_csh_trx_line_id
+				                          and cth.transaction_type = 'DEPOSIT'),
+				                      null) transaction_num,
+				               (select v.description
+				                  from csh_transaction_classes_vl v
+				                 where v.csh_transaction_class_code =
+				                       (select cth.transaction_class
+				                          from csh_transaction_headers cth,
+				                               csh_transaction_lines   ctl
+				                         where cth.transaction_header_id =
+				                               ctl.transaction_header_id
+				                           and ctl.transaction_line_id =
+				                               cwo.source_csh_trx_line_id
+				                           and cth.transaction_type = 'PREPAYMENT')) transaction_class,
+				               decode(cwo.write_off_type,
+				                      'PAYMENT_PREPAYMENT',
+				                      (select cth.transaction_header_id
+				                         from csh_transaction_headers cth,
+				                              csh_transaction_lines   ctl
+				                        where cth.transaction_header_id =
+				                              ctl.transaction_header_id
+				                          and ctl.transaction_line_id =
+				                              cwo.source_csh_trx_line_id
+				                          and cth.transaction_type = 'PREPAYMENT'),
+				                      'PAYMENT_RESERVATION_FUND',
+				                      (select cth.transaction_header_id
+				                         from csh_transaction_headers cth,
+				                              csh_transaction_lines   ctl
+				                        where cth.transaction_header_id =
+				                              ctl.transaction_header_id
+				                          and ctl.transaction_line_id =
+				                              cwo.source_csh_trx_line_id
+				                          and cth.transaction_type = 'RESERVATION_FUND'),
+				                      'PAYMENT_DEPOSIT',
+				                      (select cth.transaction_header_id
+				                         from csh_transaction_headers cth,
+				                              csh_transaction_lines   ctl
+				                        where cth.transaction_header_id =
+				                              ctl.transaction_header_id
+				                          and ctl.transaction_line_id =
+				                              cwo.source_csh_trx_line_id
+				                          and cth.transaction_type = 'DEPOSIT'),
+				                      null) transaction_id,
+				               cwo.csh_write_off_amount,
+				               cwo.write_off_id,
+				               ctl.transaction_header_id,
+				               cth.source_header_id
+				          from csh_write_off           cwo,
+				               csh_transaction_lines   ctl,
+				               csh_transaction_headers cth
+				         where ctl.transaction_line_id = cwo.csh_transaction_line_id
+				           and ctl.transaction_header_id = cth.transaction_header_id) v
+				       #WHERE_CLAUSE#
+				]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="transaction_header_id" queryExpression="v.transaction_header_id = ${@transaction_header_id}"/>
+    </bm:query-fields>
+</bm:model>

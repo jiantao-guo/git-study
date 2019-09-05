@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT DISTINCT
+                    *
+                FROM
+                    (SELECT
+                        a.acp_requisition_header_id,
+                        b.requisition_number,
+                        b.employee_id,
+                        b.description line_description,
+                        c.name employee,
+                        TO_CHAR(b.requisition_date,'yyyy-mm-dd') requisition_date,
+                        b.currency_code,
+                        (SELECT
+                            SUM(lns.amount)
+                        FROM
+                            acp_acp_requisition_lns lns
+                        WHERE
+                            lns.acp_requisition_header_id=a.acp_requisition_header_id
+                        ) amount,
+                        NVL(
+                        (SELECT
+                            SUM(r.amount)
+                        FROM
+                            acp_acp_requisition_refs r,
+                            acp_acp_requisition_lns lns,
+                            CSH_TRANSACTION_V        ctv
+                        WHERE
+                            lns.acp_requisition_line_id   = r.acp_requisition_line_id AND
+                            lns.acp_requisition_header_id = a.acp_requisition_header_id AND 
+                            ctv.transaction_line_id = r.csh_transaction_line_id AND 
+                            --Add by xielj begin,只有支付成功的才显示已付金额
+                            ctv.pay_status_desc = 0
+                            --end
+                        ),0) already_paying,
+                        (SELECT
+                            B1.CODE_VALUE_NAME
+                        FROM
+                            SYS_CODES_VL A1,
+                            SYS_CODE_VALUES_VL B1
+                        WHERE
+                            A1.CODE_ID    = B1.CODE_ID AND
+                            A1.CODE       = 'PAYMENT_STATUS' AND
+                            B1.code_value = a.payment_status
+                        ) payment_status,
+                        (SELECT
+                            b1.code_value_name
+                        FROM
+                            sys_codes_vl a1,
+                            sys_code_values_vl b1
+                        WHERE
+                            a1.code_id      = b1.code_id AND
+                            a1.code         = 'PAYMENT_REQUISITION_STATUS' AND
+                            a1.enabled_flag = 'Y' AND
+                            b1.enabled_flag = 'Y' AND
+                            b1.code_value   = b.status
+                        ) status,
+                        a.payment_status payment_status1,
+                        DECODE(b.closed_date,NULL,'',TO_CHAR(b.closed_date,'yyyy-mm-dd')) close_date,
+                        (SELECT
+                            e.exp_report_number
+                        FROM
+                            exp_report_headers e
+                        WHERE
+                            e.exp_report_header_id =
+                            (SELECT
+                                s.exp_report_header_id
+                            FROM
+                                exp_report_pmt_schedules s
+                            WHERE
+                                s.payment_schedule_line_id = a.REF_DOCUMENT_LINE_ID
+                            )
+                        ) document_number,
+                        (SELECT
+                            s.exp_report_header_id
+                        FROM
+                            exp_report_pmt_schedules s
+                        WHERE
+                            s.payment_schedule_line_id = a.REF_DOCUMENT_LINE_ID
+                        ) exp_report_header_id,
+                        b.status status1,
+                        b.acp_req_type_id,
+                        e.description req_type,
+                        f.currency_name
+                    FROM
+                        acp_acp_requisition_lns a,
+                        acp_acp_requisition_hds b,
+                        exp_employees c,
+                        exp_employee_assigns d,
+                        acp_sys_acp_req_types_vl e,
+                        gld_currency_vl f,
+                        (SELECT DISTINCT
+                            t2.employee_id
+                        FROM
+                            exp_document_authorities a,
+                            exp_employee_assigns t,
+                            exp_employee_assigns t2,
+                            exp_org_position p,
+                            exp_org_unit u,
+                            sys_user su
+                        WHERE
+                            su.user_id      = ${/session/@user_id} AND
+                            a.document_type = '08' AND
+                            (
+                                a.granted_position_id IS NULL OR
+                                a.granted_position_id  = t.position_id AND
+                                t.enabled_flag         = 'Y' AND
+                                t.company_id           = a.company_id AND
+                                t.employee_id          = su.employee_id
+                            )
+                            AND
+                            NVL(a.granted_employee_id, su.employee_id ) = su.employee_id AND
+                            t2.enabled_flag                             = 'Y' AND
+                            p.enabled_flag                              = 'Y' AND
+                            u.enabled_flag                              = 'Y' AND
+                            p.position_id                               = t2.position_id AND
+                            u.unit_id                                   = p.unit_id AND
+                            a.start_date                               <= sysdate AND
+                            (
+                                a.end_date IS NULL OR
+                                a.end_date +1 >= sysdate
+                            )
+                            AND
+                            a.query_authority = 'Y' AND
+                            t2.company_id     = a.company_id AND
+                            (
+                                a.org_unit_id IS NULL OR
+                                a.org_unit_id  = u.unit_id
+                            )
+                            AND
+                            (
+                                a.position_id IS NULL OR
+                                a.position_id  = p.position_id
+                            )
+                            AND
+                            (
+                                a.employee_id IS NULL OR
+                                a.employee_id  = t2.employee_id
+                            )
+                        UNION
+                        SELECT
+                            su2.employee_id
+                        FROM
+                            sys_user su2
+                        WHERE
+                            su2.user_id = ${/session/@user_id}
+                        ) x
+                    WHERE
+                        a.acp_requisition_header_id = b.acp_requisition_header_id AND
+                        b.employee_id               = c.employee_id AND
+                        c.employee_id               = d.employee_id AND
+                        d.company_id                = ${/session/@company_id} AND
+                        b.acp_req_type_id           = e.acp_req_type_id AND
+                        b.currency_code             = f.currency_code AND
+                        b.employee_id               =x.employee_id
+                    ) V #WHERE_CLAUSE#
+                ORDER BY
+                    requisition_number DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="requisition_number" dataType="java.lang.String" queryExpression=" v.requisition_number  like &apos;%&apos;||upper(${@requisition_number})||&apos;%&apos;"/>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="v.employee_id = ${@employee_id}"/>
+        <bm:query-field name="requisition_date_f" queryExpression="v.requisition_date &gt;= ${@requisition_date_f}"/>
+        <bm:query-field name="requisition_date_t" queryExpression="v.requisition_date &lt;= ${@requisition_date_t}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="v.currency_code = ${@currency_code}"/>
+        <bm:query-field name="status" dataType="java.lang.String" queryExpression="v.status1 = ${@status}"/>
+        <bm:query-field name="partner_category" dataType="java.lang.String" queryExpression="v.partner_category = ${@partner_category}"/>
+        <bm:query-field name="partner_id" dataType="java.lang.Long" queryExpression="v.partner_id = ${@partner_id}"/>
+        <bm:query-field name="amount_f" dataType="java.lang.Double" queryExpression="v.amount &gt;= ${@amount_f}"/>
+        <bm:query-field name="amount_t" dataType="java.lang.Double" queryExpression="v.amount &lt;= ${@amount_t}"/>
+        <bm:query-field name="already_paying_f" dataType="java.lang.Double" queryExpression="v.already_paying &gt;= ${@already_paying_f}"/>
+        <bm:query-field name="already_paying_t" dataType="java.lang.Double" queryExpression="v.already_paying &lt;= ${@already_paying_t}"/>
+        <bm:query-field name="csh_type_id" dataType="java.lang.Long" queryExpression="v.acp_req_type_id = ${@csh_type_id}"/>
+        <bm:query-field name="payment_status_id" dataType="java.lang.String" queryExpression="v.payment_status1 = ${@payment_status_id}"/>
+    </bm:query-fields>
+</bm:model>

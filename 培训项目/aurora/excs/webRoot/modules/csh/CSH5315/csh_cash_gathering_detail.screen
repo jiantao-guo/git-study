@@ -1,0 +1,849 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wby  
+    $Date: 2013-2-20 下午1:46:29  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="csh.payment_method_with_ebank_list" rootPath="payment_method_list"/>
+        <a:model-query model="expm.get_company_currency_code" rootPath="company_currency_code"/>
+        <a:model-query model="expm.get_exchange_rate_type" rootPath="exchange_rate_type"/>
+        <a:model-query fetchAll="true" model="expm.exp_rate_quotation" rootPath="rate_quotation"/>
+        <a:model-query autoCount="false" defaultWhereClause="currency_code=${/model/head_data/record/@exp_report_currency_code}" fetchAll="true" model="gld.gld_currency_vl" rootPath="precision"/>
+        <a:model-query model="csh.CSH5315.csh_partner_category_list" rootPath="partner_category_list"/>
+        <a:model-query defaultwhereclause="t1.ENABLED_FLAG =&apos;Y&apos;" fetchAll="true" model="gld.gld_exchangerate_types_vl" rootPath="exchangerate_types"/>
+        <a:model-query defaultWhereClause="fc.user_id = ${/session/@user_id}" fetchAll="true" model="sys.sys_user" rootPath="sys_user"/>
+        <a:model-query fetchAll="true" model="csh.CSH5315.csh_cash_plan_relationship" rootPath="parameter_value"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="get_exchange_rate_link" model="expm.get_exchange_rate" modelaction="query"/>
+        <a:link id="gld_get_period_name_link_2" model="expm.gld_get_period_name" modelaction="query"/>
+        <a:link id="get_precision_link" model="gld.gld_currency_vl" modelaction="query"/>
+        <a:link id="csh_transaction_post_link" model="csh.CSH5315.csh_transaction_post" modelaction="execute"/>
+        <a:link id="csh_cash_period_status_link" model="csh.CSH5315.csh_cash_period" modelaction="query"/>
+        <a:link id="csh_cash_gathering_save_link" url="${/request/@context_path}/modules/csh/CSH5315/csh_cash_gathering_update.svc"/>
+        <script><![CDATA[
+        
+        	//update transaction date function
+        	function updateFunc(dataSet, record, name, value, oldvalue){
+        	    if(name=='transaction_date'){
+        	        var p_date = new Date();
+	                if (value != null) {
+	                    p_date = Aurora.formatDate(value);
+	                } else {
+	                    p_date = Aurora.formatDate(p_date);
+	                }
+        	        Aurora.request({
+                    url: $('gld_get_period_name_link_2').getUrl(),
+                    para: {
+                        p_date: p_date
+                    },
+                    success: periodName,
+                    scope: this
+                });
+        	    }
+        	    
+        	    if(name=='transaction_category'){
+        	        $('csh_cash_gathering_dists_ds').removeAll();
+        	    }
+        	}
+        	
+        	//update periodName
+        	function periodName(args) {
+        	    var record = args.result.record;
+                var period_name = '';
+                if (record.length) {
+                    period_name = record[0].period_name;
+                } else {
+                    period_name = record.period_name;
+                }
+                if(period_name&&period_name!=''){
+	                Aurora.request({
+	                    url: $('csh_cash_period_status_link').getUrl(),
+	                    para: {
+	                        period_name: period_name
+	                    },
+	                    success: function(res){
+	                        var record = res.result.record;
+	                        if(record.period_status_code == 'O'){
+	                        	$('csh_cash_gathering_header_ds').getAt(0).set('period_name',period_name);
+	                        }else{
+	                            $('csh_cash_gathering_header_ds').getAt(0).set('period_name','');
+	                            Aurora.showErrorMessage('错误','会计期间未打开！');
+	                        }
+	                    },
+	                    scope: this
+	                });
+                }else{
+                    $('csh_cash_gathering_header_ds').getAt(0).set('period_name','');
+                    Aurora.showErrorMessage('错误','未找到期间！');
+                }
+        	}
+        	
+        	//lines dataset updata
+        	function linesUpdateFunc(dataSet, record, name, value, oldvalue){
+        	    if(name=='currency_code' || name=='exchange_rate_type'){
+        	        if(name=='currency_code'){
+                    record.set('exchange_rate_type', '');
+                    record.set('exchange_rate_type_display','');
+                    record.set('exchange_rate_type_code','');
+        	        }
+        	        record.set('exchange_rate', '');
+        	        record.set('exchange_rate_quotation', '');
+                    record.set('exchange_rate_quotation_display', '');
+                    
+        	        var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}';
+        	        var cur_code = record.get('currency_code');
+        	        if (f_cur_code == cur_code) {
+                        record.set('exchange_rate', 1);
+                        record.set('exchange_rate_type', '');
+                        record.set('exchange_rate_type_display','');
+                        record.set('exchange_rate_type_code','');
+                        record.set('exchange_rate_quotation', '');
+                        record.set('exchange_rate_quotation_display', '');
+                        record.getMeta().getField('exchange_rate_type_display').setRequired(false);
+                        record.getMeta().getField('exchange_rate_type_display').setReadOnly(true);
+                        record.getMeta().getField('exchange_rate').setReadOnly(true);
+                        record.getMeta().getField('exchange_rate_quotation_display').setReadOnly(true);
+                    }else{
+                        record.getMeta().getField('exchange_rate_type_display').setRequired(true);
+                        record.getMeta().getField('exchange_rate_type_display').setReadOnly(false);
+                        record.getMeta().getField('exchange_rate').setReadOnly(true);
+                        record.getMeta().getField('exchange_rate_quotation_display').setReadOnly(true);
+                        if (record.get('exchange_rate_type')) {} else {
+                            record.set('exchange_rate_type', '${/model/exchange_rate_type/record/@value_code}');
+                        }
+                    	var exchange_rate_type = record.get('exchange_rate_type');
+                    	var exchange_rate_type_display = '';
+                    	var exchange_rate_type_code='';
+                    	var ds = $('exchangerate_types_ds');
+                    	var records = ds.getAll();
+                    	for (var i = 0,
+                        	l = records.length;i < l;i++) {
+                        	if (exchange_rate_type == records[i].get('type_code')) {
+                            	exchange_rate_type_display = records[i].get('type_name');
+                            	exchange_rate_type_code = records[i].get('rate_method_code');
+                            	break;
+                        	}
+                    	}
+                    	record.set('exchange_rate_type_display', exchange_rate_type_display);
+                    	record.set('exchange_rate_type_code', exchange_rate_type_code);
+                    	
+                    	
+                    	if( name=='exchange_rate_type'){
+	                        var from_currency = f_cur_code;
+	                        var to_currency = cur_code;
+	                        var exchange_date = '';
+	                        var exchange_period_name = '';
+	                        if ($('csh_cash_gathering_header_ds').getAt(0)) {
+	                            exchange_date = $('csh_cash_gathering_header_ds').getAt(0).get('transaction_date');
+	                            exchange_date = Aurora.formatDate(exchange_date);
+	                            exchange_period_name = $('csh_cash_gathering_header_ds').getAt(0).get('period_name');
+	                        }
+	                        Aurora.request({
+	                            url: $('get_exchange_rate_link').getUrl(),
+	                            para: {
+	                                "from_currency": from_currency,
+	                                "to_currency": to_currency,
+	                                "exchange_rate_type": exchange_rate_type,
+	                                "exchange_date": exchange_date,
+	                                "exchange_period_name": exchange_period_name
+	                            },
+	                            success: callchange,
+	                            scope: this
+	                        });
+                    	}
+                    }
+                    
+        	    }
+        	    
+        	    if(name=='partner_category'){
+        	        record.set('partner_id','');
+        	        record.set('partner_display','');
+        	        record.set('partner_account_name','');
+        	        record.set('partner_bank_account_id','');
+        	        record.set('partner_account','');
+        	        var f = record.getMeta().getField('partner_display');
+        	        if(value=='CUSTOMER'){
+        	            f.setLovService('expm.exp_customer_req_lov');
+        	            f.setMapping([{
+        	                from: 'customer_id',
+        	                to: 'partner_id'
+        	            }, {
+                            from: 'code_name',
+                            to: 'partner_display'
+                        }]);
+        	        }else if(value=='EMPLOYEE'){
+        	            f.setLovService('expm.exp_employee_req_lov');
+        	            f.setMapping([{
+        	                from: 'employee_id',
+        	                to: 'partner_id'
+        	            },{
+                            from: 'code_name',
+                            to: 'partner_display'
+                        }]);
+                        record.set('partner_id','${/model/sys_user/record/@employee_id}');
+        	            record.set('partner_display','${/model/sys_user/record/@employee_code}'+' - '+'${/model/sys_user/record/@emp_name}');
+        	        }else if(value=='VENDER'){
+        	            f.setLovService('expm.exp_vender_req_lov');
+        	            f.setMapping([{
+        	                from: 'vender_id',
+        	                to: 'partner_id'
+        	            }, {
+                            from: 'code_name',
+                            to: 'partner_display'
+                        }]);
+        	        }else{
+        	            f.setLovService('');
+        	            f.setMapping([]);
+        	        }
+        	    }
+        	    
+        	    if(name=="partner_id"){
+        	        record.set('partner_account_name','');
+        	        record.set('partner_bank_account_id','');
+        	        record.set('partner_account','');
+        	        var partner_category_value = record.get('partner_category');
+        	        var f1 = record.getMeta().getField('partner_account');
+        	        if(partner_category_value=='CUSTOMER'){
+        	            f1.setLovService('csh.ord_customer_accounts');
+        	            f1.setLovPara('customer_id', record.get('partner_id'));
+        	        }else if(partner_category_value=='EMPLOYEE'){
+        	            f1.setLovService('expm.exp_employee_accounts');
+        	            f1.setLovPara('employee_id', record.get('partner_id'));
+        	        }else if(partner_category_value=='VENDER'){
+        	            f1.setLovService('expm.pur_vender_accounts');
+        	            f1.setLovPara('vender_id', record.get('partner_id'));
+        	        }else{
+        	            f1.setLovService('');
+        	        }
+        	    }
+        	    
+        	    if(name=="exchange_rate" || name=='transaction_amount' || name=="exchange_rate_quotation"){
+        	        getFunctionAmount(record,record.get('transaction_amount'));
+        	    }
+        	}
+        	
+        	function getFunctionAmount(record,value){
+        	    if(value == ''){
+        	        record.set('function_amount','');
+        	        return;
+        	    }
+        	    if(!record.get('exchange_rate')||record.get('exchange_rate')==''){
+        	        record.set('function_amount','');
+        	        return;
+        	    }
+        	    if(!record.get('exchange_rate_quotation')||record.get('exchange_rate_quotation')==''){
+        	        record.set('function_amount','');
+        	        return;
+        	    }
+    	    	var quotation = record.get('exchange_rate_quotation');
+            	var a = value;
+            	var b = record.get('exchange_rate');
+            	var currency_code = record.get('currency_code');
+            	Aurora.request({
+            	    url:$('get_precision_link').getUrl(),
+            	    para: {
+                        currency_code: currency_code
+                    },
+            	    success: function(res){
+            	        var records = res.result.record;
+            	        var precision='';
+            	        if (records.length) {
+                            precision = records[0].precision;
+                        } else {
+                            precision = records.precision;
+                        }
+                        var function_amount='';
+            	        if (quotation == 'DIRECT QUOTATION') {
+                			 function_amount = isNaN(a * b) ? '' : Aurora.formatMoney((a * b).toFixed(precision));
+            			 } else {
+                			 function_amount = isNaN(a / b) ? '' : Aurora.formatMoney((a / b).toFixed(precision));
+            			 }
+            			 record.set('function_amount',function_amount);
+            	    },
+            	    scope: this
+            	});
+        	}
+        	
+        	function callchange(res) {
+            
+                var pluscols = res.result.record;
+                if (pluscols.exchange_rate) {
+                    $('csh_cash_gathering_lines_ds').getAt(0).set('exchange_rate', pluscols.exchange_rate);
+                    var exchange_rate_quotation = pluscols.exchange_rate_quotation;
+                    var exchange_rate_quotation_display = '';
+                    var ds = $('rate_quotation_ds');
+                    var records = ds.getAll();
+                    for (var i = 0,
+                        l = records.length;i < l;i++) {
+                        if (exchange_rate_quotation == records[i].get('code_value')) {
+                            exchange_rate_quotation_display = records[i].get('code_value_name');
+                            break;
+                        }
+                    }
+                    $('csh_cash_gathering_lines_ds').getAt(0).set('exchange_rate_quotation', pluscols.exchange_rate_quotation);
+                    $('csh_cash_gathering_lines_ds').getAt(0).set('exchange_rate_quotation_display', exchange_rate_quotation_display);
+                } else {
+                    if ($('csh_cash_gathering_lines_ds').getAt(0).get('exchange_rate_type_code') != 'MANUAL') {
+                        Aurora.showWarningMessage('', '未获取到汇率', null, 200, 100);
+                    }
+                    else{
+                        $('csh_cash_gathering_lines_ds').getAt(0).getMeta().getField('exchange_rate').setReadOnly(false);
+                        $('csh_cash_gathering_lines_ds').getAt(0).getMeta().getField('exchange_rate_quotation_display').setReadOnly(false);
+                    }
+                }
+            }
+        	
+        	function header_load(){
+        	    var head_record = $('csh_cash_gathering_header_ds').getAt(0);
+        	    var post_flag = head_record.get('posted_flag');
+        	    if(post_flag=='Y'){
+        	        head_record.getMeta().getField('transaction_category_display').setReadOnly(true);
+        	        head_record.getMeta().getField('payment_method_display').setReadOnly(true);
+        	        head_record.getMeta().getField('transaction_date').setReadOnly(true);
+        	    }
+        	}
+        	
+        	function line_load(){
+        	    var record = $('csh_cash_gathering_lines_ds').getAt(0);
+        	    var amount = record.get('transaction_amount');
+        	    getFunctionAmount(record,amount);
+        	    var post_flag = $('csh_cash_gathering_header_ds').getAt(0).get('posted_flag');
+        	    var line_record = $('csh_cash_gathering_lines_ds').getAt(0);
+        	    var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}';
+        	    var cur_code = record.get('currency_code');
+        	    if(f_cur_code!=cur_code){
+        	        line_record.getMeta().getField('exchange_rate_type_display').setReadOnly(false);
+        	        line_record.getMeta().getField('exchange_rate_type_display').setRequired(true);
+        	        if(record.get('exchange_rate_type_code')=='MANUAL'){
+        	           	line_record.getMeta().getField('exchange_rate_quotation_display').setReadOnly(false);
+        	        	line_record.getMeta().getField('exchange_rate').setReadOnly(false); 
+        	        }
+        	    }
+        	    if(post_flag == 'Y'){
+        	        line_record.getMeta().getField('bank_account_code_display').setReadOnly(true);
+        	        line_record.getMeta().getField('transaction_amount').setReadOnly(true);
+        	        line_record.getMeta().getField('exchange_rate_type_display').setReadOnly(true);
+        	        line_record.getMeta().getField('exchange_rate_quotation_display').setReadOnly(true);
+        	        line_record.getMeta().getField('exchange_rate').setReadOnly(true);
+        	        line_record.getMeta().getField('partner_category_display').setReadOnly(true);
+        	        line_record.getMeta().getField('partner_display').setReadOnly(true);
+        	        line_record.getMeta().getField('partner_account').setReadOnly(true);
+        	        line_record.getMeta().getField('description').setReadOnly(true);
+        	    }
+        	    
+        	    var f = record.getMeta().getField('partner_display');
+        	    var f1 = record.getMeta().getField('partner_account');
+        	    var partner_category_value = record.get('partner_category');
+        	    
+        	    if(partner_category_value=='CUSTOMER'){
+    	            f.setLovService('expm.exp_customer_req_lov');
+    	            f.setMapping([{
+    	                from: 'customer_id',
+    	                to: 'partner_id'
+    	            }, {
+                        from: 'code_name',
+                        to: 'partner_display'
+                    }]);
+                    
+                    f1.setLovService('expm.ord_customer_accounts');
+        	        f1.setLovPara('customer_id', record.get('partner_id'));
+        	    }else if(partner_category_value=='EMPLOYEE'){
+    	            f.setLovService('expm.exp_employee_req_lov');
+    	            f.setMapping([{
+    	                from: 'employee_id',
+    	                to: 'partner_id'
+    	            },{
+                        from: 'code_name',
+                        to: 'partner_display'
+                    }]);
+                    f1.setLovService('expm.exp_employee_accounts');
+        	        f1.setLovPara('employee_id', record.get('partner_id'));
+    	        }else if(partner_category_value=='VENDER'){
+    	            f.setLovService('expm.exp_vender_req_lov');
+    	            f.setMapping([{
+    	                from: 'vender_id',
+    	                to: 'partner_id'
+    	            }, {
+                        from: 'code_name',
+                        to: 'partner_display'
+                    }]);
+                    f1.setLovService('expm.pur_vender_accounts');
+        	        f1.setLovPara('vender_id', record.get('partner_id'));
+    	        }else{
+    	            f.setLovService('');
+    	            f.setMapping([]);
+    	        }
+        	}
+        	
+        	function setPara(lov){
+                var record = $('csh_cash_gathering_lines_ds').getAt(0);
+                var employee_id = $('csh_cash_gathering_header_ds').getAt(0).get('created_employee_id');
+                var transaction_date = $('csh_cash_gathering_header_ds').getAt(0).get('transaction_date');
+                record.getMeta().getField('bank_account_code_display').setLovPara('employee_id',employee_id);
+                record.getMeta().getField('bank_account_code_display').setLovPara('transaction_date',transaction_date);
+            }
+            
+            function setPartnerAccountPara(lov){
+                var record = $('csh_cash_gathering_lines_ds').getAt(0);
+                var employee_id = $('csh_cash_gathering_header_ds').getAt(0).get('created_employee_id');
+                var transaction_date = $('csh_cash_gathering_header_ds').getAt(0).get('transaction_date');
+                record.getMeta().getField('partner_account').setLovPara('employee_id',employee_id);
+                record.getMeta().getField('partner_account').setLovPara('transaction_date',transaction_date);
+            }
+            
+            function editorFunction(record,name){
+                var post_flag = '${/parameter/@post_flag}';
+                var posted_flag = $('csh_cash_gathering_header_ds').getAt(0).get('posted_flag');
+                if(post_flag== 'Y' || posted_flag == 'Y'){
+                    return '';
+                }else{
+                    if(name=='responsibility_center_display'||name=='account_code_display'){
+                        return 'lov_editor';
+                    }else if(name=='debit_flag_display'){
+                        return 'comboBox_editor';
+                    }else if(name=='description'){
+                        return 'tf_editor';
+                    }else{
+                        return 'nf_editor';
+                    }
+                }
+            }
+        	
+            function saveFunc(){
+                var header_record = $('csh_cash_gathering_header_ds').getAt(0);
+                var line_record = $('csh_cash_gathering_lines_ds').getAt(0);
+                var dirt_records = $('csh_cash_gathering_dists_ds').getAll();
+                var dirt_records_delete = $('csh_transaction_dists_delete_ds').getAll();
+                
+                if($('csh_cash_gathering_header_ds').validate()){
+	                if(header_record.get('transaction_category') == 'MISCELLANEOUS'){
+	                    var transaction_amount = line_record.get('transaction_amount');
+	                    var dr_amount = 0;
+	                    var cr_amount = 0;
+	                    var dirt_record = '';
+	                    for(var i=0;i<dirt_records.length;i++){
+	                        dirt_record = dirt_records[i];
+	                        if(dirt_record.get('debit_flag')=='DR'){
+	                            dr_amount += dirt_record.get('amount');
+	                        }else if(dirt_record.get('debit_flag')=='CR'){
+	                            cr_amount += dirt_record.get('amount');
+	                        }
+	                    }
+	                    if(parseFloat(transaction_amount)<0){
+	                        Aurora.showErrorMessage('错误','金额不能为负');
+	                    }else{
+		                    if((parseFloat(transaction_amount)+parseFloat(dr_amount)) == parseFloat(cr_amount)){
+		                        var data = [];
+		                        var lines_data = [];
+		                        var dists_data = [];
+		                        if(header_record.get('transaction_header_id')){
+		                            header_record.set('_status','update');
+		                        }else{
+		                            header_record.set('_status','insert');
+		                            header_record.set('transaction_header_id','');
+		                        }
+		                        if(line_record.get('transaction_line_id')){
+		                            line_record.set('_status','update');
+		                        }else{
+		                            line_record.set('_status','insert');
+		                        }
+		                        
+		                        for(var i=0;i<dirt_records.length;i++){
+		                            if(dirt_records[i].get('distribution_line_id')){
+		                                dirt_records[i].set('_status','update');
+		                            }else{
+		                            	dirt_records[i].set('_status','insert');
+		                        	}
+		                            dists_data.push(dirt_records[i].data);
+		                        }
+		                        for(var i=0;i<dirt_records_delete.length;i++){
+		                            if(dirt_records_delete[i].get('distribution_line_id')){
+		                                dirt_records_delete[i].set('_status','delete');
+		                            }
+		                            dists_data.push(dirt_records_delete[i].data);
+		                        }
+		                        line_record.data['dists_ds'] = dists_data;
+		                        line_record.data['accounts_ds'] = [];
+		                        lines_data.push(line_record.data);
+		                        
+		                        header_record.data['lines_ds']=lines_data;
+		                        data.push(header_record.data);
+		                        
+			                    submitBeforeFunc($('csh_cash_gathering_header_ds'));
+			                    Aurora.request({
+			                        url:$('csh_cash_gathering_save_link').getUrl(),
+			                        para:data,
+			                        success:submitSuccFunc,
+			                        error:submitFailedFunc,
+			                        failure:submitFailedFunc,
+			                        scope: this,
+			                    	sync: false
+			                    });
+		                    }
+		                    else{
+		                    	Aurora.showErrorMessage('错误','金额不平');
+		                    }
+	                    }
+	                }
+                }
+            }
+            
+            function postFunc(){
+                
+                var transaction_header_id = $('csh_cash_gathering_header_ds').getAt(0).get('transaction_header_id');
+                if(!transaction_header_id){
+                    Aurora.showErrorMessage('提示','未保存不能过账');
+                }else{
+                	$('saveButton').disable();
+                	$('postButton').disable();
+	                Aurora.request({
+	                    url:$('csh_transaction_post_link').getUrl(),
+	                    para: {
+	                        transaction_header_id: transaction_header_id
+	                    },
+	                    success: function(res){
+	                        $('saveButton').enable();
+                			$('postButton').enable();
+	                        initPage(transaction_header_id,'Y');
+	                    },
+	                    scope: this
+	                });
+                }
+            }
+            
+            function returnFunc(){
+                $('csh_cash_gathering_detail_win').close();
+            }
+            
+            function submitSuccFunc(res){
+                $('saveButton').enable();
+        	    $('postButton').enable();
+        	    var transaction_header_id = $('csh_cash_gathering_header_ds').getAt(0).get('transaction_header_id');
+        	    if(!(transaction_header_id&&transaction_header_id!='')){
+                	var records = res.result.transaction_header_id.record;
+	                if (records.length) {
+	                    transaction_header_id = records[0].transaction_header_id;
+	                } else {
+	                    transaction_header_id = records.transaction_header_id;
+	                }
+        	    }
+                initPage(transaction_header_id,'N');
+            }
+            
+            function submitFailedFunc(dateset,res){
+                $('saveButton').enable();
+        	    $('postButton').enable();
+            }
+            
+            function submitBeforeFunc(dateset){
+                $('saveButton').disable();
+                $('postButton').disable();
+            }
+            
+            function addFunc(dateset,record,index){
+                var description = $('csh_cash_gathering_lines_ds').getAt(0).get('description');
+                record.set('description',description);
+            }
+            
+            function Convert(value, record, name) {
+                if(value){
+            	var s = value;
+            	 s += "";
+            	 if (s.indexOf(".") == -1){ s += ".00";}
+            	 if (/\.\d$/.test(s)){ s += "0";}   //正则判断
+                 while (/\d{4}(\.|,)/.test(s)){
+            	 	s = s.replace(/(\d)(\d{3}(\.|,))/, "$1,$2"); 
+            	 }       
+            	   return s;  
+                }else{
+                    return '';
+                }      
+           }
+           
+           function validFunc(dateset,record,name,valid){
+               if(!valid){
+               	$('saveButton').enable();
+        	    $('postButton').enable();
+               }
+           }
+           
+           function removeFunc(dateset,record,number){
+               $('csh_transaction_dists_delete_ds').add(record);
+           }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="csh_cash_transaction_category_ds" lookupCode="CSH_TRANSACTION_CATEGORY"/>
+            <a:dataSet id="csh_cash_parameter_ds"/>
+            <a:dataSet id="csh_cash_dr_cr_ds" lookupCode="DR_CR_FLAG"/>
+            <a:dataSet id="csh_cash_payment_method_ds">
+                <a:datas dataSource="/model/payment_method_list"/>
+            </a:dataSet>
+            <a:dataSet id="exchangerate_types_ds">
+                <a:datas dataSource="/model/exchangerate_types"/>
+            </a:dataSet>
+            <a:dataSet id="rate_quotation_ds">
+                <a:datas dataSource="/model/rate_quotation"/>
+            </a:dataSet>
+            <a:dataSet id="partner_category_list_ds">
+                <a:datas dataSource="/model/partner_category_list"/>
+            </a:dataSet>
+            <a:dataSet id="transaction_id_ds" autoCreate="true"/>
+            <a:dataSet id="csh_cash_gathering_header_ds" autoCreate="true" model="csh.CSH5315.csh_transaction_headers" queryDataSet="transaction_id_ds">
+                <a:fields>
+                    <a:field name="transaction_num"/>
+                    <a:field name="created_by" defaultValue="${/model/sys_user/record/@description}"/>
+                    <a:field name="transaction_category_display" displayField="code_value_name" options="csh_cash_transaction_category_ds" required="true" returnField="transaction_category" valueField="code_value"/>
+                    <a:field name="transaction_category"/>
+                    <a:field name="payment_method_display" displayField="description" options="csh_cash_payment_method_ds" required="true" returnField="payment_method_id" valueField="payment_method_id">
+                        <a:mapping>
+                            <a:map from="ebanking_flag" to="ebanking_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="transaction_date" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateFunc"/>
+                    <a:event name="load" handler="header_load"/>
+                    <a:event name="submitsuccess" handler="submitSuccFunc"/>
+                    <a:event name="submitfailed" handler="submitFailedFunc"/>
+                    <a:event name="beforesubmit" handler="submitBeforeFunc"/>
+                    <a:event name="valid" handler="validFunc"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="csh_cash_gathering_lines_ds" autoCreate="true" bindName="lines_ds" bindTarget="csh_cash_gathering_header_ds" model="csh.CSH5315.csh_transaction_lines">
+                <a:fields>
+                    <a:field name="bank_account_code_display" autoComplete="true" autoCompleteField="bank_name_code" lovGridHeight="320" lovHeight="450" lovService="csh.CSH5315.csh_cash_bank_acount_lov" lovWidth="600" required="true" title="选择账户">
+                        <a:mapping>
+                            <a:map from="bank_name_code" to="bank_account_code_display"/>
+                            <a:map from="bank_account_id" to="bank_account_id"/>
+                            <a:map from="bank_account_name" to="bank_account_name"/>
+                            <a:map from="bank_account_num" to="bank_account_num"/>
+                            <a:map from="bank_name" to="bank_name"/>
+                            <a:map from="branch_name" to="branch_name"/>
+                            <a:map from="address" to="address"/>
+                            <!-- <a:map from="currency_name" to="currency_display"/> -->
+                            <a:map from="currency_code" to="currency_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="transaction_amount" required="true"/>
+                    <a:field name="exchange_rate_type_code"/>
+                    <a:field name="exchange_rate_type_display" displayField="type_name" options="exchangerate_types_ds" returnField="exchange_rate_type" valueField="type_code">
+                        <a:mapping>
+                            <a:map from="rate_method_code" to="exchange_rate_type_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate_quotation_display" displayField="code_value_name" options="rate_quotation_ds" returnField="exchange_rate_quotation" valueField="code_value"/>
+                    <a:field name="exchange_rate" required="true"/>
+                    <a:field name="partner_category_display" displayField="code_value_name" options="partner_category_list_ds" required="true" returnField="partner_category" valueField="code_value"/>
+                    <a:field name="partner_category"/>
+                    <a:field name="partner_display" lovGridHeight="300" lovHeight="450" lovWidth="500" required="true" title="选择付款方"/>
+                    <a:field name="partner_id"/>
+                    <a:field name="partner_bank_account_id"/>
+                    <a:field name="partner_account" lovGridHeight="320" lovHeight="450" lovWidth="600" title="选择付款方账户">
+                        <a:mapping>
+                            <a:map from="account_number" to="partner_account"/>
+                            <a:map from="account_name" to="partner_account_name"/>
+                            <a:map from="account_number" to="partner_bank_account_id"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="linesUpdateFunc"/>
+                    <a:event name="load" handler="line_load"/>
+                    <a:event name="valid" handler="validFunc"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="csh_cash_gathering_dists_ds" bindName="dists_ds" bindTarget="csh_cash_gathering_lines_ds" model="csh.CSH5315.csh_transaction_dists" selectable="true">
+                <a:fields>
+                    <a:field name="responsibility_center_display" lovHeight="490" lovService="csh.CSH5315.csh_cash_responsibility_lov" lovWidth="600" required="true" title="选择成本中心">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_code_display" lovHeight="490" lovService="csh.CSH5315.csh_cash_accounts_lov" lovWidth="600" required="true" title="选择科目">
+                        <a:mapping>
+                            <a:map from="account_id" to="account_id"/>
+                            <a:map from="description" to="account_code_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="debit_flag_display" displayField="code_value_name" options="csh_cash_dr_cr_ds" required="true" returnField="debit_flag" valueField="code_value"/>
+                    <a:field name="amount" required="true"/>
+                    <a:field name="description" defaultValue="${/parameter/lines_ds/@description}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="addFunc"/>
+                    <a:event name="valid" handler="validFunc"/>
+                    <a:event name="remove" handler="removeFunc"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="csh_transaction_dists_delete_ds"/>
+            <a:dataSet id="csh_transaction_accounts_ds" autoCreate="false" bindName="accounts_ds" bindTarget="csh_cash_gathering_lines_ds" model="csh.CSH5315.csh_transaction_accounts"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="3" title="现金收款维护" width="970">
+                <a:textField name="transaction_num" bindTarget="csh_cash_gathering_header_ds" prompt="现金事务号" readOnly="true"/>
+                <a:textField name="created_by" bindTarget="csh_cash_gathering_header_ds" prompt="制单人" readOnly="true"/>
+                <a:comboBox name="transaction_category_display" bindTarget="csh_cash_gathering_header_ds" prompt="收款类型"/>
+                <a:comboBox name="payment_method_display" bindTarget="csh_cash_gathering_header_ds" prompt="收款方式"/>
+                <a:datePicker name="transaction_date" bindTarget="csh_cash_gathering_header_ds" prompt="收款日期"/>
+                <a:textField name="period_name" bindTarget="csh_cash_gathering_header_ds" prompt="收款期间" readOnly="true"/>
+            </a:form>
+            <a:hBox>
+                <a:button id="saveButton" click="saveFunc" text="保存"/>
+                <a:button id="postButton" click="postFunc" text="过账"/>
+                <a:button click="returnFunc" text="返回"/>
+            </a:hBox>
+            <a:tabPanel id="csh_cash_gathering_tabPanel" height="400" width="970">
+                <a:tabs>
+                    <a:tab prompt="收款账户信息" width="100">
+                        <a:form>
+                            <a:hBox labelWidth="80">
+                                <a:lov name="bank_account_code_display" bindTarget="csh_cash_gathering_lines_ds" prompt="收款账户">
+                                    <a:events>
+                                        <a:event name="blur" handler="setPara"/>
+                                    </a:events>
+                                </a:lov>
+                                <a:numberField name="transaction_amount" allowFormat="true" bindTarget="csh_cash_gathering_lines_ds" prompt="收款金额"/>
+                                <a:numberField name="function_amount" allowFormat="true" bindTarget="csh_cash_gathering_lines_ds" prompt="本币金额" readOnly="true"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:textField name="bank_account_name" bindTarget="csh_cash_gathering_lines_ds" prompt="账户名称" readOnly="true"/>
+                                <a:textField name="bank_account_num" bindTarget="csh_cash_gathering_lines_ds" prompt="账号" readOnly="true"/>
+                                <a:textField name="bank_name" bindTarget="csh_cash_gathering_lines_ds" prompt="银行名称" readOnly="true"/>
+                                <a:textField name="branch_name" bindTarget="csh_cash_gathering_lines_ds" prompt="分行名称" readOnly="true"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:textField name="currency_code" bindTarget="csh_cash_gathering_lines_ds" prompt="币种" readOnly="true"/>
+                                <a:comboBox name="exchange_rate_type_display" bindTarget="csh_cash_gathering_lines_ds" prompt="汇率类型" readOnly="true"/>
+                                <a:comboBox name="exchange_rate_quotation_display" bindTarget="csh_cash_gathering_lines_ds" prompt="标价方法" readOnly="true"/>
+                                <a:numberField name="exchange_rate" bindTarget="csh_cash_gathering_lines_ds" prompt="汇率" readOnly="true"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:textField name="address" bindTarget="csh_cash_gathering_lines_ds" prompt="地址" readOnly="true" width="865"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:comboBox name="partner_category_display" bindTarget="csh_cash_gathering_lines_ds" prompt="付款对象"/>
+                                <a:lov name="partner_display" bindTarget="csh_cash_gathering_lines_ds" prompt="付款方"/>
+                                <a:lov name="partner_account" bindTarget="csh_cash_gathering_lines_ds" prompt="付款方账户">
+                                    <a:events>
+                                        <a:event name="blur" handler="setPartnerAccountPara"/>
+                                    </a:events>
+                                </a:lov>
+                                <a:textField name="partner_account_name" bindTarget="csh_cash_gathering_lines_ds" prompt="账户名称" readOnly="true"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:textField name="description" bindTarget="csh_cash_gathering_lines_ds" prompt="摘要" width="865"/>
+                            </a:hBox>
+                        </a:form>
+                    </a:tab>
+                    <a:tab prompt="分配信息">
+                        <a:grid id="dist_grid_id" bindTarget="csh_cash_gathering_dists_ds" height="270" width="900">
+                            <a:toolBar>
+                                <a:button id="grid_add_button" type="add"/>
+                                <a:button id="grid_clear_button" type="clear"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="description" editorFunction="editorFunction" prompt="摘要" width="300"/>
+                                <a:column name="responsibility_center_display" editorFunction="editorFunction" prompt="成本中心"/>
+                                <a:column name="account_code_display" editorFunction="editorFunction" prompt="科目代码" width="200"/>
+                                <a:column name="debit_flag_display" editorFunction="editorFunction" prompt="借贷"/>
+                                <a:column name="amount" editorFunction="editorFunction" prompt="金额" renderer="Convert"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="lov_editor"/>
+                                <a:comboBox id="comboBox_editor"/>
+                                <a:textField id="tf_editor"/>
+                                <a:numberField id="nf_editor" allowFormat="true"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <!-- <a:tab id="capital_plan_tab_id" prompt="关联资金计划" width="100" /> -->
+                    <a:tab id="other_info_tab_id" prompt="财务信息">
+                        <a:grid bindTarget="csh_transaction_accounts_ds" width="950">
+                            <a:columns>
+                                <a:column name="description" prompt="摘要"/>
+                                <a:column name="period_name" prompt="期间" width="70"/>
+                                <a:column name="company_name" prompt="公司"/>
+                                <a:column name="responsibility_center_name" prompt="成本中心" width="100"/>
+                                <a:column name="account_code" prompt="科目代码"/>
+                                <a:column name="account_code_description" prompt="科目描述"/>
+                                <a:column name="entered_amount_dr" prompt="原币借方" renderer="Convert" width="80"/>
+                                <a:column name="entered_amount_cr" prompt="原币贷方" renderer="Convert" width="80"/>
+                                <a:column name="functional_amount_dr" prompt="本币借方" renderer="Convert" width="80"/>
+                                <a:column name="functional_amount_cr" prompt="本币贷方" renderer="Convert" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	function init(){
+        	    var transaction_header_id = '${/parameter/@transaction_header_id}';
+        	    var posted_flag = '${/parameter/@post_flag}';
+        	    initPage(transaction_header_id,posted_flag);
+        	}
+        	
+        	function initPage(transaction_header_id,posted_flag){
+        	    var head_record = $('csh_cash_gathering_header_ds').getAt(0);
+	        	var line_record = $('csh_cash_gathering_lines_ds').getAt(0);
+	        	
+	        	var category_reocrds = $('csh_cash_transaction_category_ds').getAll();
+	        	var record='';
+        	    for(var i=0;i<category_reocrds.length;i++){
+        	        record = category_reocrds[i];
+        	        if(record.get('code_value')=='MISCELLANEOUS'){
+        	            break;
+        	        }
+        	    }
+        	    $('csh_cash_transaction_category_ds').removeAll();
+        	    $('csh_cash_transaction_category_ds').add(record);
+        	    
+        	    if(transaction_header_id){
+        	        $('transaction_id_ds').getAt(0).set('transaction_header_id',transaction_header_id);
+        	        $('csh_cash_gathering_header_ds').query();
+        	        if(posted_flag == 'Y'){
+        	            $('saveButton').disable();
+        	            $('postButton').disable();
+        	            $('grid_add_button').disable();
+        	            $('grid_clear_button').disable();
+        	        }
+        	    }else{
+	        	    var category_reocrds = $('csh_cash_transaction_category_ds').getAll();
+	        	    var record='';
+	        	    var transaction_category = '';
+	        	    var transaction_category_display = '';
+	        	    for(var i=0;i<category_reocrds.length;i++){
+	        	        record = category_reocrds[i];
+	        	        if(record.get('code_value')=='MISCELLANEOUS'){
+	        	            transaction_category = record.get('code_value');
+	        	            transaction_category_display = record.get('code_value_name');
+	        	            break;
+	        	        }
+	        	    }
+	        	    head_record.set('created_employee_id','${/model/sys_user/record/@employee_id}');
+	        	    head_record.set('transaction_category',transaction_category);
+	        	    head_record.set('transaction_category_display',transaction_category_display);
+	        	    
+	        	    var date = new Date();
+	                var day = date.getDate() < 10 ? "0" + date.getDate() : date.getDate();
+	                var month = (date.getMonth() + 1) < 10 ? "0" + (date.getMonth() + 1) : (date.getMonth() + 1);
+	                var dates = date.getFullYear() + "-" + month + "-" + day;
+	                head_record.set('transaction_date',dates);
+	                var parameter_value = '${/model/parameter_value/record/@cash_plan_relationship}';
+	                if(parameter_value != 'Y'){
+	                    var tablePanel = $('csh_cash_gathering_tabPanel');
+	                    tablePanel.setDisabled(2);
+	                    // tablePanel.setDisabled(3);
+	                }
+        	    }
+        	}
+        	Aurora.onReady(init);
+        ]]></script>
+    </a:view>
+</a:screen>

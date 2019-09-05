@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: hyb  
+    $Date: 2011-9-14 上午11:24:51  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        s.exp_requisition_header_id,
+                        (SELECT distinct
+                            cch.contract_number
+                        FROM
+                            con_contract_headers cch,
+                            con_document_flows cs
+                        WHERE
+                            cch.contract_header_id     =cs.document_id AND
+                            cs.document_type        ='CON_CONTRACT' AND
+                            cs.source_document_type ='EXP_REQUISITION_LINES' AND
+                            cs.source_document_id(+)   =s.exp_requisition_header_id
+                        ) contact_number,
+                        TO_CHAR(sysdate,'yyyy-mm-dd') CLOSED_DATE ,
+                        s.exp_requisition_number,
+                        s.exp_requisition_barcode,
+                        s.company_id,
+                        s.reversed_flag,
+                        s.audit_flag,
+                        s.employee_id,
+                        (SELECT
+                            employee_code
+                        FROM
+                            exp_employees es
+                        WHERE
+                            es.employee_id = s.employee_id
+                        ) employee_code,
+                        (SELECT name FROM exp_employees es WHERE es.employee_id = s.employee_id
+                        ) employee_name,
+                        s.payee_category,
+                        (SELECT
+                            code_value_name
+                        FROM
+                            sys_code_values_vl b,
+                            sys_codes a
+                        WHERE
+                            b.code_id = a.code_id AND
+                            a.code    = 'PAYMENT_OBJECT' AND
+                            code_value=s.payee_category
+                        ) payee_category_name,
+                        s.payee_id,
+                        DECODE (s.PAYEE_CATEGORY,'EMPLOYEE' ,
+                        (SELECT
+                            name
+                            ||'-'
+                            ||employee_code
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id=s.payee_id
+                        ), 'CUSTOMER',
+                        (SELECT
+                            vc.DESCRIPTION
+                            ||'-'
+                            ||vc.CUSTOMER_CODE
+                        FROM
+                            ord_system_customers_vl vc
+                        WHERE
+                            vc.CUSTOMER_ID=s.payee_id
+                        ),
+                        (SELECT
+                            vv.DESCRIPTION
+                            ||'-'
+                            ||vv.VENDER_CODE
+                        FROM
+                            pur_system_venders_vl vv
+                        WHERE
+                            vv.VENDER_ID=s.payee_id
+                        )) payee_name,
+                        s.currency_code,
+                        (SELECT
+                            currency_name
+                        FROM
+                            gld_currency_vl gcv
+                        WHERE
+                            gcv.currency_code = s.currency_code
+                        ) currency_name,
+                        s.exchange_rate_type,
+                        s.exchange_rate_quotation,
+                        (SELECT
+                            SUM(t.requisition_amount)
+                        FROM
+                            exp_requisition_lines t
+                        WHERE
+                            t.exp_requisition_header_id = s.exp_requisition_header_id
+                        ) QUARTER_NUM,
+                        (SELECT
+                            SUM(t.requisition_functional_amount)
+                        FROM
+                            exp_requisition_lines t
+                        WHERE
+                            t.exp_requisition_header_id = s.exp_requisition_header_id
+                        ) QUARTER_NUM_FUN,
+                        s.period_name,
+                        s.released_status,
+                        s.je_creation_status,
+                        s.gld_interface_flag,
+                        s.created_by,
+                        s.creation_date,
+                        s.last_updated_by,
+                        s.last_update_date,
+                        TO_CHAR(s.requisition_date, 'YYYY-MM-DD') REQUISITION_DATE,
+                        s.exp_requisition_type_id,
+                        (SELECT
+                            erpv.DESCRIPTION
+                        FROM
+                            exp_expense_req_types_vl erpv
+                        WHERE
+                            erpv.EXPENSE_REQUISITION_TYPE_ID = s.exp_requisition_type_id
+                        ) type_description,
+                        (SELECT
+                            erpv.EXPENSE_REQUISITION_TYPE_CODE
+                        FROM
+                            exp_expense_req_types_vl erpv
+                        WHERE
+                            erpv.EXPENSE_REQUISITION_TYPE_ID = s.exp_requisition_type_id
+                        ) TYPE_CODE,
+                        (SELECT
+                            yert.title
+                        FROM
+                            exp_req_header_titles yert
+                        WHERE
+                            yert.exp_requisition_header_id = s.exp_requisition_header_id
+                        ) description,
+                        s.requisition_status requisition_status_value,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'EXP_EXPENSE_REPORT_STATUS' AND
+                            b.code_value = s.requisition_status
+                        ) REQUISITION_STATUS,
+                        (SELECT
+                            NVL(SUM(sst.released_amount),0)
+                        FROM
+                            exp_requisition_dists sst,
+                            exp_requisition_lines st
+                        WHERE
+                            sst.exp_requisition_line_id =st.exp_requisition_line_id AND
+                            st.exp_requisition_header_id=s.exp_requisition_header_id
+                        ) released_amount_all,
+                        (SELECT
+                            NVL(SUM(r.req_release_amount),0)
+                        FROM
+                            exp_requisition_release r,
+                            exp_report_headers h
+                        WHERE
+                            r.document_type             = 'EXP_REPORT' AND
+                            r.document_id               = h.exp_report_header_id AND
+                            r.exp_requisition_header_id = s.exp_requisition_header_id
+                        ) REIMBURSED_NUM,
+                        (SELECT
+                            NVL(SUM(r.req_release_amount),0)
+                        FROM
+                            exp_requisition_release r,
+                            exp_report_headers h
+                        WHERE
+                            r.document_type             = 'EXP_REPORT' AND
+                            r.document_id               = h.exp_report_header_id AND
+                            r.exp_requisition_header_id = s.exp_requisition_header_id AND
+                            h.audit_flag                = 'Y'
+                        ) REIMBURSED_ADU_NUM,
+                        (SELECT
+                            NVL(SUM(sst.requisition_amount),0)
+                        FROM
+                            exp_requisition_dists sst,
+                            exp_requisition_lines st
+                        WHERE
+                            sst.exp_requisition_line_id =st.exp_requisition_line_id AND
+                            st.exp_requisition_header_id=s.exp_requisition_header_id
+                        ) DIST_NUM
+                    FROM
+                        exp_requisition_headers s
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    v.exp_requisition_number DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+             begin
+                exp_requisition_pkg.close_exp_requisition(${@exp_requisition_header_id},
+                                                          '',
+                                                          to_date(${@closed_date},'yyyy-mm-dd'),
+                                                          ${/session/@user_id});
+                                     
+            end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="v.company_id = ${/session/@company_id}                  and sys_user_secure_exit_pkg.exp_requsition_closed(v.exp_requisition_header_id,${/session/@session_id})=&apos;Y&apos;                  and (v.reversed_flag=&apos;N&apos; or v.reversed_flag is null)                  and v.audit_flag = &apos;Y&apos;                  and v.requisition_status_value = &apos;COMPLETELY_APPROVED&apos;                  and (exists(select 1                     from exp_requisition_dists t,                                   exp_requisition_lines l                     where t.exp_requisition_line_id = l.exp_requisition_line_id                     and (t.close_flag is null or t.close_flag=&apos;N&apos;)                     and l.exp_requisition_header_id =v.exp_requisition_header_id))                                          and ((decode(${@reimburse_status},&apos;PARTLY&apos;,V.DIST_NUM,&apos;COMPLETELY&apos;,V.REIMBURSED_NUM,&apos;PARTLY_AUDIT&apos;,V.DIST_NUM,&apos;COMPLETELY_AUDIT&apos;,V.REIMBURSED_ADU_NUM,0) &gt;                        decode(${@reimburse_status},&apos;PARTLY&apos;,V.REIMBURSED_NUM,&apos;COMPLETELY&apos;,V.DIST_NUM,&apos;PARTLY_AUDIT&apos;,V.REIMBURSED_ADU_NUM,&apos;COMPLETELY_AUDIT&apos;,V.DIST_NUM,0)                            and (decode(${@reimburse_status},&apos;PARTLY&apos;,V.REIMBURSED_NUM,&apos;PARTLY_AUDIT&apos;,V.REIMBURSED_ADU_NUM,1)) &gt; 0                           )                        or                                     (decode(${@reimburse_status},&apos;COMPLETELY&apos;,V.REIMBURSED_NUM,&apos;COMPLETELY_AUDIT&apos;,V.REIMBURSED_ADU_NUM,&apos;PARTLY&apos;,1,&apos;PARTLY_AUDIT&apos;,1,0)=                              decode(${@reimburse_status},&apos;COMPLETELY&apos;,V.DIST_NUM,&apos;COMPLETELY_AUDIT&apos;,V.DIST_NUM,&apos;PARTLY&apos;,0,&apos;PARTLY_AUDIT&apos;,0,0)))"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="payee_category" queryExpression="payee_category=${@payee_category}"/>
+        <bm:query-field name="payee_id" queryExpression="payee_id=${@payee_id}"/>
+        <bm:query-field name="currency_code" queryExpression="currency_code=${@currency_code}"/>
+        <bm:query-field name="requisition_amount_from" queryExpression="(select sum(t.requisition_amount) from exp_requisition_lines t where t.exp_requisition_header_id = v.exp_requisition_header_id)&gt;=${@requisition_amount_from}"/>
+        <bm:query-field name="requisition_amount_to" queryExpression="(select sum(t.requisition_amount) from exp_requisition_lines t where t.exp_requisition_header_id = v.exp_requisition_header_id)&lt;=${@requisition_amount_to}"/>
+        <bm:query-field name="requesition_date_from" queryExpression="requisition_date &gt;= ${@requesition_date_from}"/>
+        <bm:query-field name="requesition_date_to" queryExpression="requisition_date &lt;= ${@requesition_date_to}"/>
+        <bm:query-field name="type_item" queryExpression="exp_requisition_type_id=${@type_item}"/>
+        <bm:query-field name="employee_id" queryExpression="employee_id = ${@employee_id}"/>
+        <bm:query-field name="requesition_num" queryExpression="exp_requisition_number like ${@requesition_num}"/>
+        <bm:query-field name="is_releate_con" queryExpression="((v.contact_number is not null and ${@is_releate_con} = &apos;Y&apos;) or (${@is_releate_con}=&apos;N&apos;))"/>
+    </bm:query-fields>
+</bm:model>

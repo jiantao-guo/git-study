@@ -1,0 +1,698 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: qc  
+    $Date: 2013-9-23 上午9:43:23  
+    $Revision: 1.0  
+    $Purpose: 余额调节表
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure><![CDATA[
+    ]]></a:init-procedure>
+    <a:view>
+        <a:link id="balance_adjustmnet_base_link" model="capital.checkManage.checkManage1100.balance_adjustment_base_list" modelaction="query"/>
+        <a:link id="balance_adjustmnet_hfm1_link" model="capital.checkManage.checkManage1100.balance_adjust_hfm_debit_list" modelaction="query"/>
+        <a:link id="balance_adjustmnet_hfm2_link" model="capital.checkManage.checkManage1100.balance_adjust_hfm_credit_list" modelaction="query"/>
+        <a:link id="balance_adjustmnet_bank1_link" model="capital.checkManage.checkManage1100.balance_adjust_bank_debit_list" modelaction="query"/>
+        <a:link id="balance_adjustmnet_bank2_link" model="capital.checkManage.checkManage1100.balance_adjust_bank_credit_list" modelaction="query"/>
+        <a:link id="generate_adjustment_cancle_link" model="capital.checkManage.checkManage1100.generate_adjustment_cancel" modelaction="update"/>
+        <style><![CDATA[            
+           .b_table{
+               border-collapse: collapse;
+               border: none;
+               width: 90%;
+           } 
+		   .b_table td{
+		       border: solid #000 1px;
+		       
+		   }  
+		   .content_title{
+		       background-color:#BBFFEE;
+		       text-align:center;
+               font-weight:bold;
+		   }  
+        ]]></style>
+        <script><![CDATA[
+        	Aurora.onReady(function() {
+        	   	var record = $('balance_regulate_list_query_ds').getCurrentRecord();
+        	   	record.set('organ','${/parameter/@organ}');
+        	   	record.set('account','${/parameter/@account}');
+        	   	record.set('period','${/parameter/@period}');
+                doQuery();
+            });
+            
+            function exportFun() {
+                //获取到查询的参数
+                var ds = $('balance_regulate_list_query_ds').getAll();
+                var account = ds[0].get('account');
+                var period = ds[0].get('period');
+                var organ = ds[0].get('organ');
+                if (!organ) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "公司不能为空,请选择!");
+                    return;
+                }
+                if (!account) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "银行账号不能为空,请选择!");
+                    return;
+                }
+                if (!period) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "期间不能为空,请选择!");
+                    return;
+                }
+            
+                var msgBox = Aurora.showConfirm('${l:PROMPT}', '你确定要导出这些数据吗？', function() {
+                    msgBox.close();
+                    processExportFunction(account, period);
+                }, null, 250, 100);
+            }
+            
+            function processExportFunction(account, period) {
+                var columnTitles = ['编制单位', '账户期间', '制单日期', '账户性质', '开户账号', '开户行', '银行对账单余额', '企业日记账余额', '加:企业已收银行未收', '减:企业已付银行未付', '加:银行已收企业未收', '减:银行已付企业未付', '调整后的银行对账单余额', '调整后的企业日记账余额'];
+                var columnNames = ['open_organ', 'account_period', 'create_table_time', 'account_porperty', 'open_account_number', 'open_bank', 'balance', 'ebs_balance', 'ebs_debit_amount', 'ebs_credit_amount', 'bank_debit_amount', 'bank_credit_amount', 'adjustbankbalance', 'adjustcompanybalance'];
+                var width = [100, 100, 100, 100, 100, 100, 150, 150, 180, 180, 180, 180, 200, 200];
+                var columns = [];
+                for (var i = 0;i < columnTitles.length;i++) {
+                    //选取文件启用的列
+                    columns.push({
+                        prompt: columnTitles[i],
+                        name: columnNames[i],
+                        width: width[i]
+                    });
+                }
+                if (columns.length > 0) {
+                    var balance_adjust_data_ds = $('balance_adjust_data_ds');
+                    balance_adjust_data_ds.setQueryParameter('bank_account', account);
+                    balance_adjust_data_ds.setQueryParameter('period', period);
+                    $A.doExport(balance_adjust_data_ds, columns, '', '', '', 'Balance_Adjust_Table');
+                }
+            
+            }
+            
+              //查询余额调节头表
+            function balanceAdjustmentBaseQuery(organ, account, period) {
+                var base_records = [];
+                Aurora.request({
+                    url: $('balance_adjustmnet_base_link').getUrl(),
+                    para: {
+                        'organ': organ,
+                        'account': account,
+                        'period': period
+                    },
+                    sync: true,
+                    success: function(args) {
+                        if (args.result.record) {
+                            base_records = base_records.concat(args.result.record);
+                        }
+                    },
+                    scope: this
+                });
+                return base_records[0];
+            }
+            //查询余额调节行表HFM(借!=0 贷==0)
+            function balanceAdjustmentHFMQuery1(organ, account, period) {
+                var hfm_records = [];
+                var url = $('balance_adjustmnet_hfm1_link').getUrl() + '?pagesize=10&pagenum=1&_fetchall=true&_autocount=true';
+                Aurora.request({
+                    url: url,
+                    para: {
+                        'organ': organ,
+                        'account': account,
+                        'period': period
+                    },
+                    sync: true,
+                    success: function(args) {
+                        if (args.result.record) {
+                            hfm_records = hfm_records.concat(args.result.record);
+                        }
+                    },
+                    scope: this
+                });
+                return hfm_records;
+            }
+            //查询余额调节行表HFM(借==0 贷!=0)
+            function balanceAdjustmentHFMQuery2(organ, account, period) {
+                var hfm_records = [];
+                var url = $('balance_adjustmnet_hfm2_link').getUrl() + '?pagesize=10&pagenum=1&_fetchall=true&_autocount=true';
+                Aurora.request({
+                    url: url,
+                    para: {
+                        'organ': organ,
+                        'account': account,
+                        'period': period
+                    },
+                    sync: true,
+                    success: function(args) {
+                        if (args.result.record) {
+                            hfm_records = hfm_records.concat(args.result.record);
+                        }
+                    },
+                    scope: this
+                });
+                return hfm_records;
+            }
+            //查询余额调节行表 --银行(借!=0 贷==0)
+            function balanceAdjustmentBankQuery1(organ, account, period) {
+                var bank_records = [];
+                var url = $('balance_adjustmnet_bank1_link').getUrl() + '?pagesize=10&pagenum=1&_fetchall=true&_autocount=true';
+                Aurora.request({
+                    url: url,
+                    para: {
+                        'organ': organ,
+                        'account': account,
+                        'period': period
+                    },
+                    sync: true,
+                    success: function(args) {
+                        if (args.result.record) {
+                            bank_records = bank_records.concat(args.result.record);
+                        }
+                    },
+                    scope: this
+                });
+                return bank_records;
+            }
+            //查询余额调节行表 --银行(借==0 贷!=0)
+            function balanceAdjustmentBankQuery2(organ, account, period) {
+                var bank_records = [];
+                var url = $('balance_adjustmnet_bank2_link').getUrl() + '?pagesize=10&pagenum=1&_fetchall=true&_autocount=true';
+                Aurora.request({
+                    url: url,
+                    para: {
+                        'organ': organ,
+                        'account': account,
+                        'period': period
+                    },
+                    sync: true,
+                    success: function(args) {
+                        if (args.result.record) {
+                            bank_records = bank_records.concat(args.result.record);
+                        }
+                    },
+                    scope: this
+                });
+                return bank_records;
+            }
+            
+            function doQuery() {
+                //设置dataSet的queryUrl 然后做查询 将返回的结果放到dataSet中
+                //获取到查询的参数
+                var ds = $('balance_regulate_list_query_ds').getAll();
+                var account = ds[0].get('account');
+                var period = ds[0].get('period');
+                var organ = ds[0].get('organ');
+               /* if (!organ) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "公司不能为空,请选择!");
+                    return;
+                }*/
+                if (!account) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "银行账号不能为空,请选择!");
+                    return;
+                }
+                if (!period) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "期间不能为空,请选择!");
+                    return;
+                }
+            
+                var base_record = balanceAdjustmentBaseQuery(organ, account, period);
+                if(!base_record){
+                    Aurora.showWarningMessage("${l:PROMPT}", "还没生成调节表，请先生成!");
+                    return;
+                }else{
+                    var content1 = getElementsByClassName('balance1_tr');
+                    for(var k =0;k<content1.length;k++){
+                        content1[k].parentNode.removeChild(content1[k]);
+                    }
+                    var content2 = getElementsByClassName('balance2_tr');
+                    for(var l =0;l<content2.length;l++){
+                        content2[l].parentNode.removeChild(content2[l]);
+                    }
+                    //hfm　借==0 贷!=0
+	                var hfm_records1 = balanceAdjustmentHFMQuery2(organ, account, period);
+                    //hfm　借!=0 贷==0
+	                var hfm_records2 = balanceAdjustmentHFMQuery1(organ, account, period);
+                    //银行　借==0 贷!=0
+	                var bank_records1 = balanceAdjustmentBankQuery2(organ, account, period);
+                    //银行　借!=0 贷==0
+	                var bank_records2 = balanceAdjustmentBankQuery1(organ, account, period);
+	            
+	                //设置头信息
+	                document.getElementById('adjustment_base_id').value = base_record['adjustment_base_id'];
+	                document.getElementById('weave_organ').innerHTML = base_record['weave_organ_cn'];
+	                document.getElementById('accountYear').innerHTML = base_record['period'];
+	                document.getElementById('made_by').innerHTML = base_record['made_by'];
+	                if(base_record['status_cn']=='已复核'){
+	                   document.getElementById('checked_by').innerHTML = base_record['checked_by'];
+	                }
+	                document.getElementById('bank_account').innerHTML = base_record['bank_account'];
+	                document.getElementById('open_bank_cn').innerHTML = base_record['bank_location_name'];
+	                document.getElementById('open_bank').value = base_record['open_bank'];
+	                document.getElementById('status_cn').innerHTML = base_record['status_cn'];
+	                document.getElementById('bank_balance').innerHTML = Aurora.formatMoney(base_record['bank_balance']);
+	                document.getElementById('hfm_balance').innerHTML = Aurora.formatMoney(base_record['hfm_balance']);
+	                
+                    var hfm_debit_sum = 0; //hfm借方金额之和
+                    var hfm_credit_sum = 0;  //hfm贷方金额之和
+                    var hfm_adjust_balance = 0;  //hfm调整后余额
+                    var bank_debit_sum = 0;  //银行借方金额之和
+                    var bank_credit_sum = 0; //银行贷方金额之和
+                    var bank_adjust_balance =0;  //银行调整后余额
+	                if (hfm_records1.length > 0 || hfm_records2.length > 0 || bank_records1.length > 0 || bank_records2.length > 0) {
+	                    //设置行信息(银行  贷   <==> hfm 借)
+	                    var length1 = (hfm_records2.length - bank_records1.length) > 0 ? hfm_records2.length : bank_records1.length;
+	                    for (var i = 0;i < length1;i++) {
+	                        var content_tr1 = document.createElement('tr');
+	                        content_tr1.setAttribute('class', 'balance1_tr');
+	                        if (i < bank_records1.length) {
+	                            var td1 = content_tr1.insertCell(0);
+	                            td1.setAttribute("text-align","center");
+	                            td1.innerHTML = '<input type="hidden" name="bank_id" value="' + bank_records1[i]['id'] + '" />';
+	                            var td2 = content_tr1.insertCell(1);
+	                            td2.setAttribute("style","text-align:center");
+	                            if(bank_records1[i]['summary']){
+	                              td2.innerHTML = '<span>'+bank_records1[i]['summary']+'</span>';
+	                            }else{
+	                              td2.innerHTML = '<span></span>';
+	                            }
+	                            var td3 = content_tr1.insertCell(2);
+	                            td3.setAttribute("style","text-align:center");
+	                            td3.innerHTML = '<span>'+bank_records1[i]['account_date']+'</span>';
+	                            var td4 = content_tr1.insertCell(3);
+	                            td4.innerHTML = '<span style="float:right">'+Aurora.formatMoney(bank_records1[i]['credit_amount'])+'</span>';
+	                            
+	                            bank_credit_sum += new Number(bank_records1[i]['credit_amount']);
+	                        } else {
+	                            var _td1 = content_tr1.insertCell(0);
+	                            var _td2 = content_tr1.insertCell(1);
+	                            var _td3 = content_tr1.insertCell(2);
+	                            var _td4 = content_tr1.insertCell(3);
+	                        }
+	                        if (i < hfm_records2.length) {
+	                            var td5 = content_tr1.insertCell(4);
+	                            td5.setAttribute("text-align","center");
+	                            td5.innerHTML = '<input type="hidden" name="hfm_id" value="' + hfm_records2[i]['id'] + '" />';
+	                            var td6 = content_tr1.insertCell(5);
+	                            td6.setAttribute("style","text-align:center");
+	                            td6.innerHTML = '<span>' + hfm_records2[i]['bill_number'] + '</span>';
+	                            var td7 = content_tr1.insertCell(6);
+	                            td7.setAttribute("style","text-align:center");
+	                            td7.innerHTML = '<span>' + hfm_records2[i]['pay_date'] + '</span>';
+	                            var td8 = content_tr1.insertCell(7);
+	                            td8.innerHTML = '<span style="float:right">' + Aurora.formatMoney(hfm_records2[i]['debit_amount']) + '</span>';
+	                            
+	                            hfm_debit_sum += new Number(hfm_records2[i]['debit_amount']);
+	                        } else {
+	                            var _td5 = content_tr1.insertCell(4);
+	                            var _td6 = content_tr1.insertCell(5);
+	                            var _td7 = content_tr1.insertCell(6);
+	                            var _td8 = content_tr1.insertCell(7);
+	                        }
+	                        var content_brother1 = document.getElementById('content_brother2');
+	                        content_brother1.parentNode.insertBefore(content_tr1, content_brother1);
+	                    }
+	                    //设置行信息(银行  借   <==> hfm 贷)
+	                    var length2 = (hfm_records1.length - bank_records2.length) > 0 ? hfm_records1.length : bank_records2.length;
+	                    for (var j = 0;j < length2;j++) {
+	                        var content_tr2 = document.createElement('tr');
+	                        content_tr2.setAttribute('class', 'balance2_tr');
+	                        if (j < bank_records2.length) {
+	                            var t1 = content_tr2.insertCell(0);
+	                            t1.innerHTML = '<input type="hidden" name="bank_id" value="' + bank_records2[j]['id'] + '" />';
+	                            var t2 = content_tr2.insertCell(1);
+	                            if(bank_records2[j]['summary']){
+	                              t2.innerHTML = '<span>'+bank_records2[j]['summary']+'</span>';
+	                            }else{
+	                              t2.innerHTML = '<span></span>';
+	                            }
+	                            var t3 = content_tr2.insertCell(2);
+	                            t3.innerHTML = '<span>'+bank_records2[j]['account_date']+'</span>';
+	                            var t4 = content_tr2.insertCell(3);
+	                            t4.innerHTML = '<span style="float:right">'+Aurora.formatMoney(bank_records2[j]['debit_amount'])+'</span>';
+	                            
+	                            bank_debit_sum += new Number(bank_records2[j]['debit_amount']);
+	                        } else {
+	                            var _t1 = content_tr2.insertCell(0);
+	                            var _t2 = content_tr2.insertCell(1);
+	                            var _t3 = content_tr2.insertCell(2);
+	                            var _t4 = content_tr2.insertCell(3);
+	                        }
+	                        if (j < hfm_records1.length) {
+	                            var t5 = content_tr2.insertCell(4);
+	                            t5.innerHTML = '<input type="hidden" name="hfm_id" value="' + hfm_records1[j]['id'] + '" />';
+	                            var t6 = content_tr2.insertCell(5);
+	                            t6.innerHTML = '<span>' + hfm_records1[j]['bill_number'] + '</span>';
+	                            var t7 = content_tr2.insertCell(6);
+	                            t7.innerHTML = '<span>' + hfm_records1[j]['pay_date'] + '</span>';
+	                            var t8 = content_tr2.insertCell(7);
+	                            t8.innerHTML = '<span style="float:right">' + Aurora.formatMoney(hfm_records1[j]['credit_amount']) + '</span>';
+	                            
+	                            hfm_credit_sum += new Number(hfm_records1[j]['credit_amount']);
+	                        } else {
+	                            var _t5 = content_tr2.insertCell(4);
+	                            var _t6 = content_tr2.insertCell(5);
+	                            var _t7 = content_tr2.insertCell(6);
+	                            var _t8 = content_tr2.insertCell(7);
+	                        }
+	                        var content_brother2 = document.getElementById('content_brother1');
+	                        content_brother2.parentNode.insertBefore(content_tr2, content_brother2);
+	                    }
+	                }
+                    hfm_adjust_balance = new Number(base_record['bank_balance']) + (hfm_debit_sum - hfm_credit_sum);
+                    bank_adjust_balance = new Number(base_record['hfm_balance']) + (bank_credit_sum - bank_debit_sum);
+            
+                    document.getElementById('hfm_debit_amount').innerHTML = Aurora.formatMoney(hfm_debit_sum);
+                    document.getElementById('hfm_credit_amount').innerHTML = Aurora.formatMoney(hfm_credit_sum);
+                    document.getElementById('bank_debit_amount').innerHTML = Aurora.formatMoney(bank_debit_sum);
+                    document.getElementById('bank_credit_amount').innerHTML = Aurora.formatMoney(bank_credit_sum);
+                    document.getElementById('adjust_hfm_balance').innerHTML = Aurora.formatMoney(hfm_adjust_balance);
+                    document.getElementById('adjust_bank_balance').innerHTML = Aurora.formatMoney(bank_adjust_balance);
+                }
+            
+            }
+            
+            //获取class元素
+            function getElementsByClassName(n) {
+                var classElements = [],
+                    allElements = document.getElementsByTagName('*');
+                for (var i = 0;i < allElements.length;i++) {
+                    if (allElements[i].className == n) {
+                        classElements[classElements.length] = allElements[i];
+                    }
+                }
+                return classElements;
+            }
+            
+            function saveFunction() {
+                var status = document.getElementById('status_cn').innerHTML;
+                if (status == '已复核') {
+                    Aurora.showWarningMessage("${l:PROMPT}", "余额调节表已复核，不能修改！");
+	                return;
+                } else {
+                    var para = new Object();
+                    var hfm_data = [];
+                    var bank_data = [];
+                    var hfm_line_ids = document.getElementsByName('hfm_id');
+                    var hfm_reason1 = document.getElementsByName('hfm_reason1');
+                    var hfm_reason2 = document.getElementsByName('hfm_reason2');
+                    var bank_line_ids = document.getElementsByName('bank_id');
+                    var bank_reason1 = document.getElementsByName('bank_reason1');
+                    var bank_reason2 = document.getElementsByName('bank_reason2');
+                    var length = (hfm_line_ids.length - bank_line_ids.length>0)?hfm_line_ids.length:bank_line_ids.length;
+                    for(var i=0;i<length;i++){
+                        if(i<hfm_line_ids.length){
+                            var hfm_obj = new Object();
+                            hfm_obj['hfm_id'] = hfm_line_ids[i].value;
+                            hfm_obj['hfm_reason1'] = hfm_reason1[i].value;
+                            hfm_obj['hfm_reason2'] = hfm_reason2[i].value;
+                            hfm_data.push(hfm_obj);
+                        }
+                        if(i<bank_line_ids.length){
+                            var bank_obj = new Object();
+                            bank_obj['bank_id'] = bank_line_ids[i].value;
+                            bank_obj['bank_reason1'] = bank_reason1[i].value;
+                            bank_obj['bank_reason2'] = bank_reason2[i].value;
+                            bank_data.push(bank_obj);
+                        }
+                    }
+                    para['hfm_data'] = hfm_data;
+                    para['bank_data'] = bank_data;
+                    
+                    Aurora.request({
+                        url:'generate_adjustment_save_control.svc',
+                        para:para,
+                        success:function(){
+                            Aurora.showMessage("${l:PROMPT}", "保存成功!");
+                        },
+                        scope:this
+                    });
+                }
+            }
+            
+            //复核
+            function confirmFunction(){
+                //1 更改复核状态
+                //2 查询该账号下个月是否以维护
+                //3 维护期末余额
+                var adjustment_base_id = document.getElementById('adjustment_base_id').value;
+                if(!adjustment_base_id){
+                    Aurora.showWarningMessage("${l:PROMPT}", "没有可复核的数据!");
+                }else{
+	                var status = document.getElementById('status_cn').innerHTML;
+	                if (status == '已复核') {
+	                    Aurora.showWarningMessage("${l:PROMPT}", "余额调节表已复核！");
+	                    return;
+	                }
+                    var bank_balance = document.getElementById('bank_balance').innerHTML;
+                    var hfm_balance = document.getElementById('hfm_balance').innerHTML;
+                    var bank_account = document.getElementById('bank_account').innerHTML;
+                    var period = document.getElementById('accountYear').innerHTML;
+                    var open_bank = document.getElementById('open_bank').value;
+                    
+                    Aurora.request({
+                        url:'generate_adjustment_confirm_control.svc',
+                        para:{
+                            'adjustment_base_id':adjustment_base_id,
+                            'bank_account':bank_account,
+                            'bank_balance':bank_balance,
+                            'hfm_balance':hfm_balance,
+                            'period':period,
+                            'open_bank':open_bank
+                        },
+                        sync:true,
+                        success:function(){
+                            Aurora.showMessage("${l:PROMPT}", "操作成功！");
+                            doQuery();
+                        },
+                        scope:this
+                    });
+                    status = document.getElementById('status_cn').innerHTML;
+                    if(status == '已复核'){
+	                     
+		                 
+	                 }else{
+	                     $('cancelButton').disable();
+		                 
+	                 }
+                }
+            }            
+            
+            //取消复核
+            function cancelFunction(){
+                var adjustment_base_id = document.getElementById('adjustment_base_id').value;
+                if(!adjustment_base_id){
+                    Aurora.showWarningMessage("${l:PROMPT}", "没有可复核的数据!");
+                }else{
+                    var bank_account = document.getElementById('bank_account').innerHTML;
+                    var period = document.getElementById('accountYear').innerHTML;
+                    var open_bank = document.getElementById('open_bank').value;
+                    
+                    Aurora.request({
+                        url:$('generate_adjustment_cancle_link').getUrl(),
+                        para:{
+                            'adjustment_base_id':adjustment_base_id,
+                            'bank_account':bank_account,
+                            'period':period
+                        },
+                        sync:true,
+                        success:function(){
+                            Aurora.showMessage("${l:PROMPT}", "操作成功！");
+                            doQuery();
+                        },
+                        scope:this
+                    });
+                    var status = document.getElementById('status_cn').innerHTML;
+                    if(status == '已复核'){
+	                     
+		                 
+	                 }else{
+	                     
+		                 
+	                 }
+                }
+            }
+            
+            function MilliFormat(num) {
+                if (num + "" == "") {
+                    return 0.00;
+                }
+                if (isNaN(num)) {
+                    return 0.00;
+                }
+                num = num + "";
+                var re = /(-?\d+)(\d{3})/;
+                if (/^.*\..*$/.test(num)) {
+                    var pointIndex = num.lastIndexOf(".");
+                    var intPart = num.substring(0, pointIndex);
+                    var pointPart = num.substring(pointIndex + 1, num.length);
+                    intPart = intPart + "";
+                    while (re.test(intPart)) {
+                        intPart = intPart.replace(re, "$1,$2");
+                    }
+                    num = intPart + "." + pointPart;
+                } else {
+                    num = num + "";
+                    while (re.test(num)) {
+                        num = num.replace(re, "$1,$2");
+                    }
+                }
+                return num;
+            }
+            
+            function doPrint() {
+                var newstr = document.getElementById('print_area').innerHTML;
+			    var oldstr = document.body.innerHTML;
+			    document.body.innerHTML = newstr;
+			    window.print();
+			    document.body.innerHTML = oldstr;
+			    return false;
+            }
+            
+            function periodFormat(datePicker, date) {
+                var ndate = Aurora.formatDate(date);
+                var newdate = "";
+                for (var i = 0;i <= 6;i++) {
+                    newdate += ndate.charAt(i);
+                }
+                datePicker.setValue(newdate);
+            }
+            
+            function bandaccountF() {
+                var record = $('balance_regulate_list_query_ds').getAt(0);
+                var organ = record.get('organ');
+                if(organ){
+	                record.getField('account').setLovPara('open_organ', organ);
+                }
+                record.getField('account').setLovService('capital.checkManage.checkManage1020.bank_account_list');
+            }
+            
+            function bandaccountFocus() {
+                var record = $('balance_regulate_list_query_ds').getAt(0);
+                var organ = record.get('organ');
+                if (!organ) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "请选择公司!");
+                    return;
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="balance_regulate_list_query_ds" autoCreate="true">
+                <a:fields>
+                    <!-- field中的name属性值是对应的数据库中的字段名，这样就可以把对应字段的值缓存在该field中 -->
+                    <a:field name="organ"/>
+                    <a:field name="organ_cn" autoComplete="true" autoCompleteField="orgn_cn" lovGridHeight="300" lovHeight="450" lovService="exp.EXP3050.exp_employee_s_query_company_lov" lovWidth="600" title="FND_COMPANIES.QUERY">
+                        <a:mapping>
+                            <a:map from="company_code" to="organ"/>
+                            <a:map from="company_short_name" to="organ_cn"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account" autoComplete="true" autoCompleteField="account" lovGridHeight="300" lovHeight="450" lovWidth="600" title="银行账号查询">
+                        <a:mapping>
+                            <a:map from="bank_account" to="account"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="period" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovLabelWidth="120" lovService="csh.CSH2510.csh_cash_plan_period_name_query" lovWidth="500" required="true" title="期间查询">
+                        <a:mapping>
+                            <a:map from="period" to="period"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:toolbarButton click="doPrint" icon="${/request/@context_path}/images/print.png" text="打印"/>
+        </a:screenTopToolbar>
+        <div id="print_area">
+            <table id="t_bgt" border="1" cellpadding="4px" cellspacing="0" class="b_table" style="margin-left:10px;margin-top:10px" width="95%">
+                <!-- <p align="center" style="color:black;font-size:15pt;font-weight:bold">银行存款余额调节表</p> -->
+                <tr border="1" width="100%">
+                    <td class="noborder" colspan="18">
+                        <h1 align="center" style="color:black;font-size:15pt;font-weight:bold"><![CDATA[银 行 存 款 余 额 调 节 表]]></h1>
+                    </td>
+                </tr>
+                <tr width="100%">
+                    <td colspan="3" style="text-align:center"><![CDATA[单位名称:<span id="weave_organ"/>]]></td>
+                    <td colspan="2" style="text-align:center"><![CDATA[银行账号:<span id="bank_account"/>]]></td>
+                    <td style="text-align:center">
+                        <input id="open_bank" type="hidden"/>
+                        <span id="open_bank_cn"/>
+                    </td>
+                    <td style="text-align:center">
+                        <span id="accountYear"/>
+                    </td>
+                    <td style="text-align:center">
+                        <input id="adjustment_base_id" type="hidden"/>
+                        <span id="status_cn"/>
+                    </td>
+                </tr>
+                <tr class="content_title">
+                    <td style="text-align:center"><![CDATA[项目及经济业务内容]]></td>
+                    <td style="text-align:center"><![CDATA[摘要]]></td>
+                    <td style="text-align:center" width="70px"><![CDATA[业务发生时间]]></td>
+                    <td style="text-align:center" width="80px"><![CDATA[金额(元)]]></td>
+                    <td style="text-align:center"><![CDATA[项目及经济业务内容]]></td>
+                    <td style="text-align:center" width="130px"><![CDATA[凭证号]]></td>
+                    <td style="text-align:center" width="80px"><![CDATA[业务入账时间]]></td>
+                    <td style="text-align:center" width="80px"><![CDATA[金额(元)]]></td>
+                </tr>
+                <tr>
+                    <td class="content_td" style="font-weight:bold"><![CDATA[ORACLE银行日记账余额]]></td>
+                    <td/>
+                    <td/>
+                    <td style="text-align:right">
+                        <span id="hfm_balance"/>
+                    </td>
+                    <td class="content_td" style="font-weight:bold"><![CDATA[银行对账单余额]]></td>
+                    <td/>
+                    <td/>
+                    <td style="text-align:right">
+                        <span id="bank_balance"/>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="content_td"><![CDATA[加：企业未收银行已收]]></td>
+                    <td/>
+                    <td/>
+                    <td style="text-align:right"><![CDATA[--]]></td>
+                    <td class="content_td"><![CDATA[加：银行未收企业已收]]></td>
+                    <td/>
+                    <td/>
+                    <td style="text-align:right"><![CDATA[--]]></td>
+                </tr>
+                <tr id="content_brother2">
+                    <td style="text-align:right"><![CDATA[加项小计]]></td>
+                    <td/>
+                    <td/>
+                    <td style="text-align:right">
+                        <span id="bank_credit_amount"/>
+                    </td>
+                    <td style="text-align:right"><![CDATA[加项小计]]></td>
+                    <td/>
+                    <td/>
+                    <td style="text-align:right">
+                        <span id="hfm_debit_amount"/>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="content_td"><![CDATA[减：企业未付银行已付]]></td>
+                    <td/>
+                    <td/>
+                    <td style="text-align:right"><![CDATA[--]]></td>
+                    <td class="content_td"><![CDATA[减：银行未付企业已付]]></td>
+                    <td/>
+                    <td/>
+                    <td style="text-align:right"><![CDATA[--]]></td>
+                </tr>
+                <tr id="content_brother1">
+                    <td colspan="4" style="text-align:right"><![CDATA[减项小计：<span id="bank_debit_amount"/>]]></td>
+                    <td colspan="4" style="text-align:right"><![CDATA[减项小计：<span id="hfm_credit_amount"/>]]></td>
+                </tr>
+                <tr>
+                    <td colspan="4" style="text-align:right"><![CDATA[调整后余额：<span id="adjust_bank_balance"/>]]></td>
+                    <td colspan="4" style="text-align:right"><![CDATA[调整后余额：<span id="adjust_hfm_balance"/>]]></td>
+                </tr>
+                <tr>
+                    <td colspan="4"><![CDATA[制表人：<span id="made_by"/>]]></td>
+                    <td colspan="4"><![CDATA[复核：<span id="checked_by"/>]]></td>
+                </tr>
+            </table>
+        </div>
+    </a:view>
+</a:screen>

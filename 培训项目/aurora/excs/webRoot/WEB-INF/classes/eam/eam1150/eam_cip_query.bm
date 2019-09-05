@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: MJJ  
+    $Date: 2014-1-27 下午05:29:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select t1.asset_id,
+       t1.asset_code,
+       t1.asset_name,
+       t1.start_use_date,
+       t1.budget_amount,
+       t1.current_cost_from,
+       t1.report_amount,
+       t1.to_fst,
+       t1.to_others,
+       t1.current_cost_to
+  from (select t.asset_id,
+               t.asset_code,
+               t.asset_name,
+               t.start_use_date,
+               t.budget_amount,
+               nvl(t.current_cost, 0) - nvl(t.report_amount_from, 0) - nvl(sum_cost_from, 0)  current_cost_from,
+               t.report_amount,
+               t.to_fst,
+               t.to_others,
+               nvl(t.current_cost, 0) - nvl(t.report_amount_to, 0) - nvl(sum_cost_to, 0)  current_cost_to
+          from (select h.asset_id,
+                       h.asset_code,
+                       h.asset_name,
+                       to_char(h.start_use_date, 'YYYY-MM-DD') start_use_date,
+                       (select erl.examine_amount
+                          from exp_requisition_headers       erh,
+                               exp_requisition_lines         erl,
+                               eam_asset_document_references r
+                         where erh.exp_requisition_header_id =
+                               erl.exp_requisition_header_id
+                           and erh.requisition_status = 'COMPLETELY_APPROVED'
+                           and r.document_type = 'EXP_REQUISITION'
+                           and r.document_id = erh.exp_requisition_header_id
+                           and r.document_line_id =
+                               erl.exp_requisition_line_id
+                           and r.asset_id = h.asset_id
+                           and r.reference_type = 'ADD') budget_amount,
+                       (select i.current_cost
+                          from eam_asset_finance_info i
+                         where i.asset_id = h.asset_id) current_cost,
+                       (select sum(nvl(cs.cost, 0))
+                          from eam_asset_cost_sources cs
+                         where cs.source_asset_id = h.asset_id
+                           and cs.confirm_status = 'CONFIRM'
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') <=
+                               ${@date_from}) sum_cost_from,
+                       (select sum(nvl(cs.cost, 0))
+                          from eam_asset_cost_sources cs
+                         where cs.source_asset_id = h.asset_id
+                           and cs.confirm_status = 'CONFIRM'
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') <=
+                               ${@date_to}) sum_cost_to,
+                       (select sum(nvl(cs.cost, 0))
+                          from eam_asset_cost_sources cs
+                         where cs.asset_id = h.ASSET_ID
+                           and cs.document_type = 'EXP_REPORT'
+                           and cs.confirm_status = 'CONFIRM'
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') >
+                               ${@date_from}) report_amount_from,
+                       (select sum(nvl(cs.cost, 0))
+                          from eam_asset_cost_sources cs
+                         where cs.asset_id = h.ASSET_ID
+                           and cs.document_type = 'EXP_REPORT'
+                           and cs.confirm_status = 'CONFIRM'
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') >
+                               ${@date_to}) report_amount_to,
+                       (select sum(nvl(cs.cost, 0))
+                          from eam_asset_cost_sources cs
+                         where cs.asset_id = h.ASSET_ID
+                           and cs.document_type = 'EXP_REPORT'
+                           and cs.confirm_status = 'CONFIRM'
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') >=
+                               ${@date_from}
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') <=
+                               ${@date_to}) report_amount,
+                       (select sum(nvl(cs.cost, 0))
+                          from eam_asset_cost_sources cs,
+                               eam_asset_headers      eah,
+                               eam_asset_categories   eac
+                         where cs.source_asset_id = h.ASSET_ID
+                           and cs.confirm_status = 'CONFIRM'
+                           and cs.asset_id = eah.asset_id
+                           and eah.category_id = eac.category_id
+                           and eac.asset_type = 'FST'
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') >=
+                               ${@date_from}
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') <=
+                               ${@date_to}) to_fst,
+                       (select sum(nvl(cs.cost, 0))
+                          from eam_asset_cost_sources cs,
+                               eam_asset_headers      eah,
+                               eam_asset_categories   eac
+                         where cs.source_asset_id = h.ASSET_ID
+                           and cs.confirm_status = 'CONFIRM'
+                           and cs.asset_id = eah.asset_id
+                           and eah.category_id = eac.category_id
+                           and eac.asset_type <> 'FST'
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') >=
+                               ${@date_from}
+                           and to_char(cs.last_update_date, 'YYYY-MM-DD') <=
+                               ${@date_to}) to_others
+                  from eam_asset_headers_vl h
+                 where exists (select 1
+                          from eam_asset_categories e
+                         where e.category_id = h.category_id
+                           and e.category_code = '60')
+                   and exists
+                 (select 1
+                          from eam_asset_document_references r,
+                               exp_requisition_headers       erh,
+                               exp_requisition_lines         erl
+                         where r.asset_id = h.ASSET_ID
+                           and r.document_type = 'EXP_REQUISITION'
+                           and r.document_id = erh.exp_requisition_header_id
+                           and r.document_line_id =
+                               erl.exp_requisition_line_id
+                           and erh.exp_requisition_header_id =
+                               erl.exp_requisition_header_id
+                           and erh.requisition_status = 'COMPLETELY_APPROVED')) t
+         where t.report_amount is not null
+            or t.to_fst is not null
+            or t.to_others is not null
+            or (t.start_use_date >= ${@date_from} and
+               t.start_use_date <= ${@date_to})
+         order by t.start_use_date) t1 #WHERE_CLAUSE#
+]]></bm:query-sql>
+            <!--            <bm:parameters>
+                <bm:parameter name="date_from" dataType="java.lang.String" inputPath="@date_from" />
+                <bm:parameter name="date_to" dataType="java.lang.String" inputPath="@date_to" />
+            </bm:parameters>-->
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="asset_id"/>
+        <bm:field name="asset_code"/>
+        <bm:field name="asset_name"/>
+        <bm:field name="start_use_date"/>
+        <bm:field name="budget_amount"/>
+        <bm:field name="current_cost_from"/>
+        <bm:field name="report_amount"/>
+        <bm:field name="to_fst"/>
+        <bm:field name="to_others"/>
+        <bm:field name="current_cost_to"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="asset_code" queryOperator="like"/>
+        <bm:query-field field="asset_name" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

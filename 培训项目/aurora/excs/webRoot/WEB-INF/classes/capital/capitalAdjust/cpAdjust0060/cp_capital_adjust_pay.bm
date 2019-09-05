@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: CJM  
+    $Date: 2016-9-17 下午2:19:25  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				SELECT o.*
+				  FROM (SELECT l.ca_capital_adjust_line_id,
+				               l.ca_capital_adjust_info_id,
+				               h.adjust_number,
+				               h.creation_date creation_date_h,
+				               h.approve_status,
+				               (SELECT scvv.code_value_name
+				                  FROM sys_code_values_v scvv
+				                 WHERE scvv.code = 'PAYMENT_REQUISITION_STATUS'
+				                   AND scvv.code_value = h.approve_status) approve_status_cn,
+				                h.cp_capital_adjust_types_id,   
+				               (SELECT ty.adjust_type_code
+				                  FROM cp_capital_adjust_types ty
+				                 WHERE h.cp_capital_adjust_types_id =
+				                       ty.cp_capital_adjust_types_id) adjust_type_code,
+				               (SELECT ty.description
+				                  FROM cp_capital_adjust_types ty
+				                 WHERE h.cp_capital_adjust_types_id =
+				                       ty.cp_capital_adjust_types_id) adjust_type_cn,
+				               l.payment_method,
+				               (SELECT scv.code_value_name
+				                  FROM sys_code_values_v scv
+				                 WHERE scv.code = 'PAYMENT_METHOD'
+				                   AND scv.code_value = l.payment_method) payment_method_cn,
+				               l.order_num,
+				               l.out_organ,
+				               (SELECT fc.company_short_name
+				                  FROM fnd_companies_vl fc
+				                 WHERE fc.company_id = l.out_organ) out_organ_name,
+				               (SELECT fc.company_code
+				                  FROM fnd_companies_vl fc
+				                 WHERE fc.company_id = l.out_organ) out_organ_code,
+				               out_account_name,
+				               out_account,
+				               out_bank,
+				               (SELECT scvv.code_value_name
+				                  FROM sys_code_values_v scvv
+				                 WHERE scvv.code = 'OPEN_BANK'
+				                   AND scvv.code_value = l.out_bank) out_bank_cn,
+				               (SELECT bn.bank_name
+				                  FROM bcdl_bank_num bn
+				                 WHERE bn.bank_num = l.out_branch_bank) out_branch_bank_cn,
+				               l.out_branch_bank,
+				               l.in_organ,
+				               (SELECT fc.company_code
+				                  FROM fnd_companies_vl fc
+				                 WHERE fc.company_id = l.in_organ) in_organ_code,
+				               (SELECT fc.company_short_name
+				                  FROM fnd_companies_vl fc
+				                 WHERE fc.company_id = l.in_organ) in_organ_name,
+				               in_account_name,
+				               in_account,
+				               in_bank,
+				               (SELECT scvv.code_value_name
+				                  FROM sys_code_values_v scvv
+				                 WHERE scvv.code = 'OPEN_BANK'
+				                   AND scvv.code_value = l.in_bank) in_bank_cn,
+				               (SELECT bn.bank_name
+				                  FROM bcdl_bank_num bn
+				                 WHERE bn.bank_num = l.in_branch_bank) in_branch_bank_cn,
+				               in_branch_bank,
+				               l.currency,
+				               (SELECT gc.currency_name
+				                  FROM gld_currency_vl gc
+				                 WHERE gc.currency_code = l.currency) currency_name,
+				               adjust_amount,
+				               l.description,
+				               payment_status,
+				               (SELECT scvv.code_value_name
+				                  FROM sys_code_values_v scvv
+				                 WHERE scvv.code = 'PAY_STATUS'
+				                   AND scvv.code_value = l.payment_status) payment_status_cn,
+				               bank_feed_back,
+				               bill_number,
+				               usenumber,
+				               stiff_id,
+				               l.created_by,
+				               to_char(l.creation_date, 'yyyy-mm-dd') creation_date,
+				               l.last_updated_by,
+				               to_char(l.last_update_date, 'yyyy-mm-dd') last_update_date,
+				               l.out_account out_account_apply,
+				               l.in_amount,
+				               l.in_currency,
+				               (SELECT currency_name
+				                  FROM gld_currency_vl
+				                 WHERE currency_code = l.in_currency) in_currency_name,
+				               h.employee_id,
+				               (SELECT ee.name
+				                  FROM exp_employees ee
+				                 WHERE ee.employee_id = h.employee_id) employee_name,
+				               to_char(h.adjust_date, 'yyyy-mm-dd') adjust_date,
+				               (
+				               	SELECT error_message
+					              FROM cux_pay_trans_details cpt
+					             WHERE cpt.document_type = 'CP_ADJUST'
+					               AND cpt.source_doc_line_id = l.ca_capital_adjust_line_id
+					               AND nvl(cpt.repay_status, 'N') = 'N'
+				               ) error_message,
+				               l.plan_date_time
+				          FROM ca_capital_adjust_line l, ca_capital_adjust_info h
+				         WHERE h.ca_capital_adjust_info_id = l.ca_capital_adjust_info_id
+				          AND EXISTS (SELECT 1
+						          FROM am_account_info aai
+						         WHERE l.out_account = aai.bank_account
+						           AND nvl(aai.need_pay_flag, 'N') = 'Y')) o
+           			#WHERE_CLAUSE#
+                ORDER BY
+                    creation_date_h,adjust_number,ca_capital_adjust_line_id
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:query-sql><![CDATA[
+                BEGIN
+                    cp_capital_adjust_pkg.update_adjust_out_account(p_ca_capital_adjust_line_id => ${@ca_capital_adjust_line_id},
+                                      p_bank_account_out          => ${@out_account},
+                                      p_payment_method            => ${@payment_method},
+                                      p_user_id                   => ${/session/@user_id});
+                END;
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    cp_capital_adjust_pkg.do_adjust_pay(p_ca_capital_adjust_line_id => ${@ca_capital_adjust_line_id}, 
+                    			                        p_payment_method            => ${@payment_method_selected},
+                    									p_user_id => ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <!-- 支付失败重新支付-->
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    cp_capital_adjust_pkg.ge_repay_data(p_ca_capital_adjust_line_id => ${@ca_capital_adjust_line_id},
+                          p_user_id                   => ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <!-- 修改付款状态 -->
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    cp_capital_adjust_pkg.update_adjust_status(p_ca_capital_adjust_line_id => ${@ca_capital_adjust_line_id},
+                                 p_status                    => ${@payment_status},
+                                 p_user_id                   => ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="cp_capital_adjust_types_id" queryExpression="o.cp_capital_adjust_types_id = ${@cp_capital_adjust_types_id}"/>
+        <bm:query-field name="payment_status" queryExpression="o.payment_status = ${@payment_status}"/>
+        <bm:query-field name="payment_method" queryExpression="o.payment_method = ${@payment_method}"/>
+        <bm:query-field name="adjust_date_from" queryExpression="o.adjust_date &gt;= ${@adjust_date_from}"/>
+        <bm:query-field name="adjust_date_to" queryExpression="o.adjust_date &lt;= ${@adjust_date_to}"/>
+        <bm:query-field name="approve_status" queryExpression="o.approve_status = ${@approve_status}"/>
+        <bm:query-field name="adjust_number" queryExpression="o.adjust_number like ${@adjust_number}"/>
+        <bm:query-field name="adjust_amount_from" queryExpression="o.adjust_amount &gt;= ${@adjust_amount_from}"/>
+        <bm:query-field name="adjust_amount_to" queryExpression="o.adjust_amount &lt;= ${@adjust_amount_to}"/>
+    </bm:query-fields>
+</bm:model>

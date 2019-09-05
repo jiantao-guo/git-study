@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Administrator  
+    $Date: 2017-8-18 上午9:48:17  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="csh.csh_payment_requisition_init_pay_obj_list" rootpath="pay_obj_list"/>
+        <a:model-query defaultWhereClause="status = &apos;GENERATE&apos; and company_id = ${/session/@company_id}" fetchAll="true" model="csh.csh_payment_requisition_hds" rootpath="rqu_num_list"/>
+        <a:model-query fetchAll="true" model="csh.csh_payment_requisition_init_user" rootpath="user"/>
+        <a:model-query model="csh.csh_payment_methods_vl" rootpath="pay_methods_lists"/>
+        <a:model-query defaultWhereClause="enabled_flag = &apos;Y&apos;" fetchAll="true" model="gld.gld_currency_vl" rootpath="cry_list"/>
+        <a:model-query defaultWhereClause="posted_flag = &apos;N&apos; and company_id = ${/session/@company_id}" fetchAll="true" model="csh.csh_transaction_v" rootpath="trans_num_list"/>
+        <a:model-query defaultWhereClause="company_id = ${/session/@company_id} and enabled_flag = &apos;Y&apos; and account_type = &apos;COMPANY&apos;" fetchAll="true" model="csh.csh_bank_accounts_vl" rootpath="bank_accounts_list"/>
+        <a:model-query fetchAll="true" model="csh.csh_get_status_list" rootpath="status_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="csh_pay_req_query_detail_link_13" url="${/request/@context_path}/modules/csh/public/csh_pay_req_query_detail.screen"/>
+        <a:link id="csh_pay_req_query_trans_link_1" url="${/request/@context_path}/modules/csh/public/csh_pay_req_query_trans.screen"/>
+        <a:link id="submit_csh_bonds_transfer_info_link" model="db.csh_bonds_transfer_info_pkg.submit_csh_bonds_transfer_info" modelaction="batch_update"/>
+        <script><![CDATA[
+            function updateEventFunction(dataSet, record, name, value) {
+                if (name == 'partner_category') {
+                    $('pay_req_query_ds').getAt(0).set('partner_id', '');
+                    $('pay_req_query_ds').getAt(0).set('partner_id_display', '');
+                    if (value != null && value != '') {
+                        record.getField('partner_id_display').setLovPara('partner_category', value);
+                        record.getField('partner_id_display').setLovService('csh.csh_company_employee_vender_customer_lov');
+                        record.getField('partner_id_display').setReadOnly(false);
+                    } else {
+                        record.getField('partner_id_display').setLovService('');
+                        record.getField('partner_id_display').setReadOnly(true);
+                    }
+                }
+            }
+            
+            function resetFunction() {
+                var dataSet = $('pay_req_query_ds');
+                var record = dataSet.getCurrentRecord();
+                $('pay_req_query_ds').getAt(0).set('partner_id', '');
+                $('pay_req_query_ds').getAt(0).set('partner_id_display', '');
+                record.getField('partner_id_display').setLovService('');
+                record.getField('partner_id_display').setReadOnly(true);
+                dataSet.reset(); /*record.set('authority', 'MAINTENANCE');*/
+                /*record.set('source_type', 'EXP_REQUISITION');*/
+                /*授权没有意义，在后台已经写死，查询单据来源是全部,modify by wangfei3209 2013.04.25*/
+            }
+            
+            function queryFunction() {
+                $('pay_req_result_ds').query();
+            }
+            
+            function paymentFunction() {
+            
+                var dataSet = $('pay_req_result_ds');
+                var records = dataSet.getJsonData(true);
+                if (records.length != 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT_ONE}');
+                    return;
+                }
+                var record = records[0];
+                var header_id = record.payment_requisition_header_id;
+                new Aurora.Window({
+                    id: 'csh_pay_req_query_trans_screen',
+                    url: /*csh_pay_req_query_trans.screen*/
+                    $('csh_pay_req_query_trans_link_1').getUrl() + '?header_id=' + header_id,
+                    title: '${l:CSH_PAYMENT_REQUISITION_HDS.CSH_TRANSACTION_QUERY}',
+                    fullScreen: true
+                });
+            }
+            
+            function reqNumRenFunction(value, record, name) {
+                var url = '<a href = "javascript:reqNumDispatch(' + record.get('payment_requisition_header_id') + ',\'' + record.get('requisition_number') + '\')">' + value + '</a>';
+                return url;
+            }
+            
+            function reqNumDispatch(header_id, req_number) {
+                url = $('csh_pay_req_query_detail_link_13').getUrl() + '?payment_requisition_header_id=' + header_id + '&requisition_number=' + req_number;
+                new Aurora.Window({
+                    id: 'csh_pay_req_query_detail_window',
+                    fullScreen: true,
+                    url: url,
+                    fullScreen: true
+                });
+            }
+            
+            function batchPrintFunction() {
+            
+                var ids = '';
+                var records = $('pay_req_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT_PERIOD.PLEASE_CHOOSE_LINE}', null, 250, 100);
+                    return;
+                }
+            
+                var reportName = records[0].get('report_name');
+                var reportParamName = records[0].get('report_param_name');
+            
+                for (var i = 0;i < records.length;i++) {
+                    if (reportName != records[i].get('report_name')) {
+                        Aurora.showInfoMessage('${l:PROMPT}', '${l:CAN_NOT_PRINT_AT_THE_SAME_TIME}');
+                        return;
+                    }
+                    ids += records[i].get('payment_requisition_header_id');
+                    if (i != records.length - 1) {
+                        ids += ',';
+                    }
+                    if (records[i].get('status') != 'APPROVED') {
+                        Aurora.showInfoMessage('${l:PROMPT}', '请打印审批通过的单据!');
+                        return;
+                    }
+                }
+            
+                if (!reportName) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:SYS_REPORT_NOT_ASSIGN}');
+                    return;
+                }
+            
+                if (!reportParamName) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:SYS_REPORT_PARAM_NOT_DEFINED}');
+                    return;
+                }
+            
+                window.open('${/request/@context_path}/reports?__report=reports/csh_payment_requisition.rptdesign&' + reportParamName + '=' + ids + '&__format=pdf');
+            }
+            
+            function transfer_render() {
+                var url = '<a href = "javascript:transfer(' + record.get('payment_requisition_header_id') + ',' + record.get('employee_id') + ')">' + '转让' + '</a>';
+                return url;
+            }
+            
+            function saveFunction() {
+                $('pay_req_result_ds').submit();
+            }
+            
+            function submitFunction() {
+                var ds = $('pay_req_result_ds');
+                var records = ds.getSelected();
+                if (records.length == 0) {
+                    Aurora.showErrorMessage('${l:PROMPT.ERROR}', '${l:CSH_PAYMENT_CMS.NO_SELECT_ANY_LINES}');
+                    return false;
+                }
+                records = ds.getJsonData(true);
+                for (var i = 0;i < records.length;i++) {
+                    if(records[i]['cur_employee'] == null){
+                        Aurora.showErrorMessage('${l:PROMPT.ERROR}', '请先维护债权转让人!');
+                        return false;
+                    }
+                    records[i]['_status'] = 'update';
+                    // data.push(records[i].data);
+                }
+                Aurora.request({
+                    url: $('submit_csh_bonds_transfer_info_link').getUrl(),
+                    para: records,
+                    success: function(args) {
+                        queryFunction();
+                    },
+                    scope: this,
+                    sync: true
+                });
+            }
+            
+            function loadFunction(ds) {
+                var rds = ds.getAll();
+                for (var i = 0;i < rds.length;i++) {
+                    if (rds[i].get('audit_status') == 'SUBMITTED') {
+                        rds[i].getField('cur_employee').setReadOnly(true);
+                    }
+                }
+            }
+            function updateFunction(dataSet, record, name, value){
+                if(name == 'cur_employee'){
+                    if(value  == null || value == ''){
+                        record.set('audit_status_desc',null);
+                        
+                    }
+                }
+            }
+            
+            function submitsuccessFun(){
+                queryFunction();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pay_obj_list_ds">
+                <a:datas dataSource="/model/pay_obj_list"/>
+            </a:dataSet>
+            <a:dataSet id="pay_methods_lists_ds">
+                <a:datas dataSource="/model/pay_methods_lists"/>
+            </a:dataSet>
+            <a:dataSet id="user_ds">
+                <a:datas dataSource="/model/user"/>
+            </a:dataSet>
+            <a:dataSet id="cry_list_ds">
+                <a:datas dataSource="/model/cry_list"/>
+            </a:dataSet>
+            <a:dataSet id="trans_num_list_ds">
+                <a:datas dataSource="/model/trans_num_list"/>
+            </a:dataSet>
+            <a:dataSet id="bank_accounts_list_ds">
+                <a:datas dataSource="/model/bank_accounts_list"/>
+            </a:dataSet>
+            <a:dataSet id="status_list_ds">
+                <a:datas dataSource="/model/status_list"/>
+            </a:dataSet>
+            <a:dataSet id="bonds_transfer_status_ds" lookupCode="BONDS_TRANSFER_STATUS"/>
+            <a:dataSet id="employee_list_ds" loadData="true" model="csh.CSH5010.csh_pay_req_emp_query"/>
+            <a:dataSet id="vender_customer_list_ds" autoQuery="false" fetchAll="true" model="csh.csh_vender_customer_list"/>
+            <a:dataSet id="pay_req_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="payment_type" autoComplete="true" autoCompleteField="description" lovHeight="500" lovService="csh.csh_payment_requisition_typlist_all" lovWidth="530" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_TYPE_ID" title="EXP_PAYMENT_REQUISITION_CREATE.TITLE">
+                        <a:mapping>
+                            <a:map from="type_id" to="payment_req_type_id"/>
+                            <a:map from="description" to="payment_type"/>
+                            <!-- 组合查询错误 已修正 暂不需要 需要可取消注释 modify by wangfei3209 2013.4.25 -->
+                            <!--  <a:map from="payment_method_id" to="payment_method_id"/>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="payment_method" to="payment_method_id_display"/>
+                            <a:map from="currency_name" to="currency_code_display"/> -->
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="p_status_display" displayField="code_value_name" options="bonds_transfer_status_ds" prompt="CON_CONTRACT_HEADERS.STATUS" returnField="audit_status" valueField="code_value"/>
+                    <a:field name="audit_status"/>
+                    <a:field name="requisition_number" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_NUMBER"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="employee_id_display" displayField="name_code" options="employee_list_ds" prompt="EXP_REQUISITION_HEADERS.EMPLOYEE_ID" returnField="employee_id" valueField="employee_id"/>
+                    <a:field name="requisition_date_from" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_DATE_FROM"/>
+                    <a:field name="requisition_date_to" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_DATE_TO"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="currency_code_display" displayField="currency_name" options="cry_list_ds" prompt="GLD_EXCHANGE_RATES.FROM_CURRENCY" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="status"/>
+                    <a:field name="status_display" displayField="status_name" options="status_list_ds" prompt="CON_CONTRACT_HEADERS.STATUS" returnField="status" valueField="p_status"/>
+                    <a:field name="partner_category"/>
+                    <a:field name="partner_category_display" displayField="code_value_name" options="pay_obj_list_ds" prompt="EXP_REPORT_HEADERS.PAYEE_TARGET" returnField="partner_category" valueField="code_value">
+                        <a:mapping>
+                            <a:map from="code_value" to="partner_category"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_id"/>
+                    <a:field name="partner_id_display" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovWidth="500" prompt="CSH_TRANSACTION_LINES.PARTNER_ID" readOnly="true" title="CSH_TRANSACTION_LINES.PARTNER_SELECT">
+                        <a:mapping>
+                            <a:map from="partner_name" to="partner_id_display"/>
+                            <a:map from="partner_id" to="partner_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="payment_method_id_display" displayField="description" options="pay_methods_lists_ds" prompt="CSH_PAYMENT_REQUISITION_HDS.PAYMENT_METHOD_ID" returnField="payment_method_id" valueField="payment_method_id"/>
+                    <a:field name="amount_from" prompt="CSH_PAYMENT_REQUISITION_HDS.AMOUNT_FROM"/>
+                    <a:field name="amount_to" prompt="CSH_PAYMENT_REQUISITION_HDS.AMOUNT_TO"/>
+                    <a:field name="description" prompt="CSH_PAYMENT_REQUISITION_HDS.DESCRIPTION"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateEventFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pay_req_result_ds" autoPageSize="true" autoQuery="true" fetchAll="false" model="csh.CSH8030.csh_payment_bonds_transfer" queryDataSet="pay_req_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="document_type" prompt="CSH_PAY_REQ_TYPES.TYPE_CODE"/>
+                    <a:field name="payment_requisition_header_id"/>
+                    <a:field name="requisition_number" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_NUMBER"/>
+                    <a:field name="requisitor" prompt="EXP_REQUISITION_HEADERS.EMPLOYEE_ID"/>
+                    <a:field name="requisition_date" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_DATE"/>
+                    <a:field name="currency_name" prompt="CSH_PAYMENT_REQUISITION_HDS.CURRENCY_CODE"/>
+                    <a:field name="amount" prompt="CSH_PAYMENT_REQUISITION_HDS.AMOUNT"/>
+                    <a:field name="payment_method" prompt="CSH_PAYMENT_CMS.PAYMENT_METHOD_NAME"/>
+                    <a:field name="paymented_amount" prompt="CSH_PAYMENT_REQUISITION_HDS.PAYMENTED_AMOUNT"/>
+                    <a:field name="p_partner_category" prompt="EXP_REPORT_HEADERS.PAYEE_TARGET"/>
+                    <a:field name="payee_name" prompt="CSH_PAYMENT_REQUISITION_HDS.PARTNER_ID"/>
+                    <a:field name="status_des" prompt="CSH_PAYMENT_REQUISITION_HDS.STATUS"/>
+                    <a:field name="description" prompt="CSH_PAYMENT_REQUISITION_HDS.DESCRIPTION"/>
+                    <a:field name="close_date" prompt="CSH_PAYMENT_REQUISITION_HDS.CLOSED_DATE"/>
+                    <a:field name="cur_employee" lovGridHeight="320" lovHeight="450" lovService="csh.CSH8030.csh_employee_lov" lovWidth="500" title="员工">
+                        <a:mapping>
+                            <a:map from="employee_id" to="cur_employee_id"/>
+                            <a:map from="name" to="cur_employee"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="cur_employee_id"/>
+                    <a:field name="write_off_amount" prompt="已核销金额"/>
+                    <a:field name="unwrite_off_amount" prompt="未核销金额"/>
+                    <a:field name="audit_status_desc" prompt="转让状态"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="loadFunction"/>
+                    <a:event name="update" handler="updateFunction"/>
+                    <a:event name="submitsuccess" handler="submitsuccessFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="resetFunction" text="HAP_RESET" width="80"/>
+                <a:toolbarButton click="saveFunction" text="保存" width="80"/>
+                <a:toolbarButton click="submitFunction" text="提交" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="pay_req_query_ds" resultTarget="pay_req_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="requisition_number" bindTarget="pay_req_query_ds"/>
+                    <a:lov name="payment_type" bindTarget="pay_req_query_ds"/>
+                    <a:comboBox name="employee_id_display" bindTarget="pay_req_query_ds"/>
+                </a:formToolBar>
+                <a:formBody column="3">
+                    <a:comboBox name="p_status_display" bindTarget="pay_req_query_ds"/>
+                    <a:datePicker name="requisition_date_from" bindTarget="pay_req_query_ds"/>
+                    <a:datePicker name="requisition_date_to" bindTarget="pay_req_query_ds"/>
+                    <a:comboBox name="currency_code_display" bindTarget="pay_req_query_ds"/>
+                    <!-- <a:comboBox name="partner_category_display" bindTarget="pay_req_query_ds"/>
+                    <a:lov name="partner_id_display" bindTarget="pay_req_query_ds"/> -->
+                    <!-- <a:comboBox name="payment_method_id_display" bindTarget="pay_req_query_ds"/> -->
+                    <a:textField name="amount_from" bindTarget="pay_req_query_ds"/>
+                    <a:textField name="amount_to" bindTarget="pay_req_query_ds"/>
+                    <!-- <a:textField name="description" bindTarget="pay_req_query_ds"/> -->
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="pay_req_grid" bindTarget="pay_req_result_ds" marginHeight="122" navBar="true">
+                <!--  <a:toolBar>
+                    <a:button type="excel"/>
+                </a:toolBar> -->
+                <a:columns>
+                    <a:column name="requisition_number" align="left" renderer="reqNumRenFunction" width="180"/>
+                    <a:column name="document_type" align="left" width="100"/>
+                    <a:column name="requisitor" align="left" width="100"/>
+                    <a:column name="requisition_date" align="center" width="80"/>
+                    <a:column name="currency_name" align="left" width="80"/>
+                    <a:column name="amount" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="paymented_amount" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="write_off_amount" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="unwrite_off_amount" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <!-- <a:column name="payee_name" align="left" width="150"/> -->
+                    <a:column name="status_des" align="left" width="80"/>
+                    <a:column name="description" align="left" width="150"/>
+                    <a:column name="cur_employee" align="center" editor="cur_employe_lov" prompt="债权转让人"/>
+                    <!-- <a:column name="p_partner_category" align="left" width="100"/> -->
+                    <!-- <a:column name="payment_method" align="left" width="100"/> -->
+                    <a:column name="audit_status_desc" align="left"/>
+                    <a:column name="reject_reason" align="left" prompt="审批拒绝原因"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="cur_employe_lov"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+                function cshPaymentReqQueryInitSize() {
+                    //页面宽度、高度
+                    var vw = $A.getViewportWidth();
+                    //留白宽度
+                    var marginWidth = 37;
+                    //自适应宽度
+                    var autoWidth = vw - marginWidth;
+                    //Form内部宽度，-2border
+                    var formInnerWidth = autoWidth - 2;
+                    //所占列数
+                    var colSpan = 4;
+                    //设置组件的自适应宽度
+                    $('pay_req_grid').setWidth(autoWidth);
+                }
+                //Ext.fly(window).on('resize', cshPaymentReqQueryInitSize);
+                cshPaymentReqQueryInitSize();
+            ]]></script>
+    </a:view>
+</a:screen>

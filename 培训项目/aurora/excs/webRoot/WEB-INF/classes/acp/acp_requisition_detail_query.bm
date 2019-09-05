@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+	select *
+      from (select t.*,
+             t.amount - t.paid_amount payment_amount,
+             t.amount - t.paid_amount unpaid_amount
+          from (select h.acp_requisition_header_id,
+                 l.acp_requisition_line_id,
+                 h.requisition_number ,
+                  h.company_id  ,
+                 (select fc.COMPANY_SHORT_NAME
+                    from fnd_companies_vl fc
+                  where fc.COMPANY_ID = h.company_id)  ACP_COMPANY,
+                 to_char(h.requisition_date, 'YYYY-MM-DD') requisition_date,
+                 ( select typ.description 
+                     from acp_sys_acp_req_types_vl typ
+                    where typ.acp_req_type_id = h.acp_req_type_id) acp_type_desc,
+                 l.partner_category,
+                 (select a.code_value_name
+                  from sys_code_values_v a
+                 where a.code = 'PAYMENT_OBJECT'
+                   and a.code_value = l.partner_category) p_partner_category,
+                 l.partner_id,
+                 decode(l.partner_category,
+                    'EMPLOYEE',
+                    (select ee.employee_code || '-' || ee.name
+                     from exp_employees ee
+                    where ee.employee_id = l.partner_id),
+                    'VENDER',
+                    (select svv.vender_code || '-' || svv.description
+                     from pur_system_venders_vl svv
+                    where svv.vender_id = l.partner_id),
+                    'CUSTOMER',
+                    (select scv.customer_code || '-' || scv.description
+                     from ord_system_customers_vl scv
+                    where scv.customer_id = l.partner_id)) partner_name,
+                 h.currency_code,
+                 (select b.description
+                  from csh_transaction_classes_vl b
+                 where b.csh_transaction_class_code =
+                     l.csh_transaction_class_code ) transaction_class_desc,
+                 (select a.code_value_name
+                  from sys_code_values_v a
+                 where a.code = 'ACP_REQ_DOC_CATEGORY'
+                   and a.code_value = l.acp_requisition_line_type) payment_requisition_line_type,
+                   
+                   DECODE(L.ACP_REQUISITION_LINE_TYPE,
+                   'ACP_INVOICE',
+                   (SELECT ACP.INVOICE_NUMBER 
+                      FROM ACP_REQ_ACP_INFO_VL ACP
+                     WHERE L.REF_DOCUMENT_ID = ACP.INVOICE_ID ),
+                     'ACR_INVOICE',
+                     (SELECT ACR.INVOICE_NUMBER 
+                      FROM ACP_REQ_ACR_INFO_VL ACR
+                     WHERE L.REF_DOCUMENT_ID = ACR.INVOICE_ID),
+                     NULL) ref_document_number,
+                 l.amount,
+                 (select nvl(sum(r.amount), 0)
+                  from acp_acp_requisition_refs r 
+                 where r.acp_requisition_line_id =
+                     l.acp_requisition_line_id) paid_amount,
+                 h.employee_id,
+                 (select ee.name 
+                    from exp_employees ee
+                   where ee.employee_id =h.employee_id) EMPLOYEE_NAME,
+                 h.company_id  RPT_COMP_ID,
+                 ( select fv.COMPANY_CODE||'-'||fv.COMPANY_SHORT_NAME from fnd_companies_vl fv where fv.COMPANY_ID=h.company_id) REPORT_COMPANY,
+                  l.partner_bank_branch_code,
+                 l.partner_payee,
+                 l.partner_bank_acc_addr,
+                 l.partner_bank_acc_code
+                 
+              from acp_acp_requisition_hds h,
+                 acp_acp_requisition_lns l,
+                 csh_doc_payment_company     c
+             where h.acp_requisition_header_id =
+                 l.acp_requisition_header_id
+               and c.document_id = h.acp_requisition_header_id
+               and c.document_line_id = l.acp_requisition_line_id
+               and c.document_type = 'ACP_REQUISITION'
+               and c.payment_status in ('ALLOWED', 'PAID')
+               and h.status ='APPROVED'
+               and c.payment_company_id = ${/session/@company_id}) t
+         where (t.amount - t.paid_amount) > 0) x
+			#WHERE_CLAUSE#
+		order by x.requisition_number desc
+         ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="csh_payment_number" dataType="java.lang.String" queryExpression=" v.requisition_number  like &apos;%&apos;||upper(${@requisition_number})||&apos;%&apos;"/>
+        <bm:query-field name="company_id" dataType="java.lang.Long" queryExpression="v.company_id = ${@company_id}"/>
+        <bm:query-field name="req_company" dataType="java.lang.String" queryExpression="v.employee_id = ${@employee_id}"/>
+        <bm:query-field name="requisition_date_f" dataType="java.sql.Date" queryExpression="v.requisition_date &gt;= ${@requisition_date_f}"/>
+        <bm:query-field name="requisition_date_t" dataType="java.sql.Date" queryExpression="v.requisition_date &lt;= ${@requisition_date_t}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="v.currency_code = ${@currency_code}"/>
+        <bm:query-field name="status" dataType="java.lang.String" queryExpression="v.status = ${@status}"/>
+        <bm:query-field name="partner_category" dataType="java.lang.String" queryExpression="v.PAYEE_CATEGORY = ${@partner_category}"/>
+        <bm:query-field name="partner_id" dataType="java.lang.Long" queryExpression="v.partner_id = ${@partner_id}"/>
+        <bm:query-field name="amount_f" dataType="java.lang.Double" queryExpression="v.amount &gt;= ${@amount_f}"/>
+        <bm:query-field name="amount_t" dataType="java.lang.Double" queryExpression="v.amount &lt;= ${@amount_t}"/>
+        <bm:query-field name="already_paying_f" dataType="java.lang.Double" queryExpression="v.already_paying &gt;= ${@already_paying_f}"/>
+        <bm:query-field name="already_paying_t" dataType="java.lang.Double" queryExpression="v.already_paying &lt;= ${@already_paying_t}"/>
+        <bm:query-field name="csh_type_id" dataType="java.lang.Long" queryExpression="v.acp_req_type_id = ${@csh_type_id}"/>
+        <bm:query-field name="payment_status_id" dataType="java.lang.String" queryExpression="v.payment_status1 = ${@payment_status_id}"/>
+    </bm:query-fields>
+</bm:model>

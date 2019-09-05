@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: xiaobo  
+    $Date: 2011-12-22 上午10:19:16  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    ( WITH
+                    comp_temp AS
+                    (SELECT
+                        fc.company_id
+                    FROM
+                        fnd_companies fc
+                    WHERE
+                        fc.company_id = ${/session/@company_id}
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id  = ${/session/@company_id} AND
+                        ${@include_child_flag} = 'Y'
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id IN
+                        (SELECT
+                            fc3.company_id
+                        FROM
+                            fnd_companies fc3
+                        WHERE
+                            fc3.parent_company_id = ${/session/@company_id}
+                        ) AND
+                        ${@include_child_flag} = 'Y'
+                    )
+                SELECT
+                    wh.dispatching_header_id,
+                    wh.doc_category,
+                    wh.document_num,
+                    wh.document_id,
+                    wn.business_node_description,
+                    wh.business_node_id,
+                    wbc_common_pkg.get_doc_page(wh.dispatching_header_id) AS page_name,
+                    wbc_common_pkg.get_doc_param_name(wh.dispatching_header_id) AS param_name
+                FROM
+                    wbc_dispatch_pool_headers wh,
+                    wbc_business_nodes wn
+                WHERE
+                    wh.state            ='WAITING' AND
+                    wh.business_node_id = wn.business_node_id AND
+                    wh.doc_company_id  IN
+                    (SELECT * FROM comp_temp
+                    )
+                    ) t #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="dispatching_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="DISPATCHING_HEADER_ID" required="true"/>
+        <bm:field name="doc_category" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DOC_CATEGORY" required="true"/>
+        <bm:field name="document_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="DOCUMENT_ID" prompt="DOCUMENT_ID"/>
+        <bm:field name="document_num" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DOCUMENT_NUM" required="true"/>
+        <bm:field name="business_node_description" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="BUSINESS_NODE_DESCRIPTION"/>
+        <bm:field name="business_node_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="BUSINESS_NODE_ID" required="true"/>
+        <bm:field name="page_name"/>
+        <bm:field name="param_name"/>
+    </bm:fields>
+    <bm:data-filters>
+        <!-- <bm:data-filter name="state" enforceOperations="query" expression="wh.state = &apos;WAITING&apos;"/> -->
+        <!-- <bm:data-filter name="business_node" enforceOperations="query" expression="wh.business_node_id = wn.business_node_id"/> -->
+        <bm:data-filter name="permission_control" enforceOperations="query" expression="t.business_node_id in  (select do.wbc_bus_doc_type_node_id from wbc_doc_dispatch_operater do where do.work_team_id in  (select wt.work_team_id from wbc_work_teams wt where wt.employee_id in (select ev.employee_id from (select * from (select wwt.employee_id as manager_id, d.employee_id from wbc_work_teams wwt, wbc_work_team_detail d where wwt.work_team_id = d.work_team_id and wwt.employee_id != d.employee_id) t connect by t.manager_id = prior employee_id start with t.manager_id = (select su.employee_id from sys_user su where su.user_id =  ${/session/@user_id}) union all select su.employee_id as manager_id, su.employee_id as employee_id from sys_user su where su.user_id = ${/session/@user_id}) ev)))"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field field="doc_category" queryOperator="="/>
+        <bm:query-field field="document_num" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

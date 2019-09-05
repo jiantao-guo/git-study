@@ -1,0 +1,358 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: qc  
+    $Date: 2013-9-25 下午5:18:54  
+    $Revision: 1.0  
+    $Purpose: 银行对账单下载
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="capital.capitalAdjust.cpAdjust1020.get_user_company" rootPath="usercompany"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="account_balance_delete_link" url="${/request/@context_path}/modules/capital/checkManage/checkManage1070/account_balance_delete_control.svc"/>
+        <a:link id="get_maxDate_link" model="capital.checkManage.checkManage1070.getMaxDate" modelaction="query"/>
+        <script><![CDATA[
+            function queryFunction() {
+            
+                $('bankmutual_account_export_result_ds').query();
+            }
+            
+            function resetFunction(){
+                $('bankmutual_account_export_query_ds').reset();
+            }
+            
+            function downloadFunction() {
+                var ds = $('bankmutual_account_export_query_ds');
+                var recs = ds.getAll();
+                var bank_account = recs[0].get('account');
+                if (!bank_account) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "银行账号不能为空!");
+                    return;
+                }
+                var begin_date = recs[0].get('begin_date');
+                if (!begin_date) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "起始日期不能为空!");
+                    return;
+                }
+                var end_date = recs[0].get('end_date');
+                if (!end_date) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "终止日期不能为空!");
+                    return;
+                }
+                // 对账单下载的业务逻辑
+                // 获得当前表中最大的对账日期
+                Aurora.request({
+                    para: {
+                        'bank_account': bank_account
+                    },
+                    url: $('get_maxDate_link').getUrl(),
+                    success: function(args) {
+                        var record = args.result.record;
+                        if(record == undefined){
+                            Aurora.showWarningMessage("${l:PROMPT}", "未查询到该账号信息,无法下载!");
+                    		return;
+                        }else{
+                            var maxdate = record.maxdate;
+                            if (maxdate < begin_date || maxdate > end_date) {
+                                Aurora.showWarningMessage("${l:PROMPT}", "当前账号对账单最大日期为" + maxdate + ",请从该日期开始下载");
+                                return;
+                            }else if (maxdate >= begin_date && maxdate <= end_date) {
+                                begin_date = maxdate;
+                            }
+                        }
+                        // 到银企直连进行操作
+                        alert("到银企直连进行操作...未完成");
+                        $('bankmutual_account_export_result_ds').query();
+                    },
+                    failure: function(args) {
+                        Aurora.showWarningMessage("${l:PROMPT.WARN}", "操作失败！");
+                        return;
+                    },
+                    scope: this
+                });
+            }
+            
+            function exportFunction() {
+                var ds = $('bankmutual_account_export_query_ds');
+                var recs = ds.getAll();
+                var bank_account = recs[0].get('account');
+                if (!bank_account) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "银行账号不能为空!");
+                    return;
+                }
+                var begin_date = recs[0].get('begin_date');
+                if (!begin_date) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "起始日期不能为空!");
+                    return;
+                }
+                var end_date = recs[0].get('end_date');
+                if (!end_date) {
+                    Aurora.showWarningmessage("${l:PROMPT}", "终止日期不能为空!");
+                    return;
+                }
+                //开始导出
+                var columnTitles = ['帐号', '币种', '交易序号', '时间戳', '借方金额', '贷方金额', '账务发生后余额', '对方账号', '对方户名', '说明', '用途', '附言', '对账单日期', '银企标志'];
+                var columnNames = ['bank_account', 'curr_type_name', 'trade_num,', 'right_timestamp', 'debit_amount', 'credit_amount', 'since_amount', 'other_account', 'other_account_name', 'summary', 'use', 'postscript', 'right_date', 'bcdl_flag'];
+                var columns = [];
+                for (var i = 0;i < columnTitles.length;i++) {
+                    //选取文件启用的列
+                    columns.push({
+                        prompt: columnTitles[i],
+                        name: columnNames[i],
+                        width: 100
+                    });
+                }
+                if (columns.length > 0) {
+                    $('export_capital_app_list_ds').setQueryParameter("account", recs[0].get('account'));
+                    $('export_capital_app_list_ds').setQueryParameter("begin_date", recs[0].get('begin_date'));
+                    $('export_capital_app_list_ds').setQueryParameter("end_date", recs[0].get('end_date'));
+                    $A.doExport($('export_capital_app_list_ds'), columns, '', '', '', '银行对账单下载');
+                }
+            }
+            
+            
+            function deleteFunction() {
+                var ds = $('bankmutual_account_export_result_ds');
+                var recs = ds.getSelected();
+                var slength = recs.length;
+                if (slength < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                    return;
+                } else {
+	                var curr_branch_id = '${/model/usercompany/record/@company_code}';
+	                for (var i = 0;i < slength;i++) {
+	                    var open_organ = recs[i].get('organ');
+	                    var status = recs[i].get('account_status');
+	                    if (open_organ != curr_branch_id) {
+	                        Aurora.showWarningMessage("${l:PROMPT}", "您只能删除自己公司的数据!");
+	                        return;
+	                    }
+	                    if (status == 'Y') {
+	                        Aurora.showWarningMessage("${l:PROMPT}", "已对账的数据不能删除，请先撤销对账再删除!");
+	                        return;
+	                    }
+	                }
+	                //'执行删除操作，您确定要删除吗?
+	                var msgBox = Aurora.showConfirm('${l:PROMPT}', '执行删除操作，您确定要删除吗?', function() {
+	                    msgBox.close();
+	                    processDeleteFunction();
+	                }, null, 250, 100);
+                }
+            }
+            
+            function processDeleteFunction() {
+                var param = $('bankmutual_account_export_result_ds').getJsonData(true);
+                for (var i = 0;i < param.length;i++) {
+                    param[i]._status = 'delete';
+                }
+                Aurora.request({
+                    para: param,
+                    url: $('account_balance_delete_link').getUrl(),
+                    success: function(args) {
+                        $('bankmutual_account_export_result_ds').query();
+                    },
+                    failure: function(args) {
+                        Aurora.showWarningMessage("${l:PROMPT.WARN}", "操作失败！");
+                        return;
+                    },
+                    scope: this
+                });
+            }
+            
+            function bandaccountF() {
+                var record = $('bankmutual_account_export_query_ds').getAt(0);
+                var organ = record.get('organ');
+                var category = record.get('bank');
+                if (!organ) {
+                    record.getField('account').setLovService('');
+                    Aurora.showWarningMessage("${l:PROMPT}", "请选择公司!");
+                    return;
+                } else {
+                    if (!category) {
+                        record.getField('account').setLovService('');
+                        Aurora.showWarningMessage("${l:PROMPT}", "请选择银行类别!");
+                        return;
+                    }
+                }
+                record.getField('account').setLovPara('open_organ', organ);
+                record.getField('account').setLovPara('open_bank', category);
+                record.getField('account').setLovService('capital.checkManage.checkManage1010.bank_account_list');
+            }
+            
+            function bandaccountFocus() {
+                var ds = $('bankmutual_account_export_query_ds');
+                var recs = ds.getAll();
+                var organ = recs[0].get('organ');
+                var category = recs[0].get('bank');
+                if (!organ) {
+                    Aurora.showWarningMessage("${l:PROMPT}", "请选择公司!");
+                    return;
+                } else {
+                    if (!category) {
+                        Aurora.showWarningMessage("${l:PROMPT}", "请选择银行类别!");
+                        return;
+                    }
+                }
+            }
+            
+            function numberValidator(record, name, value) {
+                var reg = new RegExp("^[1-9][0-9]*$");
+                if (!reg.test(value)) {
+                    return "只能是非零的正整数";
+                }
+                return true;
+            }
+            
+            function dateValidator(record, name, value) {
+                if (name == 'begin_date' || name == 'end_date') {
+                    var begin_date = record.get('begin_date');
+                    var end_date = record.get('end_date');
+                    if ( !! end_date) {
+                        if (!compareDate(begin_date, end_date)) {
+                            return '起始日期不能大于终止日期';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function compareDate(begin, end) {
+                if (begin > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function onUpdate(ds, record, name, value) {
+                if (name == 'begin_date' || name == 'end_date') {
+                    record.validate((name == 'begin_date') ? 'end_date' : 'begin_date');
+                }
+            }
+            
+            function periodFormat(datePicker, date) {
+                var ndate = Aurora.formatDate(date);
+                var newdate = "";
+                for (var i = 0;i <= 9;i++) {
+                    newdate += ndate.charAt(i);
+                }
+                datePicker.setValue(newdate);
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="export_capital_app_list_ds" autoQuery="false" fetchAll="true" model="capital.checkManage.checkManage1070.bankmutual_account_export_list"/>
+            <a:dataSet id="currency_name_ds" loadData="true" model="exp.exp_currency_code"/>
+            <!--查询条件dataSet-->
+            <a:dataSet id="bankmutual_account_export_query_ds">
+                <a:fields>
+                    <!--1 公司  -->
+                    <a:field name="organ" defaultValue="${/model/usercompany/record/@company_code}"/>
+                    <a:field name="organ_cn" autoComplete="true" autoCompleteField="organ_cn" defaultValue="${/model/usercompany/record/@comp_desc}" lovGridHeight="300" lovHeight="450" lovService="capital.capitalAdjust.cpAdjust1020.get_user_company" lovWidth="600" title="FND_COMPANIES.QUERY">
+                        <a:mapping>
+                            <a:map from="company_code" to="organ"/>
+                            <a:map from="comp_desc" to="organ_cn"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bank"/>
+                    <a:field name="bank_cn" autoComplete="true" autoCompleteField="bank_cn" lovGridHeight="300" lovHeight="450" lovService="capital.accountManage.accountManage1010.open_bank_list" lovWidth="600" title="银行类别">
+                        <a:mapping>
+                            <a:map from="code_value" to="bank"/>
+                            <a:map from="code_value_name" to="bank_cn"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account" autoComplete="true" autoCompleteField="account" lovGridHeight="300" lovHeight="450" lovWidth="600" title="银行账号">
+                        <a:mapping>
+                            <a:map from="bank_account" to="account"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency" defaultValue="CNY"/>
+                    <a:field name="currency_name" defaultValue="人民币" displayField="currency_name" options="currency_name_ds" returnField="currency" valueField="currency_code"/>
+                    <!--4 起始日期-->
+                    <a:field name="begin_date" validator="dateValidator"/>
+                    <!--5 结束日期-->
+                    <a:field name="end_date" validator="dateValidator"/>
+                    <a:field name="amount_up"/>
+                    <a:field name="amount_down"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <!--与grid对应  -->
+            <a:dataSet id="bankmutual_account_export_result_ds" autoQuery="false" model="capital.checkManage.checkManage1070.bankmutual_account_export_list" queryDataSet="bankmutual_account_export_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="bank_account" prompt="账号"/>
+                    <a:field name="acc_name" prompt="户名"/>
+                    <a:field name="drcrf_name" prompt="借贷标志"/>
+                    <a:field name="debit_amount" prompt="借方金额"/>
+                    <a:field name="credit_amount" prompt="贷方金额"/>
+                    <a:field name="since_amount" prompt="余额"/>
+                    <a:field name="other_account" prompt="对方账号"/>
+                    <a:field name="other_account_name" prompt="对方户名"/>
+                    <a:field name="curr_type_name" prompt="币种"/>
+                    <a:field name="account_date" prompt="交易日期"/>
+                    <a:field name="summary" prompt="摘要"/>
+                    <a:field name="use" prompt="用途"/>
+                    <a:field name="right_date" prompt="对账单日期"/>
+                    <!--hidden  -->
+                    <a:field name="icbc_ref" prompt="相关业务编号"/>
+                    <a:field name="postscript" prompt="附言"/>
+                    <a:field name="id" prompt="主键ID"/>
+                    <a:field name="organ" prompt="机构"/>
+                    <a:field name="account_status" prompt="对账状态"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <!-- 查询条件-->
+        <a:form column="4" labelWidth="120" style="margin-left:10px;margin-top:10px" title="银行对账单下载" width="1000">
+            <a:lov name="organ_cn" bindTarget="bankmutual_account_export_query_ds" prompt="公司 "/>
+            <a:lov name="bank_cn" bindTarget="bankmutual_account_export_query_ds" prompt="银行类别 "/>
+            <a:lov name="account" bindTarget="bankmutual_account_export_query_ds" prompt="银行账号 ">
+                <a:events>
+                    <a:event name="focus" handler="bandaccountFocus"/>
+                    <a:event name="beforetriggerclick" handler="bandaccountF"/>
+                </a:events>
+            </a:lov>
+            <a:comboBox name="currency_name" bindTarget="bankmutual_account_export_query_ds" prompt="币种"/>
+            <a:datePicker name="begin_date" bindTarget="bankmutual_account_export_query_ds" prompt="起始日期">
+                <a:events>
+                    <a:event name="select" handler="periodFormat"/>
+                </a:events>
+            </a:datePicker>
+            <a:datePicker name="end_date" bindTarget="bankmutual_account_export_query_ds" prompt="终止日期">
+                <a:events>
+                    <a:event name="select" handler="periodFormat"/>
+                </a:events>
+            </a:datePicker>
+            <a:textField name="amount_up" bindTarget="bankmutual_account_export_query_ds" maxLength="30" prompt="发生额上限"/>
+            <a:textField name="amount_down" bindTarget="bankmutual_account_export_query_ds" maxLength="30" prompt="发生额下限"/>
+        </a:form>
+        <!-- 事件按钮-->
+        <a:hBox style="margin-left:10px;margin-top:10px">
+            <a:button click="queryFunction" icon="${/request/@context_path}/images/search.gif" text="HAP_QUERY"/>
+            <a:button click="resetFunction" icon="${/request/@context_path}/images/leaf.png" text="HAP_RESET"/>
+            <a:button click="downloadFunction" icon="${/request/@context_path}/images/for_pad/xls.gif" text="对账单下载"/>
+            <a:button click="exportFunction" icon="${/request/@context_path}/images/for_pad/xls.gif" text="导出"/>
+            <a:button click="deleteFunction" icon="${/request/@context_path}/images/remove.gif" text="HAP_DELETE"/>
+        </a:hBox>
+        <!--显示数据图表 -->
+        <a:grid id="bankmutual_account_export_grid_id" bindTarget="bankmutual_account_export_result_ds" height="380" navBar="true" style="margin-left:10px;margon-top:10px;" width="1000">
+            <a:columns>
+                <a:column name="bank_account" align="center" prompt="账号" width="150"/>
+                <a:column name="acc_name" align="center" prompt="户名" width="100"/>
+                <a:column name="drcrf_name" align="center" prompt="借贷标志" width="80"/>
+                <a:column name="debit_amount" align="right" prompt="借方金额" width="100"/>
+                <a:column name="credit_amount" align="right" prompt="贷方金额" width="100"/>
+                <a:column name="since_amount" align="right" prompt="余额" width="100"/>
+                <a:column name="other_account" align="center" prompt="对方账号" width="200"/>
+                <a:column name="other_account_name" align="center" prompt="对方户名" width="100"/>
+                <a:column name="curr_type_name" align="center" prompt="币种" width="80"/>
+                <a:column name="account_date" align="center" prompt="交易日期" width="100"/>
+                <a:column name="summary" align="left" prompt="摘要" width="100"/>
+                <a:column name="use" align="center" prompt="用途" width="100"/>
+                <a:column name="right_date" align="center" prompt="对账单日期" width="100"/>
+            </a:columns>
+        </a:grid>
+        <a:hBox/>
+    </a:view>
+</a:screen>

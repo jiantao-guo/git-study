@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        erpv.expense_report_type_id,
+                        erpv.expense_report_type_code,
+                        erpv.document_page_type,
+                        erpv.amortization_flag,
+                        erpv.req_required_flag,
+                        (select v.code_value_name
+		                  from sys_code_values_v v
+		                 where v.code = 'APP_DOCUMENTS_ICON'
+		                   and v.code_value = erpv.app_documents_icon) DESCRIPTION,
+                        DECODE(erpv.currency_code,NULL,'null',erpv.currency_code) currency_code,
+                        pv.page_name,
+                        (SELECT
+                            currency_name
+                        FROM
+                            gld_currency_vl gcv
+                        WHERE
+                            gcv.currency_code = erpv.currency_code
+                        ) currency_name,
+                        erpv.payment_object,
+                        erpv.payment_method,
+                        erpv.payment_flag,
+                        (SELECT
+                            v.usedes_code
+                        FROM
+                            exp_rep_ref_payment_usedes t,
+                            csh_payment_usedes_vl v
+                        WHERE
+                            t.usedes_id              = v.usedes_id AND
+                            v.enabled_flag           = 'Y' AND
+                            t.expense_report_type_id = erpv.expense_report_type_id AND
+                            t.primary_flag           = 'Y'
+                        )usedes_code,
+                        nvl(erpv.apply_condition,'-1') apply_condition,
+                        sys_parameter_pkg.value('APP_REPORT_TYPE_URL')||erpv.app_documents_icon app_documents_icon
+                    FROM
+                        exp_expense_report_types_vl erpv,
+                        EXP_REPORT_TYPE_PAGES_V pv
+                    WHERE
+                        ((${@create_type} = 'REQEST' and erpv.document_page_type != 'TRAVEL')
+                        or
+                        (${@create_type} = 'MANUAL')
+                        or
+                        (${@create_type} = 'TRAN' and erpv.document_page_type = 'TRAVEL')
+                        or
+                        (${@create_type} = '' or ${@create_type} is null)) 
+                       AND
+                        erpv.mobile_fill = 'Y' AND
+                        EXISTS
+                        (SELECT
+                            *
+                        FROM
+                            exp_report_ref_user_groups egs
+                        WHERE
+                            egs.expense_report_type_id = erpv.expense_report_type_id AND
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                exp_user_group_lines el
+                            WHERE
+                                el.expense_user_group_id = egs.expense_user_group_id AND
+                                el.employee_id           = ${@employee_id}
+                            )
+                        ) AND
+                        erpv.ENABLED_FLAG = 'Y' AND
+                        erpv.company_id   =${@company_id} AND
+                        pv.page_type      = erpv.document_page_type AND
+                        pv.page_usage     = 'CREATE' AND
+                        exp_document_authorities_pkg.exist_exp_doc_authorities('02',
+                        (SELECT
+                            employee_id
+                        FROM
+                            sys_user
+                        WHERE
+                            user_id = ${@user_id}
+                        ), NVL(${@employee_id},
+                        (SELECT ss.employee_id FROM sys_user ss WHERE ss.user_id = ${@user_id}
+                        )),'MAINTENANCE', ${@user_id}, erpv.expense_report_type_id) = 'Y'
+                    ) V
+                ORDER BY
+                    v.expense_report_type_code
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="expense_report_type_id" databasetype="NUMBER" datatype="java.lang.Long" physicalname="EXPENSE_REPORT_TYPE_ID"/>
+        <bm:field name="expense_report_type_code" databasetype="VARCHAR2" datatype="java.lang.String" physicalname="EXPENSE_REPORT_TYPE_CODE"/>
+        <bm:field name="description" databasetype="VARCHAR2" datatype="java.lang.String" displayWidth="240" forDisplay="true" forQuery="true" physicalname="DESCRIPTION" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE"/>
+        <bm:field name="currency_name" databasetype="VARCHAR2" datatype="java.lang.String" displayWidth="180" forDisplay="true" prompt="EXP_EXPENSE_REQ_TYPES.CURRENCY_CODE"/>
+        <bm:field name="currency_code"/>
+        <bm:field name="document_page_type"/>
+        <bm:field name="amortization_flag"/>
+        <bm:field name="page_name"/>
+        <bm:field name="payment_object"/>
+        <bm:field name="payment_method"/>
+        <bm:field name="payment_flag"/>
+        <bm:field name="usedes_code"/>
+        <bm:field name="app_documents_icon"/>
+        <bm:field name="req_required_flag"/>
+        <bm:field name="apply_condition"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="description" queryExpression=" erpv.description like &apos;%&apos;||${@description}||&apos;%&apos;"/>
+        <bm:query-field name="currency_code" queryExpression="erpv.currency_code = ${@currency_code}"/>
+        <bm:query-field name="name_code" queryExpression="(erpv.expense_report_type_code like ${@name_code}||&apos;%&apos; or erpv.description like &apos;%&apos;||${@name_code}||&apos;%&apos;)"/>
+    </bm:query-fields>
+</bm:model>

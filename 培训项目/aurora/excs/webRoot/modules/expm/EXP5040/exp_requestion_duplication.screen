@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchall="true" model="expm.EXP5040.exp_requestion_employeelist" rootpath="employeelist"/>
+        <a:model-query fetchall="true" model="expm.EXP5040.exp_requestion_typelist" rootpath="typelist1"/>
+        <a:model-query fetchall="true" model="gld.gld_currency_vl" rootpath="currency"/>
+        <a:model-query fetchall="true" model="exp.exp_type_list" rootpath="typelist"/>
+        <a:model-query fetchall="true" model="expm.EXP5040.exp_requestion_statuslist" rootpath="statuslist"/>
+        <a:model-query fetchall="true" model="expm.EXP5040.exp_requestion_closelist" rootpath="closelist"/>
+        <a:model-query model="expm.gld_get_default_period_name" rootPath="default_period_name"/>
+        <a:model-query model="cont.sys_date" rootPath="sysdate"/>
+        <a:model-query defaultwhereclause="t1.ENABLED_FLAG =&apos;Y&apos;" fetchAll="true" model="gld.gld_exchangerate_types_vl" rootPath="exchangerate_types"/>
+        <a:model-query fetchAll="true" model="expm.exp_rate_quotation" rootPath="rate_quotation"/>
+        <a:model-query model="expm.get_company_currency_code" rootPath="company_currency_code"/>
+        <a:model-query model="expm.get_exchange_rate_type" rootPath="exchange_rate_type"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_requestion_duplication_duplicate_log_link" url="${/request/@context_path}/modules/expm/EXP5040/exp_requestion_duplication_duplicate_log.screen"/>
+        <a:link id="exp_requestion_duplication_duplicate_link" url="${/request/@context_path}/modules/expm/EXP5040/exp_requestion_duplication_duplicate.screen"/>
+        <a:link id="exp_requestion_duplication_control_link" url="${/request/@context_path}/modules/expm/EXP5040/exp_requestion_duplication_control.svc"/>
+        <a:link id="exp_requisition_readonly_link_3" url="${/request/@context_path}/modules/expm/public/exp_requisition_readonly.screen"/>
+        <a:link id="gld_get_period_name_link" model="expm.gld_get_period_name" modelaction="query"/>
+        <a:link id="get_accounts_result_link" model="expm.EXP5040.exp_requestion_duplication_duplicate_query" modelaction="query"/>
+        <a:link id="get_exchange_rate_link_6" model="expm.get_exchange_rate" modelaction="query"/>
+        <a:link id="exp_requestion_duplication_duplicate_control_link" url="${/request/@context_path}/modules/expm/EXP5040/exp_requestion_duplication_duplicate_control.svc"/>
+        <script><![CDATA[
+
+            var flag = 0;
+            
+            function doQuery() {
+                $('requistion_result_ds').query();
+            }
+            
+            function reqNumRenderer(value, record, name) {
+                return '<a href="javascript:reqNumNewWindow(' + record.get('exp_requisition_header_id') + ',' + record.get('exp_requisition_type_id') + ',' + record.get('employee_id') + ');">' + value + '</a>';
+            }
+            
+            function reqNumNewWindow(exp_requisition_header_id, exp_requisition_type_id, employee_id, company_id) {
+                var url = /*exp_requisition_readonly.screen*/
+                $('exp_requisition_readonly_link_3').getUrl() + '?head_id=' + exp_requisition_header_id + '&canUploadFlag=false';
+                //window.open(url,'','fullscreen=no,resizable=yes,width=1024,height=620');
+                new Aurora.Window({
+                    url: url,
+                    fullScreen: true
+                });
+            }
+            
+            function dateUpdate() {
+                var journal_date = $('input_date_ds').getAt(0).get('journal_date');
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.gld_get_period_name/query*/
+                    $('gld_get_period_name_link').getUrl(),
+                    para: {
+                        p_date: journal_date
+                    },
+                    success: getPeriodName,
+                    scope: this
+                });
+            }
+            
+            function getPeriodName(args) {
+                var record = args.result.record;
+                var red = $('input_date_ds').getAt(0);
+                var period_name = '';
+                if (record.length) {
+                    period_name = record[0].period_name;
+                } else {
+                    period_name = record.period_name;
+                }
+                red.set('period_name', period_name);
+                if (!period_name) {
+                    Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+                }
+            }
+            
+            function doSelect(com, value, display, record) {
+                var localrecord = $('requistion_query_ds').getAt(0);
+                var url = '';
+                switch (value) {
+                case 'CUSTOMER':
+                    url = 'expm.exp_customer_req_lov';
+                    title = '${l:CUSTOMER_QUERY}';
+                    break;
+                case 'EMPLOYEE':
+                    url = 'expm.exp_employee_req_lov';
+                    title = '${l:EXP_EMPLOYEES.QUERY}';
+                    break;
+                case 'VENDER':
+                    url = 'expm.exp_vender_req_lov';
+                    title = '${l:VENDER_SEARCH}';
+                    break;
+                default:
+                    break;
+                }
+                var payee_code = localrecord.getMeta().getField('payee_code');
+                payee_code.setLovService(url);
+                payee_code.setTitle(title);
+            }
+            
+            function exchangeRateModify() {
+                //    			
+                var records = $('requistion_result_ds').getJsonData(true);
+                if (records.length < 1) {
+                    Aurora.showInfoMessage('', '${l:EXP_REQUESTION_DUPLICATION.SELECT_MESSAGE}', null, 250, 100);
+                    return;
+                }
+                var params = new Object();
+                params['lines'] = records;
+                Aurora.request({
+                    url: /*${/request/@context_path}/modules/expm/exp_requestion_duplication_control.svc*/
+                    $('exp_requestion_duplication_control_link').getUrl(),
+                    para: params,
+                    success: modifySuccess,
+                    scope: this
+                });
+            }
+            
+            function modifySuccess() {
+                var journal_date = Aurora.formatDate($('input_date_ds').getAt(0).get('journal_date'));
+                var url = /*${/request/@context_path}/modules/expm/exp_report_accounts.screen*/
+                $('exp_requestion_duplication_duplicate_link').getUrl() + '?journal_date=' + journal_date;
+                //window.open(url,'','fullscreen=no,resizable=yes,width=530,height=515');
+                new Aurora.Window({
+                    id: 'exp_requestion_duplication_duplicate_screen',
+                    url: url,
+                    title: '${l:EXP_REQUESTION_DUPLICATION.TITLE}',
+                    fullScreen: true
+                });
+            }
+            
+            function duplicate() {
+                var records = $('requistion_result_ds').getJsonData(true);
+                if (records.length < 1) {
+                    Aurora.showInfoMessage('', '${l:EXP_REQUESTION_DUPLICATION.SELECT_MESSAGE}', null, 250, 100);
+                    return;
+                }
+                var params = new Object();
+                params['lines'] = records;
+                Aurora.request({
+                    url: /*${/request/@context_path}/modules/expm/exp_requestion_duplication_control.svc*/
+                    $('exp_requestion_duplication_control_link').getUrl(),
+                    para: params,
+                    success: createSuccess,
+                    scope: this
+                });
+            }
+            
+            function refresh() {
+                flag = 0;
+                Aurora.showMessage('${l:PROMPT}', '${l:EXP5040_DUPLICATE_SUCCESS}', function() {
+                    if (doQuery && typeof(doQuery) == 'function') {
+                        doQuery();
+                    }
+                });
+            }
+            
+            function createSuccess() {
+                Aurora.request({
+                    url: /*${/request/@context_path}/modules/expm/exp_report_audit_account_tmp_control.svc*/
+                    $('get_accounts_result_link').getUrl(),
+                    para: {},
+                    success: checkPeriodName,
+                    scope: this
+                });
+            }
+            
+            function checkPeriodName(args) {
+                var records = args.result.record;
+                var period_name = $('input_date_ds').getAt(0).get('period_name');
+                if (period_name) {
+                    if (records.length) {
+                        for (var i = 0,
+                            l = records.length;i < l;i++) {
+                            checkChangeRateRecord(records, records[i], records.length);
+                        }
+                    } else {
+                        checkChangeRateRecord(records, records, records.length);
+                    }
+                } else {
+                    Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+                }
+            
+            }
+            
+            function checkChangeRateRecord(rs, record, length) {
+            
+                var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}';
+                var cur_code = record.currency_code;
+                if (f_cur_code == cur_code) {
+                    flagIncrease(rs, length);
+                } else {
+                    var from_currency = f_cur_code;
+                    var to_currency = cur_code;
+                    var exchange_rate_type = record.exchange_rate_type;
+                    var exchange_date = $('input_date_ds').getAt(0).get('journal_date');
+                    var exchange_period_name = $('input_date_ds').getAt(0).get('period_name');
+                    exchange_date = Aurora.formatDate(exchange_date);
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/
+                        $('get_exchange_rate_link_6').getUrl(),
+                        para: {
+                            "from_currency": from_currency,
+                            "to_currency": to_currency,
+                            "exchange_rate_type": exchange_rate_type,
+                            "exchange_date": exchange_date,
+                            "exchange_period_name": exchange_period_name
+                        },
+                        success: function(args) {
+                            var pluscols = args.result.record;
+                            if (pluscols.length) {
+                                if (pluscols[0].exchange_rate) {
+                                    flagIncrease(rs, length);
+                                } else {
+                                    if (record.exchange_rate_type_code != 'MANUAL') {
+                                        flag = 0;
+                                        Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+                                    }
+                                }
+                            } else {
+                                if (pluscols.exchange_rate) {
+                                    flagIncrease(rs, length);
+                                } else {
+                                    if (record.exchange_rate_type_code != 'MANUAL') {
+                                        flag = 0;
+                                        Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+                                    }
+                                }
+                            }
+            
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function flagIncrease(rs, args) {
+                flag++;
+                if (flag == args || (args == null && flag == 1)) {
+                    createFunction(rs);
+                }
+            }
+            
+            function createFunction(record) {
+                var period = $('input_date_ds').getAt(0).get('period_name');
+                if (!period) {
+                    doSelect();
+                } else {
+                    if ($('input_date_ds').validate()) {
+                        var journal_date = $('input_date_ds').getAt(0).get('journal_date');
+                        journal_date = Aurora.formatDate(journal_date);
+                        var period_name = $('input_date_ds').getAt(0).get('period_name');
+                        var param = new Object();
+                        param['lines'] = record;
+                        param['requisition_date'] = journal_date;
+                        param['period_name'] = period_name;
+            
+                        Aurora.request({
+                            url: /*${/request/@context_path}/modules/expm/exp_requestion_duplication_duplicate_control.svc*/
+                            $('exp_requestion_duplication_duplicate_control_link').getUrl(),
+                            para: param,
+                            success: refresh,
+                            scope: this
+                        });
+                    }
+                }
+            }
+            
+            function headcommitpayee(lov, r1, r2) {
+            
+                var payee_category = r1.get('payee_category');
+                if (payee_category == null || payee_category == undefined || payee_category == '') {
+                    return;
+                } else if (payee_category == 'EMPLOYEE') {
+                    r1.set('payee_id', r2.get('employee_id'));
+                } else if (payee_category == 'VENDER') {
+                    r1.set('payee_id', r2.get('vender_id'));
+                } else {
+                    r1.set('payee_id', r2.get('customer_id'));
+                }
+            }
+            // function duplicate(){
+            // var records = $('requistion_result_ds').getJsonData(true);
+            // if(records.length <1){
+            // Aurora.showInfoMessage('','${l:EXP_REQUESTION_DUPLICATION.SELECT_MESSAGE}',null,250,100);
+            // return;
+            // }          		
+            // var params=new Object();
+            // params['lines']=records;          		
+            // Aurora.request({
+            // url:/*${/request/@context_path}/modules/expm/exp_requestion_duplication_control.svc*/$('exp_requestion_duplication_control_link').getUrl(),
+            // para:params,
+            // success:redirectUrl,
+            // scope:this
+            // });
+            // }
+            // function redirectUrl(){
+            // var url = /*${/request/@context_path}/modules/expm/exp_requestion_duplication_duplicate.screen*/$('exp_requestion_duplication_duplicate_link').getUrl();
+            // window.open(url,'','width=530,height=520');
+            // }
+            
+            function querylog() {
+                var url = /*${/request/@context_path}/modules/expm/exp_requestion_duplication_duplicate_log.screen*/
+                $('exp_requestion_duplication_duplicate_log_link').getUrl();
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:LOOK_OVER_LOG}',
+                    id: 'exp_requestion_duplication_duplicate_log_screen',
+                    fullScreen: true
+                });
+            }
+            
+            function reset() {
+                $('requistion_query_ds').getCurrentRecord().getField('payee_code').setReadOnly(true);
+                $('requistion_query_ds').reset();
+            }
+            
+            function queryUpdateFunction(dataSet, record, name, value, oldValue) {
+                if (name == 'payee_category') {
+                    if (value == null || value == '') {
+                        record.getMeta().getField('payee_code').setReadOnly(true);
+                    } else {
+                        record.getMeta().getField('payee_code').setReadOnly(false);
+                        record.set('payee_code', '');
+                        record.set('payee_id', '');
+                    }
+                }
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="employee_list_ds">
+                <a:datas dataSource="/model/employeelist"/>
+            </a:dataSet>
+            <a:dataSet id="input_date_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="journal_date" defaultValue="${/model/sysdate/record/@now}" required="true"/>
+                    <a:field name="period_name" defaultValue="${/model/default_period_name/record/@period_name}" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="dateUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="typelist1_ds">
+                <a:datas dataSource="/model/typelist1"/>
+            </a:dataSet>
+            <a:dataSet id="currency_ds">
+                <a:datas dataSource="/model/currency"/>
+            </a:dataSet>
+            <a:dataSet id="typelist_ds">
+                <a:datas dataSource="/model/typelist"/>
+            </a:dataSet>
+            <a:dataSet id="statuslist_ds">
+                <a:datas dataSource="/model/statuslist"/>
+            </a:dataSet>
+            <a:dataSet id="closelist_ds">
+                <a:datas dataSource="/model/closelist"/>
+            </a:dataSet>
+            <a:dataSet id="requistion_query_ds" model="expm.EXP5040.exp_requistion_query">
+                <a:fields>
+                    <a:field name="employee_id_display" displayField="employeename" options="employee_list_ds" returnField="employee_id" valueField="employee_id"/>
+                    <!--<a:field name="type_item_display" displayField="description" options="typelist1_ds" returnField="type_item" valueField="expense_requisition_type_id"/>-->
+                    <a:field name="type_item_display" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="expm.EXP5040.exp_requestion_typelist" lovWidth="500" title="EXP_REQ_REF_TYPES.EXPENSE_REQUISITION_TYPE_ID">
+                        <a:mapping>
+                            <a:map from="expense_requisition_type_id" to="type_item"/>
+                            <a:map from="description" to="type_item_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="type_item"/>
+                    <a:field name="currency_code_display" displayField="currency_name" options="currency_ds" returnField="currency_code" valueField="currency_code"/>
+                    <!-- <a:field name="payee_category_display" displayField="code_value_name" options="typelist_ds" returnField="payee_category" valueField="code_value"/>
+                    <a:field name="payee_code" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="440" lovWidth="720" readOnly="true" title=" ">
+                        <a:mapping>
+                            <a:map from="code_name" to="payee_code"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="requisition_status_display" displayField="code_value_name" options="statuslist_ds" returnField="requisition_status" valueField="code_value"/>
+                    <a:field name="isclosed_display" displayField="code_value_name" options="closelist_ds" returnField="isclosed" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="queryUpdateFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="requistion_result_ds" autoPageSize="true" model="expm.EXP5040.exp_requistion_query" queryDataSet="requistion_query_ds" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="exp_requestion_duplication_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="reset" text="HAP_RESET" width="80"/>
+                <a:toolbarButton click="duplicate" text="FND_PRV_FUNC_GROUP.COPY" width="80"/>
+                <a:toolbarButton click="exchangeRateModify" text="EXP_EXPENSE_REPORT.EXCHANGE_RATE_MODIFY" width="80"/>
+                <a:toolbarButton click="querylog" text="LOOK_OVER_LOG" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="requistion_query_ds" resultTarget="requistion_result_ds" style="width:100%;border:none;">
+                <a:formToolBar>
+                    <a:textField name="requesition_number" bindTarget="requistion_query_ds" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER"/>
+                    <a:lov name="type_item_display" bindTarget="requistion_query_ds" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_TYPE_ID"/>
+                    <a:comboBox name="employee_id_display" bindTarget="requistion_query_ds" prompt="WORKFLOW_VIEW.APPLICANT"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:datePicker name="requesition_date_from" bindTarget="requistion_query_ds" prompt="EXP_REPORT_HEADERS.REQUISITION_DATE_FROM"/>
+                    <a:datePicker name="requesition_date_to" bindTarget="requistion_query_ds" prompt="EXP_REPORT_HEADERS.REQUISITION_DATE_TO"/>
+                    <a:comboBox name="currency_code_display" bindTarget="requistion_query_ds" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE"/>
+                    <a:numberField name="requisition_amount_from" allowFormat="true" bindTarget="requistion_query_ds" prompt="EXP_REQUISITION_HEADERS.REQUISITION_AMOUNT_FROM"/>
+                    <a:numberField name="requisition_amount_to" allowFormat="true" bindTarget="requistion_query_ds" prompt="EXP_REQUISITION_HEADERS.REQUISITION_AMOUNT_TO"/>
+                    <a:comboBox name="requisition_status_display" bindTarget="requistion_query_ds" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUSII"/>
+                    <a:comboBox name="isclosed_display" bindTarget="requistion_query_ds" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_CLOSE_STATUS"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:form id="exp_requestion_duplication_head_form" column="1" title="EXP_REQUISITION_HEADERS.REQUISITION_DATE">
+                <a:box id="exp_requestion_duplication_normal_box" column="4" style="width:100%;">
+                    <a:datePicker name="journal_date" bindTarget="input_date_ds" emptyText="EXP_REQUISITION_HEADERS.REQUISITION_DATE" prompt="EXP_REQUISITION_HEADERS.REQUISITION_DATE" renderer="Aurora.formatDate"/>
+                </a:box>
+            </a:form>
+            <a:grid id="exp_requestion_duplication_grid" bindTarget="requistion_result_ds" marginHeight="200" navBar="true">
+                <a:columns>
+                    <a:column name="exp_requisition_number" align="left" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER" renderer="reqNumRenderer" width="120"/>
+                    <a:column name="type_description" align="left" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_TYPE_ID" width="120"/>
+                    <a:column name="employee_name" align="left" prompt="WORKFLOW_VIEW.APPLICANT" width="120"/>
+                    <a:column name="requisition_date" align="center" prompt="WORKFLOW_VIEW.CREATION_DATE" width="80"/>
+                    <a:column name="currency_name" align="left" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE" width="120"/>
+                    <a:column name="quarter_num" align="right" prompt="EXP_REPORT_HEADERS.QUARTER_NUM" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="quarter_num_fun" align="right" prompt="EXPM_DUPLICATION.QUATER_NUM_FUN" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="usedamount" align="right" prompt="EXP_REQUISITION_HEADERS.REIMBURSED_NUM" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="usedquanlity" align="right" prompt="EXP_REQUISITION_HEADERS.REIMBURSED_ADU_NUM" width="100"/>
+                    <a:column name="requisition_status" align="left" prompt="BGT_COMPANY_VERSIONS.STATUS" width="120"/>
+                    <a:column name="description" align="left" prompt="WORKFLOW_VIEW.DESCRIPTION" width="150"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function expReqDupInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            　　    Ext.get('exp_requestion_duplication_head_form').setWidth(autoWidth + 4);       
+            	   $('exp_requestion_duplication_grid').setWidth(autoWidth);           
+            }
+            //Ext.fly(window).on('resize', expReqDupInitSize);
+            expReqDupInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

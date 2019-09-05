@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+	        select t.* from (
+			   select t.exp_report_header_id,
+			       t.company_id,
+			       t.amortization_flag,
+			       t.operation_unit_id,
+			       t.exp_report_number,
+			       t.exp_report_barcode,
+			       t.employee_id,
+			       ee.name employee_name,
+			       t.position_id,
+			       t.unit_id,
+			       t.payee_category,
+			       t.payee_id,
+			       t.exp_report_type_id,
+			       eet.description exp_report_type_desc,
+			       t.expense_user_group_id,
+			       t.currency_code,
+			       (select currency_name from gld_currency_vl gcv where gcv.currency_code = t.currency_code) currency_name,
+			       t.exchange_rate_type,
+			       t.exchange_rate_quotation,
+			       t.exchange_rate,
+			       to_char(t.report_date,'yyyy-mm-dd') report_date,
+			       t.period_name,
+			       t.report_status,
+			       aa.code_value_name report_status_desc,       
+			       t.audit_flag,
+			       t.audit_date,
+			       t.gld_interface_flag,
+			       t.attachment_num,
+			       t.description,
+			       t.write_off_status,
+			       t.write_off_completed_date,
+			       t.reversed_flag,
+			       t.source_exp_rep_header_id,
+			       (select sum(erl.report_amount) from exp_report_lines erl
+					where erl.exp_report_header_id = t.exp_report_header_id) report_amount,
+			        decode(t.je_creation_status,'SUCCESS','Y','N') je_creation_status
+				  from exp_report_headers t,
+			       exp_expense_report_types_vl eet,
+			       exp_employees ee,
+			       (select scv.code_value,scv.code_value_name 
+					from sys_codes sc,
+						 sys_code_values_vl scv
+					where sc.code_id =scv.code_id  
+					and sc.code ='EXP_EXPENSE_REPORT_STATUS'
+					and sc.enabled_flag ='Y'
+					and scv.enabled_flag ='Y') aa
+				 where t.company_id = ${/session/@company_id}
+			   and sys_user_secure_exit_pkg.exp_report_adjustment(t.exp_report_header_id,${/session/@session_id})='Y'
+			   and (t.audit_flag = 'Y' and nvl(gld_interface_flag,'P') !='Y' and reversed_flag is null and write_off_status ='N' )
+			   and t.report_status ='COMPLETELY_APPROVED'
+			   and t.exp_report_type_id = eet.expense_report_type_id(+)
+			   and t.employee_id = ee.employee_id(+)
+			   and t.report_status = aa.code_value(+)
+			   and  sys_user_secure_exit_pkg.exp_report_audit(t.exp_report_header_id,${/session/@session_id})='Y'
+			   and not exists (select 1 from gl_account_entry e where e.transaction_type = 'EXP_REPORT' and e.transaction_header_id = t.exp_report_header_id)
+			) t
+			#WHERE_CLAUSE# 
+			order by exp_report_number desc
+			
+			]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="exp_report_type_id" datatype="java.lang.Long" queryexpression="t.exp_report_type_id = ${@exp_report_type_id}"/>
+        <bm:query-field name="employee_id" datatype="java.lang.Long" queryexpression="t.employee_id =${@employee_id}"/>
+        <bm:query-field name="exp_report_number" datatype="java.lang.String" queryexpression="t.exp_report_number like &apos;%&apos;||${@exp_report_number}||&apos;%&apos;"/>
+        <bm:query-field name="report_date_f" datatype="java.lang.String" queryexpression="t.report_date &gt;= ${@report_date_f}"/>
+        <bm:query-field name="report_date_t" datatype="java.lang.String" queryexpression="t.report_date &lt;= ${@report_date_t}"/>
+        <bm:query-field name="currency_code" datatype="java.lang.String" queryexpression="t.currency_code like &apos;%&apos;||${@currency_code}||&apos;%&apos;"/>
+        <bm:query-field name="requisition_amount_from" datatype="java.lang.Long" queryexpression="(select sum(t.report_amount)   from exp_report_lines q   where q.exp_report_header_id = t.exp_report_header_id) &gt;=${@requisition_amount_from}"/>
+        <bm:query-field name="requisition_amount_to" datatype="java.lang.Long" queryexpression="(select sum(t.report_amount)  from exp_report_lines q   where q.exp_report_header_id = t.exp_report_header_id)&lt;=${@requisition_amount_to}"/>
+    </bm:query-fields>
+</bm:model>

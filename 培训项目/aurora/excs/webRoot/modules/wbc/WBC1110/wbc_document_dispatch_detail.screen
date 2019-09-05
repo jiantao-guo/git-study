@@ -1,0 +1,436 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: hyb  
+    $Date: 2011-12-19 涓嬪崍02:21:31  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autocount="true" model="wbc.wbc_node_action_type_list" rootpath="actions"/>
+        <a:model-query autocount="true" model="cux.CUX1000.cux_wbc_document_get_image_url" rootpath="cux_exp_img"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="wbc_doc_document_require_return_link" model="db.wbc_core_pkg.doc_process_require_return" modelaction="execute"/>
+        <a:link id="wbc_doc_document_reject_link" model="db.wbc_core_pkg.doc_process_reject" modelaction="execute"/>
+        <a:link id="wbc_doc_document_approve_link" model="db.wbc_core_pkg.doc_process_agree" modelaction="execute"/>
+        <a:link id="wbc_doc_document_process_link" model="db.wbc_core_pkg.doc_process" modelaction="execute"/>
+        <a:link id="hold_dispatch_link" model="db.cux_wbc_core_pkg.hold_dispatch" modelaction="execute"/>
+        <a:link id="unhold_dispatch_link" model="db.cux_wbc_core_pkg.unhold_dispatch" modelaction="execute"/>
+        <a:link id="back_scan_img_dispatch_link" model="db.cux_wbc_core_pkg.back_scan_img_dispatch" modelaction="execute"/>
+        <a:link id="wbc_refuse_reasons_link" url="${/request/@context_path}/modules/wbc/WBC1110/wbc_refuse_reasons.screen"/>
+        <style><![CDATA[
+        	#confirmbtn .item-btn-mc{
+			    background:transparent url(${/request/@context_path}/images/wfl/confirm.png);
+			}
+			
+			#refusebtn .item-btn-mc{
+			    background:transparent url(${/request/@context_path}/images/wfl/refuse.png);
+			}
+        
+			#backbtn .item-btn-mc{
+			    background:transparent url(${/request/@context_path}/images/wfl/back.png);
+			}
+			
+			#returnbtn .item-btn-mc{
+			    background:transparent url(${/request/@context_path}/images/wfl/return.png);
+			}
+			
+			#approve_div{
+			    position:fixed;
+			    top:24px;
+			    left:1px;
+			    width:99%;
+			    background-color:#c9e0e6;
+			    z-index:999;
+			}
+			
+			#approve_area{
+			    
+			}
+			
+			#approve_area table{
+			    border:none;
+			}
+			
+			#approve_area td{
+			    border:none;
+			    background:none;
+			}
+			
+			.operatingBtn{
+			    display:block;
+			    width:80px;
+			    height:30px;
+			    line-height:30px;
+			    text-align:center;
+			    border:1px solid #C7C7C7;
+			    background-color:#FFFFFF;
+			}
+			
+			.operatingBtn:hover{
+			    color:#005A78;
+			    background-color:#F7F7F7;
+			}
+			
+			#comments_placeholder{
+			    width:362px;
+			}
+			
+			#textarea{
+			    position:fixed;
+			    top:30px;
+			    left:93px;
+			    line-height:22px;
+			}
+			
+			#approve_placeholder{
+			    height:35px;
+			}
+			
+			
+			
+            #div_table{
+                margin-left:15px;
+                margin-top:5px;
+            }
+            td input{
+                width:56px;
+            }
+            #wbc_approve_header{
+                display:block;
+                width:1024px;
+                height:64px;
+                top:0px;
+                z-index:1;
+                padding-top:10px;
+                padding-left:8px;
+            }
+            #wbc_approve_header1{
+                display:block;
+                width:1024px;
+                height:20px;
+                top:0px;
+                z-index:1;
+                padding-top:2px;
+                padding-left:8px;
+            }
+            .btn_div{
+                float:right;
+                padding-top:20px;
+            }
+             .btn_div input:hover{
+                width:60px; 
+                height:26px;
+                border:1px solid #dadada;
+            }
+            .btn_div #require_return:hover{
+                width:104px; 
+                height:26px;
+                border:1px solid #dadada;
+            }
+            .btn_image{
+                padding-left:30px;
+                padding-top:6px;
+            }
+            
+            #process_option_div{
+                margin-left:15px;
+                margin-top:20px;
+            }
+            #process_table{
+                width:910px;
+                border:0px;
+                bgcolor:"#000000";
+                cellspacing:1px;
+                cellpadding:0;
+            }
+            #process_date{
+                width:120px;
+            }
+            #process_node{
+                width:120px;
+            }
+            #process_handler{
+                width:120px;
+            }
+            #process_position{
+                width:120px;
+            }
+        ]]></style>
+        <script><![CDATA[
+            var expandFlag = false;
+            
+            //add by Qu yuanyuan 增加选择拒绝原因
+            function cux_wbc_refuse(){
+                var url = /*${/request/@context_path}/modules/wbc/WBC1110/wbc_refuse_reasons.screen*/
+                $('wbc_refuse_reasons_link').getUrl();
+                new Aurora.Window({
+                    url: url,
+                    title: '拒绝原因',
+                    id: 'wbc_refuse_window',
+                    width: 600,
+                    height: 380
+                });
+            }
+            //end by Qu yuanyuan
+            
+            function approveFun(actionType) {
+                var value = document.getElementById('textarea').value;
+            
+                if (!value && actionType == -1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PLEASE_ENTER_REASONS}');
+                    return;
+                }
+            
+                var allActions = $('wbc_node_action_type_list').getAll();
+                var confirmActionId, refuseActionId, requestActionId, action_id;
+                for (var i = 0;i < allActions.length;i++) {
+                    if (allActions[i].get('action_type') == '1') {
+                        confirmActionId = allActions[i].get("action_id");
+                    }
+                    if (allActions[i].get('action_type') == '-1') {
+                        refuseActionId = allActions[i].get("action_id");
+                    }
+                    if (allActions[i].get('action_type') == '0') {
+                        requestActionId = allActions[i].get("action_id");
+                    }
+                }
+                if (actionType == 1) {
+                    action_id = confirmActionId;
+                } else if (actionType == -1) {
+                    action_id = refuseActionId;
+                } else if (actionType == 0) {
+                    action_id = requestActionId;
+                }
+                Aurora.request({
+                    url: $('wbc_doc_document_process_link').getUrl(),
+                    para: {
+                        user_id: '${/session/@user_id}',
+                        options: value,
+                        action_id: action_id,
+                        dispatch_head_id: Number('${/parameter/@dispatch_head_id}'),
+                        dispatch_line_id: Number('${/parameter/@dispatch_line_id}')
+                    },
+                    success: function(args) {
+                        operatingPageBack();
+                    },
+                    scope:this
+                });
+            }
+            
+            function operatingPageBack() {
+                // if (queryOperatingList) {
+                    // queryOperatingList();
+                // }
+                $('wbc_document_dispatch_detail').close();
+                 $('document_dispatch_ds').query();
+            }
+            
+            function toggleComment() {
+                if (!expandFlag) {
+                    expandFlag = true;
+                    Ext.get('textarea').setHeight(300, true);
+                    Ext.get('approve_div').setHeight(315, true);
+                    Ext.get('approve_placeholder').setHeight(310, true);
+                    Ext.get('toggle_comment_btn').dom.innerHTML = '${l:PROMPT.SHRINK}';
+                } else {
+                    expandFlag = false;
+                    Ext.get('textarea').setHeight(28, true);
+                    Ext.get('approve_div').setHeight(40, true);
+                    Ext.get('approve_placeholder').setHeight(35, true);
+                    Ext.get('toggle_comment_btn').dom.innerHTML = '${l:PROMPT.EXPAND}';
+                }
+            }
+            
+            function stopAutoViewBtn() {
+                if (operatingStopAutoView) {
+                    operatingStopAutoView();
+                }
+            
+                Aurora.showInfoMessage('提示', '取消自动阅单成功!');
+            }
+            
+            function holdDispatch() {
+                Aurora.request({
+                    url: $('hold_dispatch_link').getUrl(),
+                    para: {
+                        dispatch_line_id: '${/parameter/@dispatch_line_id}'
+                    },
+                    success: function() {
+                        Aurora.showInfoMessage('提示', '暂挂成功!', function() {
+                            //removeHoldDispatch('${/parameter/@dispatch_line_id}');
+                            operatingPageBack();
+                        });
+                    }
+                });
+            }
+            
+            function unholdDispatch() {
+                Aurora.request({
+                    url: $('unhold_dispatch_link').getUrl(),
+                    para: {
+                        dispatch_line_id: '${/parameter/@dispatch_line_id}'
+                    },
+                    success: function() {
+                        Aurora.showInfoMessage('提示', '取消暂挂成功!', function() {
+                            //queryOperatingList();
+                        });
+                    }
+                });
+            }
+            //add by Qu yuanyuan 退回影像补扫
+            function backScanImgBtn() {
+                Aurora.request({
+                    url: $('back_scan_img_dispatch_link').getUrl(),
+                    para: {
+                        dispatch_line_id: '${/parameter/@dispatch_line_id}'
+                    },
+                    success: function() {
+                        Aurora.showInfoMessage('提示', '单据退回影像补扫成功!', function() {
+                            //removeHoldDispatch('${/parameter/@dispatch_line_id}');
+                            operatingPageBack();
+                        });
+                    },
+                    scope:this
+                });
+            }
+            //end by Qu yuanyuan
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="wbc_node_action_type_list">
+                <a:datas datasource="/model/actions"/>
+            </a:dataSet>
+            <a:dataSet id="commit_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="dispatch_head_id"/>
+                    <a:field name="dispatch_line_id"/>
+                    <a:field name="options"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="approve_result_ds_detail_ds" loadData="true" model="wbc.WBC1110.wbc_dispatch_process_opinion" pageSize="100">
+                <a:fields>
+                    <a:field name="process_time"/>
+                    <a:field name="business_node_desc"/>
+                    <a:field name="process_state_desc"/>
+                    <a:field name="handler_desc"/>
+                    <a:field name="work_team_desc"/>
+                    <a:field name="process_opinion"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <div id="approve_div">
+            <table id="approve_area">
+                <tr>
+                    <td>
+                        <a class="operatingBtn" href="javascript:toggleComment();"><![CDATA[
+	            			${l:PROMPT.EXPAND}
+	            		]]></a>
+                    </td>
+                    <td>
+                        <div id="comments_placeholder"/>
+                    </td>
+                    <a:freeMarker><![CDATA[
+	                	
+	                		<#if model.getObject("actions").getChilds()  ??>
+		                		<#list model.getObject("actions").getChilds() as action >
+		                			<#if action.getString("action_type") == "1">
+			                			<td>
+								            <a class="operatingBtn" href="javascript:approveFun(1);">
+						            			同意
+						            		</a>
+						                </td>
+		                			</#if>
+		                			<#if action.getString("action_type") == "-1">
+			                			<td>
+								            <a class="operatingBtn" href="javascript:cux_wbc_refuse();">
+						            			拒绝
+						            		</a>
+						                </td>
+		                			</#if>
+		                			<#if action.getString("action_type") == "0">
+			                			<td>
+								            <a class="operatingBtn" href="javascript:approveFun(0);">
+						            			申请退回
+						            		</a>
+						                </td>
+		                			</#if>
+		                		</#list>
+	                		</#if>
+	                	
+	                ]]></a:freeMarker>
+                    <td>
+                        <a class="operatingBtn" href="javascript:operatingPageBack();"><![CDATA[
+	            			返回
+	            		]]></a>
+                    </td>
+                    <!-- 
+                    <td>
+                        <a class="operatingBtn" href="javascript:stopAutoViewBtn();"><![CDATA[
+	            			停止自动阅单
+	            		]]></a>
+                    </td>
+                    -->
+                    <!-- <td>
+                        <a class="operatingBtn" href="javascript:holdDispatch();"><![CDATA[
+	            			暂挂单据
+	            		]]></a>
+                    </td>
+                    <td>
+                        <a class="operatingBtn" href="javascript:unholdDispatch();"><![CDATA[
+	            			取消暂挂
+	            		]]></a>
+                    </td> -->
+                    <!--
+                    <td>
+                        <a class="operatingBtn" href="javascript:backScanImgBtn();"><![CDATA[
+	            			退回影像补扫
+	            		]]></a>
+                    </td>
+                    -->
+                </tr>
+            </table>
+            <a:textArea id="textarea" height="22" width="350"/>
+        </div>
+        <div id="approve_placeholder"/>
+        <div id="operate_container" style="width:100%;height:95%;">
+            <div id="docForm" style="float:left;display:block;">
+                <a:screen-include screen="${/parameter/@business_node_service_url}?head_id=${/parameter/@p_head_id}"/>
+                <a:form id="t_dispatch_form" padding="0" showMargin="false" style="display:block;margin-left:8px;" title="WFL_WORKFLOW_APPROVE.COMMENT">
+                    <a:table id="t_table" bindTarget="approve_result_ds_detail_ds" height="200" style="border:none">
+                        <a:columns>
+                            <a:column name="process_time" align="center" prompt="WFL_WORKFLOW_MESSAGE.MESSAGE_DATE" renderer="Aurora.formatDateTime" width="120"/>
+                            <a:column name="business_node_desc" align="center" prompt="WBC_DOCUMENT_DISPATCH_DETAIL.PROCESS_NODE" width="90"/>
+                            <a:column name="process_state_desc" align="center" prompt="WFL_WORKFLOW_APPROVAL.ACTION" width="90"/>
+                            <a:column name="handler_desc" align="center" prompt="WFL_WORKFLOW_APPROVE_RECORD.APPROVER_NAME" width="100"/>
+                            <a:column name="work_team_desc" align="center" prompt="WBC_DOCUMENT_DISPATCH_DETAIL.PROCESS_WORK_TEAM" width="120"/>
+                            <a:column name="process_opinion" prompt="WFL_WORKFLOW_APPROVE.COMMENT"/>
+                        </a:columns>
+                    </a:table>
+                </a:form>
+            </div>
+            <!-- <a:freeMarker><![CDATA[
+            <#list model.getObject("/model/cux_exp_img").getChilds() as cux_exp_img>
+            	<div id="imgForm" style="height:95%;width:${cux_exp_img.getString('cux_img_window_width')?number-5}px;display:block;float:left;margin-top:3px">
+	            	<iframe src="${cux_exp_img.getString('cux_wbc_doc_img_read_url')}" border="0" frameborder="0" width ="${cux_exp_img.getString('cux_img_window_width')?number-5}px" height="100%" style="border:none;"></iframe>
+				</div>
+			</#list>
+			<div id="clear_box" style="clear:both"/>
+            ]]></a:freeMarker> -->
+        </div>
+        <script purpose="auto_resize"><![CDATA[
+            function expInitSize() {
+                var vw = $A.getViewportWidth();
+                var marginWidth =35;
+                if(vw>1800){
+                	marginWidth = parseInt('${/model/cux_exp_img/record/@cux_img_window_width}') + 35;
+                }
+                
+                var autoWidth = vw - marginWidth;
+                Ext.get('t_dispatch_form').setWidth(autoWidth);
+                $('t_table').setWidth(autoWidth);
+            }
+            expInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

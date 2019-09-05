@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" baseTable="ptl_files_history" defaultOrderBy="t1.FILE_ID" extendMode="reference" needAccessControl="false">
+    <bm:fields>
+        <bm:field name="file_id"/>
+        <bm:field name="module_id"/>
+        <bm:field name="module_name"/>
+        <bm:field name="folder_id"/>
+        <bm:field name="folder_name" expression="ptl_file_pkg.get_folder_path(t1.folder_id)"/>
+        <bm:field name="file_name"/>
+        <bm:field name="file_type"/>
+        <bm:field name="file_type_name"/>
+        <bm:field name="doc_id"/>
+        <bm:field name="version"/>
+        <bm:field name="announcement_id"/>
+        <bm:field name="announcement_type_id"/>
+        <bm:field name="created_by_name"/>
+        <bm:field name="create_date"/>
+        <bm:field name="updated_by_name"/>
+        <bm:field name="update_date"/>
+        <bm:field name="attachment_id"/>
+        <bm:field name="ppt_content_length"/>
+        <bm:field name="pdf_content_length"/>
+        <bm:field name="tags"/>
+        <bm:field name="announcement_type_name"/>
+        <bm:field name="attach_id"/>
+        <bm:field name="file_unit_id"/>
+        <bm:field name="file_unit_name" prompt="所属部门"/>
+        <bm:field name="file_author_employee_id"/>
+        <bm:field name="file_author_employee_name" prompt="文档作者"/>
+        <bm:field name="atm_flag"/>
+        <bm:field name="preview_flag"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t1.FILE_ID,
+                    t1.MODULE_ID,
+                    (SELECT
+                        module_name
+                    FROM
+                        ptl_file_modules_vl v
+                    WHERE
+                        v.module_id = t1.module_id
+                    ) AS module_name,
+                    t1.FOLDER_ID,
+                    ptl_file_pkg.get_folder_path(t1.folder_id) AS folder_name,
+                    t1.FILE_NAME,
+                    t1.FILE_DESC,
+                    t1.FILE_TYPE,
+                    sys_code_pkg.get_sys_code_value_name('PTL_FILE_TYPE',t1.FILE_TYPE) AS file_type_name,
+                    t1.DOC_ID,
+                    t1.VERSION,
+                    t1.ANNOUNCEMENT_ID,
+                    t1.ANNOUNCEMENT_TYPE_ID,
+                    (SELECT
+                        name
+                    FROM
+                        exp_employees ee,
+                        sys_user su
+                    WHERE
+                        ee.employee_id = su.employee_id AND
+                        su.user_id     = t1.created_by
+                    ) AS created_by_name,
+                    TO_CHAR(t1.creation_date,'YYYY-MM-DD HH24:MI:SS') AS create_date,
+                    (SELECT
+                        name
+                    FROM
+                        exp_employees ee,
+                        sys_user su
+                    WHERE
+                        ee.employee_id = su.employee_id AND
+                        su.user_id     = t1.last_updated_by
+                    ) AS updated_by_name,
+                    TO_CHAR(t1.last_update_date,'YYYY-MM-DD HH24:MI:SS') AS update_date,
+                    t1.attachment_id,
+                    (SELECT
+                        content_length
+                    FROM
+                        ptl_doc_ppt_history pt
+                    WHERE
+                        pt.doc_id  = t1.doc_id AND
+                        pt.version = t1.version
+                    ) AS ppt_content_length,
+                    (SELECT
+                        content_length
+                    FROM
+                        ptl_doc_pdf_history pd
+                    WHERE
+                        pd.doc_id  = t1.doc_id AND
+                        pd.version = t1.version
+                    ) AS pdf_content_length,
+                    (SELECT
+                        TO_CHAR(wm_concat(t.tag_desc))
+                    FROM
+                        ptl_doc_tags t
+                    WHERE
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            ptl_doc_tag_ref r
+                        WHERE
+                            r.tag_id = t.tag_id AND
+                            r.doc_id = t1.doc_id
+                        )
+                    ) AS tags,
+                    (SELECT
+                        tv.type_name
+                    FROM
+                        ptl_announcement_types_vl tv
+                    WHERE
+                        tv.announcement_type_id = t1.announcement_type_id
+                    ) AS announcement_type_name,
+                    encrypt_pkg.encode(t1.attachment_id) AS attach_id,
+                    t1.file_unit_id,
+                    t1.file_author_employee_id,
+                    (SELECT description FROM exp_org_unit_vl v WHERE v.unit_id = t1.file_unit_id
+                    ) AS file_unit_name,
+                    (SELECT
+                        name
+                    FROM
+                        exp_employees ee
+                    WHERE
+                        ee.employee_id = t1.file_author_employee_id
+                    ) AS file_author_employee_name,
+                    ptl_announcement_pkg.ptl_resource_prv_new_check('PTL_FILES',t1.file_id,'ATM',${/session/@user_id}) AS atm_flag,
+                    ptl_announcement_pkg.ptl_resource_prv_new_check('PTL_FILES',t1.file_id,'PREVIEW',${/session/@user_id}) AS preview_flag
+                FROM
+                    ptl_files_history t1,ptl_files_publish t2,ptl_files t3 #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="root_folder_id" queryExpression=" t1.folder_id in (select folder_id from (select f.folder_name, f.folder_id, level as folder_level from ptl_file_folders_vl f start with f.folder_id = ${@root_folder_id} connect by f.parent_folder_id = prior f.folder_id) )"/>
+        <bm:query-field name="file_id" queryExpression=" t1.file_id = ${@file_id}"/>
+        <bm:query-field name="module_id" queryExpression="t1.module_id=${@module_id}"/>
+        <bm:query-field name="folder_id" queryExpression="t1.folder_id=${@folder_id}"/>
+        <bm:query-field name="version" queryExpression="t1.version = ${@version}"/>
+        <bm:query-field name="file_name" queryExpression="t1.file_name like ${@file_name}"/>
+        <bm:query-field name="creation_date_from" queryExpression="trunc(t1.creation_date) &gt;= to_date(${@creation_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="trunc(t1.creation_date) &lt;= to_date(${@creation_date_to},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="update_date_from" queryExpression="trunc(t1.last_update_date) &gt;= to_date(${@update_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="update_date_to" queryExpression="trunc(t1.last_update_date) &lt;= to_date(${@update_date_to},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="created_by" queryExpression="t1.created_by = ${@created_by}"/>
+        <bm:query-field name="updated_by" queryExpression="t1.last_updated_by = ${@updated_by}"/>
+        <bm:query-field name="announcement_type_id" queryExpression="t1.announcement_type_id=${@announcement_type_id}"/>
+        <bm:query-field name="file_type" queryExpression="t1.file_type=${@file_type}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression=" ptl_announcement_pkg.ptl_resource_prv_new_check(&apos;PTL_FILES&apos;,t1.file_id,&apos;READ&apos;,${/session/@user_id}) = &apos;Y&apos; and t1.file_id = t2.file_id and t1.version = t2.version and t1.file_id = t3.file_id and t3.file_status != &apos;DELETE&apos;"/>
+    </bm:data-filters>
+</bm:model>

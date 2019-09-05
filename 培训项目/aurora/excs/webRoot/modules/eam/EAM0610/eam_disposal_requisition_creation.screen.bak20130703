@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2013-3-27 下午2:20:10  
+    $Revision: 1.0  
+    $Purpose: 资产处置申请创建
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="eam.eam0310.eam0310_current_user_msg_query" rootPath="user_msg"/>
+        <a:model-query fetchAll="true" model="eam.eam0310.eam0310_sysdate_query" rootPath="sys_date"/>
+        <a:model-query fetchAll="true" model="eam.eam0310.eam0310_employee_primary_position" rootPath="primary_position"/>
+        <a:model-query fetchAll="true" model="eam.eam0310.eam0310_employee_assigns_lov" rootPath="employee"/>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[ 
+        	 
+            // 资产账簿改变时，申请类型随之改变
+            function onAssetBookChangeHandler(dataSet, record, name, value, oldvalue) {
+                
+                switch(name) {
+                    case 'asset_book_desc':
+                    record.set('requisition_type', null);
+                    if(!value) {
+                        record.getMeta().getField('requisition_type').setReadOnly(true); 
+                    } else {
+                        record.getMeta().getField('requisition_type').setReadOnly(false);
+                    }
+	                break;
+	                case 'req_employee_name': 
+                    record.set('org_position', null);
+                    record.set('asset_book_desc', null);
+                    record.set('requisition_type', null);
+                    record.getMeta().getField('asset_book_desc').setReadOnly(true);
+                    record.getMeta().getField('requisition_type').setReadOnly(true);
+	                if(!value) { 
+	                    record.getMeta().getField('org_position').setReadOnly(true);
+	                } else {
+	                    record.getMeta().getField('org_position').setReadOnly(false);
+	                }	
+	                break;
+	                case 'org_position':
+                    record.set('asset_book_desc', null);
+                    record.set('requisition_type', null);
+                    record.getMeta().getField('requisition_type').setReadOnly(true);
+                    if(!value) {
+                        record.getMeta().getField('asset_book_desc').setReadOnly(true);
+                    } else {
+                        record.getMeta().getField('asset_book_desc').setReadOnly(false);
+                    }
+	                break;
+                }
+            }
+            
+            // 保存申请头信息
+            function save() {
+                // 验证
+                var validate = $('req_form_ds').validate();
+                if(!validate) {
+                    return false;
+                }
+                
+                var data = {};
+                var record = $('req_form_ds').getCurrentRecord();
+                var position_id = '${/model/primary_position/record/@position_id}';
+                var unit_id = '${/model/primary_position/record/@unit_id}';
+                 
+                var base_trx_category = record.get('base_trx_category'); 
+                 
+                data = record.data;
+                data.position_id = position_id;
+                data.unit_id = unit_id;
+                
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/eam.eam0311.eam0311_requisition_headers_edit/insert',
+                    para: data,
+                    success: function(args) {
+                        var requisition_header_id = args.result.requisition_header_id;
+                        var asset_book_id = args.result.asset_book_id;
+                        var d_url = '';
+                        switch(base_trx_category) {
+    			        	case 'RET':
+	    			        d_url = '${/request/@context_path}/modules/eam/EAM0620/eam_disposal_req_update_details_ret.screen?requisition_header_id=' + requisition_header_id + '&asset_book_id=' + asset_book_id;
+	    			        break;
+	    			        case 'DPL':
+	    			        d_url = '${/request/@context_path}/modules/eam/EAM0620/eam_disposal_req_update_details_dpl.screen?requisition_header_id=' + requisition_header_id + '&asset_book_id=' + asset_book_id;
+	    			        break;
+	    			    }
+                        new Aurora.Window({
+	    			        id: 'disposal_details_window',
+	    			        url: d_url,
+	    			        title: '${l:EAM_REQUISITION_DPL_UPDATE}',
+	    			        fullScreen: true
+	    			    });
+                    } 
+                });
+            }
+           
+            // 点击岗位时查询
+            function onPositionFocusHandler() {
+                var record = $("req_form_ds").getCurrentRecord();
+                var employee_id = record.get("employee_id");
+                $('org_pos_ds').setQueryParameter('employee_id', employee_id);
+               	$('org_pos_ds').query();   
+            }
+             
+            // 点击账簿时查询 
+            function onAssetBookFocusHandler() {
+                var record = $("req_form_ds").getCurrentRecord();
+                var unit_id = record.get("unit_id");
+                if(!unit_id) {
+                    unit_id = '${/model/primary_position/record/@unit_id}';
+                }
+                $('asset_books_ds').setQueryParameter('unit_id', unit_id);
+               	$('asset_books_ds').query(); 
+            } 
+            
+            // 申请人
+            function onEmployeeFocusHandler() {
+                $('org_pos_ds').setQueryParameter('company_id', '${/session/@company_id}');
+                $('org_pos_ds').query();
+            }
+            
+            // 申请类型
+            function onReqTypeFocusHandler() {
+                var record = $("req_form_ds").getCurrentRecord();
+                var employee_id = record.get("employee_id");
+                var asset_book_id = record.get("asset_book_id");
+                $('req_type_ds').setQueryParameter('employee_id', employee_id);
+                $('req_type_ds').setQueryParameter('asset_book_id', asset_book_id);
+                $('req_type_ds').query();
+            }
+        ]]></script>
+        <!-- 声明dataSets -->
+        <a:dataSets>
+            <!-- 资产账簿DS -->
+            <a:dataSet id="asset_books_ds" model="eam.eam0310.eam0310_asset_books_query">
+                <a:fields>
+                    <a:field name="asset_book_id"/>
+                    <a:field name="asset_book_desc"/>
+                    <a:field name="unit_id"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 申请类型DS -->
+            <a:dataSet id="req_type_ds" model="eam.eam0610.eam0610_requisition_types_query">
+                <a:fields>
+                    <a:field name="requisition_type"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 岗位DS -->
+            <a:dataSet id="org_pos_ds" model="eam.eam0310.eam0310_exp_org_position_query">
+                <a:fields>
+                    <a:field name="position_id"/>
+                    <a:field name="unit_id"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 申请人DS -->
+            <a:dataSet id="employee_ds">
+                <a:datas dataSource="/model/employee"/>
+            </a:dataSet>
+            <!-- 申请头DS -->
+            <a:dataSet id="req_form_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="asset_book_id"/>
+                    <a:field name="period_name" defaultValue="${/model/sys_date/record/@period_name}"/>
+                    <a:field name="asset_book_desc" displayField="asset_book_desc" options="asset_books_ds" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" required="true" returnField="asset_book_id" valueField="asset_book_id"/>
+                    <a:field name="ast_requisition_type_id"/>
+                    <a:field name="user_group_id"/>
+                    <a:field name="requisition_type" displayField="description" options="req_type_ds" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_TYPE_CODE" readOnly="true" required="true" returnField="ast_requisition_type_id" valueField="ast_requisition_type_id">
+                        <a:mapping>
+                            <a:map from="user_group_id" to="user_group_id"/>
+                            <a:map from="base_trx_category" to="base_trx_category"/>
+                            <a:map from="ast_requisition_type_id" to="ast_requisition_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="base_trx_category"/>
+                    <a:field name="requisition_date" defaultValue="${/model/sys_date/record/@sys_date}" prompt="AST_REQUISITION_DATE" required="true"/>
+                    <a:field name="position_id" defaultValue="${/model/primary_position/record/@position_id}"/>
+                    <a:field name="unit_id" defaultValue="${/model/primary_position/record/@unit_id}"/>
+                    <a:field name="org_position" defaultValue="${/model/primary_position/record/@position_desc}" displayField="description" options="org_pos_ds" prompt="AST_REQUISITION_POSITION" required="true" returnField="position_id" valueField="position_id">
+                        <a:mapping>
+                            <a:map from="position_id" to="position_id"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="employee_id" defaultValue="${/model/user_msg/record/@employee_id}"/>
+                    <a:field name="req_employee_name" defaultValue="${/model/user_msg/record/@employee_name}" displayField="employee_name" options="employee_ds" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_PROPOSER" required="true" returnField="employee_id" valueField="employee_id"/>
+                    <a:field name="employee_name" defaultValue="${/model/user_msg/record/@employee_name}" prompt="AST_REQUISITION_ORIGINATOR" readOnly="true"/>
+                    <a:field name="req_desc" prompt="AST_REQUISITION_DESC"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onAssetBookChangeHandler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <!-- 申请头 -->
+            <a:form column="1" title="EAM_REQUISITION_DPL_CREATE" width="730">
+                <a:hBox width="730">
+                    <a:comboBox name="req_employee_name" bindTarget="req_form_ds">
+                        <a:events>
+                            <a:event name="focus" handler="onEmployeeFocusHandler"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:comboBox name="org_position" bindTarget="req_form_ds">
+                        <a:events>
+                            <a:event name="focus" handler="onPositionFocusHandler"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:textField name="employee_name" bindTarget="req_form_ds"/>
+                </a:hBox>
+                <a:hBox width="730">
+                    <a:comboBox name="asset_book_desc" bindTarget="req_form_ds">
+                        <a:events>
+                            <a:event name="focus" handler="onAssetBookFocusHandler"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:comboBox name="requisition_type" bindTarget="req_form_ds">
+                        <a:events>
+                            <a:event name="focus" handler="onReqTypeFocusHandler"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:datePicker name="requisition_date" bindTarget="req_form_ds"/>
+                </a:hBox>
+                <a:hBox width="730">
+                    <a:textArea name="req_desc" bindTarget="req_form_ds" width="632"/>
+                </a:hBox>
+                <a:button click="save" style="margin-left: 80px;" text="NEXT"/>
+            </a:form>
+        </a:screenBody>
+    </a:view>
+</a:screen>

@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    vv.*
+                FROM
+                    (SELECT --a.company_id,
+                        eah.asset_book_id,
+                        eah.asset_id,
+                        eah.tag_number, -- 卡片号
+                        eah.category_id,
+                        (SELECT DISTINCT
+                            eac.description
+                        FROM
+                            eam_asset_categories_vl eac
+                        WHERE
+                            eac.CATEGORY_ID   = eah.CATEGORY_ID AND
+                            eac.ASSET_BOOK_ID = eah.asset_book_id AND
+                            eac.ENABLED_FLAG  = 'Y'
+                        ) category_desc, -- 资产大类
+                        (SELECT
+                            fd.description_text
+                        FROM
+                            fnd_descriptions fd
+                        WHERE
+                            fd.description_id = eah.description_id AND
+                            fd.language       = ${/session/@lang}
+                        ) asset_name,   -- 资产名称
+                        eah.asset_code, -- 资产编号
+                        eah.status,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_code_values_v v
+                        WHERE
+                            v.code_value = eah.status AND
+                            v.code       = 'EAM_ASSET_STATUS'
+                        ) status_desc, -- 资产状态
+                        eah.responsibility_center_id,
+                        (SELECT
+                            fr.responsibility_center_name
+                        FROM
+                            fnd_responsibility_centers_vl fr
+                        WHERE
+                            fr.responsibility_center_id = eah.responsibility_center_id
+                        ) responsibility_center_name,                            -- 责任中心
+                        eah.responsibility_company_id responsibility_company_id, --20151113机构
+                        (SELECT
+                            fcv.company_short_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.COMPANY_ID = eah.responsibility_company_id
+                        ) responsibility_company_name,
+                        eah.entity_company_id,
+                        (SELECT
+                            fcv.company_short_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = eah.entity_company_id
+                        ) entity_company_name,
+                        eah.entity_unit_id,
+                        (SELECT
+                            eou.description
+                        FROM
+                            exp_org_unit_vl eou
+                        WHERE
+                            eou.unit_id = eah.entity_unit_id
+                        ) entity_unit_name, -- 管理部门
+                        eah.using_unit_id,
+                        (SELECT
+                            eou.description
+                        FROM
+                            exp_org_unit_vl eou
+                        WHERE
+                            eou.unit_id = eah.using_unit_id
+                        ) using_unit_name, -- 使用部门
+                        eah.user_people,
+                        (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = eah.user_people
+                        ) user_people_name, --使用人
+                        eah.serial_number,  -- 序列号
+                        eah.asset_source_type,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_code_values_v v
+                        WHERE
+                            v.code       = 'EAM_AST_SOURCE_TYPE' AND
+                            v.code_value = eah.asset_source_type
+                        ) asset_source_type_desc, -- 取得来源
+                        eah.lock_flag,            --锁定标志
+                        eah.currency_code,
+                        (SELECT
+                            vl.currency_name
+                        FROM
+                            gld_currency_vl vl
+                        WHERE
+                            vl.currency_code = eah.currency_code
+                        ) currency_desc,                                          -- 币种
+                        eah.reference_number,                                     --批准文号
+                        TO_CHAR(eah.start_use_date, 'yyyy-mm-dd') start_use_date, -- 启用日期
+                        eah.asset_unit,
+                        -- (select fu.description_text
+                        -- from fnd_uom_codes_vl fu
+                        -- where fu.uom_code = eah.asset_unit) as asset_unit_desc, -- 计量单位
+                        (
+                        SELECT
+                            v.code_value_name
+                        FROM
+                            sys_service_lookup_v v
+                        WHERE
+                            v.enabled_flag = 'Y' AND
+                            V.code_value   = eah.asset_unit AND
+                            code           = 'UNITS_OF_MEASUREMENT' AND
+                            language       = ${/session/@lang}
+                        ) AS asset_unit_desc,
+                        eah.quantity, -- 数量
+                        eah.price,    -- 单价
+                        eah.cost,     -- 总成本
+                        eah.category_sec_id,
+                        (SELECT DISTINCT
+                            eac.description_sec
+                        FROM
+                            eam_asset_categories_vl eac
+                        WHERE
+                            eac.CATEGORY_SEC_ID = eah.category_sec_id AND
+                            eac.ASSET_BOOK_ID   = eah.asset_book_id AND
+                            eac.ENABLED_FLAG    = 'Y'
+                        ) category_sec_desc, -- 资产小类
+                        eah.entity_class_id,
+                        (SELECT
+                            ec.description
+                        FROM
+                            eam_asset_entity_classes_vl ec
+                        WHERE
+                            ec.CLASS_ID = eah.ENTITY_CLASS_ID
+                        ) entity_class_desc, -- 实物分类
+                        (SELECT
+                            ec.CLASS_CODE
+                        FROM
+                            eam_asset_entity_classes_vl ec
+                        WHERE
+                            ec.CLASS_ID = eah.ENTITY_CLASS_ID
+                        ) entity_class_code, -- 实物code
+                        -- (select fcv.COMPANY_FULL_NAME
+                        -- from fnd_companies_vl fcv
+                        -- where fcv.COMPANY_ID = a.company_id) company_full_name, --机构全称
+                        eah.install_position, -- 安装位置
+                        eah.fin_class_id,
+                        (SELECT
+                            ef.description
+                        FROM
+                            eam_asset_fin_classes_vl ef
+                        WHERE
+                            ef.CLASS_ID = eah.fin_class_id
+                        ) fin_class_name, -- 财务分类
+                        (SELECT
+                            fi.original_cost
+                        FROM
+                            eam_asset_finance_info fi
+                        WHERE
+                            fi.asset_id = eah.ASSET_ID
+                        ) original_cost, -- 原始成本
+                        (SELECT
+                            fi.current_cost
+                        FROM
+                            eam_asset_finance_info fi
+                        WHERE
+                            fi.asset_id = eah.ASSET_ID
+                        ) current_cost, -- 当前成本
+                        (SELECT
+                            fi.accumulated_dep_amt
+                        FROM
+                            eam_asset_finance_info fi
+                        WHERE
+                            fi.asset_id = eah.ASSET_ID
+                        ) accumulated_dep_amt, -- 累计折旧
+                        (SELECT
+                            fi.annual_dep_amt
+                        FROM
+                            eam_asset_finance_info fi
+                        WHERE
+                            fi.asset_id = eah.ASSET_ID
+                        ) annual_dep_amt, -- 本年折旧
+                        (SELECT nvl(sum(t.dep_amount),0)
+		                  FROM eam_asset_dep_details t
+		                 WHERE t.period_name >= ${@period_name_from}
+		                 and t.period_name <= ${@period_name_to}
+		                   AND t.asset_id = eah.ASSET_ID) period_dep_amt,--期间折旧
+                        (SELECT
+                            fi.impairment_loss_amt
+                        FROM
+                            eam_asset_finance_info fi
+                        WHERE
+                            fi.asset_id = eah.ASSET_ID
+                        ) impairment_loss_amt, -- 减值准备
+                        (SELECT
+                            fi.life_in_month
+                        FROM
+                            eam_asset_finance_info fi
+                        WHERE
+                            fi.asset_id = eah.ASSET_ID
+                        ) used_month, -- 使用月数
+                        (SELECT
+                            fi.life_in_month
+                        FROM
+                            eam_asset_finance_info fi
+                        WHERE
+                            fi.asset_id = eah.ASSET_ID
+                        ) life_in_month, -- 寿命？
+                        (SELECT
+                            fi.remaining_life_in_month
+                        FROM
+                            eam_asset_finance_info fi
+                        WHERE
+                            fi.asset_id = eah.ASSET_ID
+                        ) remaining_life_in_month, -- 剩余月数
+                        (SELECT
+                            fi.depreciate_flag
+                        FROM
+                            eam_asset_finance_info fi
+                        WHERE
+                            fi.asset_id = eah.ASSET_ID
+                        ) depreciate_flag, -- 折旧标志
+                        eah.functional_unit_id,
+		               (SELECT v.description
+		                  FROM exp_org_unit_vl v
+		                 WHERE v.unit_id = eah.functional_unit_id) AS functional_unit_desc
+                    FROM
+                        eam_asset_headers eah,
+                        eam_asset_books a
+                    WHERE
+                        eah.asset_book_id = a.asset_book_id
+                    ) vv #WHERE_CLAUSE#
+                ORDER BY
+                    vv.tag_number
+            ]]></bm:query-sql>
+            <!-- by whf 20151110 -->
+            <!--   and a.company_id in (
+						           	select to_number(nvl(${@company_id}, ${/session/@company_id}))
+									  from dual
+									 where to_number(${@company_id}) != -999
+									union
+									select company_id
+									  from (select fr.company_id
+									          from fnd_companies fr
+									         start with fr.parent_company_id = nvl(${@company_id}, ${/session/@company_id})
+									        connect by fr.parent_company_id = prior fr.company_id)
+									 where 'Y' = ${@all_company_flag}
+									   and to_number(${@company_id}) != -999
+									union
+									 select fc.company_id
+							          from fnd_companies fc
+							         where fc.parent_company_id = ${/session/@company_id}
+							           and to_number(${@company_id}) = -999
+						           ) -->
+            <!--  and case when nvl(cux_common_pkg.current_company_lev(to_number(${/session/@user_id})),'LEV2') = 'LEV1' then
+						                 a.company_id
+						               else
+						                 to_number(${/session/@company_id})
+						               end = a.company_id
+				         -->
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="asset_book_id"/>
+        <bm:field name="asset_id"/>
+        <bm:field name="tag_number" prompt="卡片号"/>
+        <bm:field name="category_id"/>
+        <bm:field name="category_desc" prompt="资产大类"/>
+        <bm:field name="asset_name" prompt="资产名称"/>
+        <bm:field name="asset_code" prompt="资产编码"/>
+        <bm:field name="status"/>
+        <bm:field name="status_desc" prompt="资产状态"/>
+        <bm:field name="responsibility_center_id"/>
+        <bm:field name="responsibility_center_name" prompt="责任中心"/>
+        <bm:field name="entity_unit_id"/>
+        <bm:field name="entity_unit_name" prompt="管理部门"/>
+        <bm:field name="using_unit_id"/>
+        <bm:field name="using_unit_name" prompt="使用部门"/>
+        <bm:field name="user_people"/>
+        <bm:field name="user_people_name" prompt="使用人"/>
+        <bm:field name="serial_number" prompt="序列号"/>
+        <bm:field name="asset_source_type"/>
+        <bm:field name="asset_source_type_desc" prompt="取得来源"/>
+        <bm:field name="lock_flag" prompt="锁定标志"/>
+        <bm:field name="currency_code"/>
+        <bm:field name="currency_desc" prompt="币种"/>
+        <bm:field name="reference_number" prompt="批准文号"/>
+        <bm:field name="start_use_date" prompt="启用日期"/>
+        <bm:field name="asset_unit"/>
+        <bm:field name="asset_unit_desc" prompt="计量单位"/>
+        <bm:field name="quantity" prompt="数量"/>
+        <bm:field name="price" prompt="单价"/>
+        <bm:field name="cost" prompt="总成本"/>
+        <bm:field name="category_sec_id"/>
+        <bm:field name="category_sec_desc" prompt="资产小类"/>
+        <bm:field name="entity_class_id"/>
+        <bm:field name="entity_class_desc" prompt="实物分类"/>
+        <bm:field name="entity_class_code" prompt="实物code"/>
+        <!-- <bm:field name="company_full_name" prompt="机构全程"/> -->
+        <bm:field name="install_position" prompt="安装位置"/>
+        <bm:field name="fin_class_id"/>
+        <bm:field name="fin_class_name" prompt="财务分类"/>
+        <bm:field name="original_cost" prompt="原始成本"/>
+        <bm:field name="current_cost" prompt="当前成本"/>
+        <bm:field name="accumulated_dep_amt" prompt="累计折旧"/>
+        <bm:field name="annual_dep_amt" prompt="本年折旧"/>
+        <bm:field name="impairment_loss_amt" prompt="减值准备"/>
+        <bm:field name="used_month" prompt="使用月数"/>
+        <bm:field name="life_in_month" prompt="总月数"/>
+        <bm:field name="remaining_life_in_month" prompt="剩余月数"/>
+        <bm:field name="depreciate_flag" prompt="折旧标志"/>
+        <bm:field name="responsibility_company_id" prompt="机构id"/>
+        <bm:field name="responsibility_company_name" prompt="折旧承担机构"/>
+        <bm:field name="entity_company_id" prompt="机构id"/>
+        <bm:field name="entity_company_name" prompt="使用机构"/>
+        <bm:field name="period_dep_amt" prompt="期间折旧"/>
+        <bm:field name="functional_unit_id"/>
+        <bm:field name="functional_unit_desc"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="entity_unit_id" queryOperator="="/>
+        <bm:query-field field="using_unit_id" queryOperator="="/>
+        <bm:query-field name="use_date_from" queryExpression="vv.start_use_date&gt;=${@use_date_from}"/>
+        <bm:query-field name="use_date_to" queryExpression="vv.start_use_date&lt;=${@use_date_to}"/>
+        <bm:query-field field="install_position" queryOperator="like"/>
+        <bm:query-field field="asset_source_type" queryOperator="="/>
+        <bm:query-field field="status" queryOperator="="/>
+        <bm:query-field field="asset_book_id" queryOperator="="/>
+        <bm:query-field field="tag_number" queryOperator="like"/>
+        <bm:query-field field="asset_name" queryOperator="like"/>
+        <bm:query-field field="asset_code" queryOperator="like"/>
+        <bm:query-field field="serial_number" queryOperator="like"/>
+        <bm:query-field field="category_id" queryOperator="="/>
+        <bm:query-field field="category_sec_id" queryOperator="="/>
+        <bm:query-field field="fin_class_id" queryOperator="="/>
+        <bm:query-field field="entity_class_id" queryOperator="="/>
+        <bm:query-field field="responsibility_center_id" queryOperator="="/>
+        <bm:query-field field="entity_company_id" queryOperator="="/>
+        <bm:query-field name="responsibility_company_id" queryExpression="responsibility_company_id IN (SELECT company_id FROM (SELECT fc.company_id FROM fnd_companies fc START WITH fc.parent_company_id = to_number(${@responsibility_company_id}) CONNECT BY fc.parent_company_id = prior fc.company_id ) WHERE &apos;Y&apos; = ${@all_resp_company_flag} UNION SELECT to_number(${@responsibility_company_id}) AS company_id FROM dual )"/>
+        <bm:query-field name="entity_company_id" queryExpression="entity_company_id IN (SELECT company_id FROM (SELECT fc.company_id FROM fnd_companies fc START WITH fc.parent_company_id = to_number(${@entity_company_id}) CONNECT BY fc.parent_company_id = prior fc.company_id ) WHERE &apos;Y&apos; = ${@all_entity_company_flag} UNION SELECT to_number(${@entity_company_id}) AS company_id FROM dual )"/>
+        <!-- <bm:query-field field="company_id" queryOperator="="/> -->
+        <bm:query-field name="functional_unit_id" queryExpression="vv.functional_unit_id=${@functional_unit_id}"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        v.transaction_header_id,
+                        v.transaction_header_id payment_header_id,
+                        v.transaction_num,
+                        v.transaction_date,
+                        TO_CHAR(v.transaction_date, 'YYYY-MM-DD') p_transaction_date,
+                        v.currency_code,
+                        gld.currency_name,
+                        DECODE(
+                        (SELECT
+                            cwo.write_off_type FROM csh_write_off cwo WHERE cwo.csh_transaction_line_id = v.transaction_line_id AND
+                            rownum                                                                      = 1
+                        ), 'PAYMENT_EXPENSE_REPORT',
+                        (SELECT
+                            erh.exp_report_number
+                        FROM
+                            exp_report_headers erh,
+                            exp_report_pmt_schedules erps,
+                            csh_write_off cwo
+                        WHERE
+                            cwo.csh_transaction_line_id   = v.transaction_line_id AND
+                            erps.payment_schedule_line_id = cwo.document_line_id AND
+                            erps.exp_report_header_id     = erh.exp_report_header_id AND
+                            rownum                        = 1
+                        ), 'PAYMENT_PREPAYMENT',
+                        (SELECT
+                            h.requisition_number
+                        FROM
+                            csh_payment_requisition_hds h,
+                            csh_payment_requisition_lns l,
+                            csh_payment_requisition_refs r
+                        WHERE
+                            r.csh_transaction_line_id       = v.transaction_line_id AND
+                            r.payment_requisition_line_id   = l.payment_requisition_line_id AND
+                            l.payment_requisition_header_id = h.payment_requisition_header_id AND
+                            rownum                          = 1
+                        )) doc_number,
+                        DECODE(
+                        (SELECT
+                            cwo.write_off_type FROM csh_write_off cwo WHERE cwo.csh_transaction_line_id = v.transaction_line_id AND
+                            rownum                                                                      = 1
+                        ), 'PAYMENT_EXPENSE_REPORT', 'EXP_REPORT', 'PAYMENT_PREPAYMENT', 'PAYMENT_REQUISITION', '', 'ACP_REQUISITION', '') doc_type,
+                        DECODE(
+                        (SELECT
+                            cwo.write_off_type FROM csh_write_off cwo WHERE cwo.csh_transaction_line_id = v.transaction_line_id AND
+                            rownum                                                                      = 1
+                        ), 'PAYMENT_EXPENSE_REPORT',
+                        (SELECT
+                            erh.exp_report_header_id
+                        FROM
+                            exp_report_headers erh,
+                            exp_report_pmt_schedules erps,
+                            csh_write_off cwo
+                        WHERE
+                            cwo.csh_transaction_line_id   = v.transaction_line_id AND
+                            erps.payment_schedule_line_id = cwo.document_line_id AND
+                            erps.exp_report_header_id     = erh.exp_report_header_id AND
+                            rownum                        = 1
+                        ), 'PAYMENT_PREPAYMENT',
+                        (SELECT
+                            h.payment_requisition_header_id
+                        FROM
+                            csh_payment_requisition_hds h,
+                            csh_payment_requisition_lns l,
+                            csh_payment_requisition_refs r
+                        WHERE
+                            r.csh_transaction_line_id       = v.transaction_line_id AND
+                            r.payment_requisition_line_id   = l.payment_requisition_line_id AND
+                            l.payment_requisition_header_id = h.payment_requisition_header_id AND
+                            rownum                          = 1
+                        )) doc_header_id,
+                        v.transaction_amount,
+                        v.bank_account_code,
+                        v.bank_account_name,
+                        v.bank_account_num,
+                        v.partner_category,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'PAYMENT_OBJECT' AND
+                            b.code_value = v.partner_category
+                        ) p_partner_category,
+                        v.partner_id,
+                        DECODE(v.partner_category, 'EMPLOYEE',
+                        (SELECT
+                            ee.employee_code
+                            || '-'
+                            || ee.name
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id = v.partner_id
+                        ), 'VENDER',
+                        (SELECT
+                            svv.vender_code
+                            || '-'
+                            || svv.description
+                        FROM
+                            pur_system_venders_vl svv
+                        WHERE
+                            svv.vender_id = v.partner_id
+                        ), 'CUSTOMER',
+                        (SELECT
+                            scv.customer_code
+                            || '-'
+                            || scv.description
+                        FROM
+                            ord_system_customers_vl scv
+                        WHERE
+                            scv.customer_id = v.partner_id
+                        )) parener_code_name,
+                        v.document_num,
+                        v.user_name,
+                        v.user_desc,
+                        v.payment_method_id,
+                        v.agent_name,
+                        v.posted_flag,
+                        v.transaction_category,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'CSH_TRANSACTION_CATEGORY' AND
+                            b.code_value = v.transaction_category
+                        ) p_transaction_category,
+                        v.unreturned_amount
+                    FROM
+                        (SELECT
+                            v1.*,
+                            (NVL(
+                            (SELECT
+                                SUM(cwo.csh_write_off_amount)
+                            FROM
+                                csh_write_off cwo
+                            WHERE
+                                cwo.csh_transaction_line_id = v1.transaction_line_id AND
+                                cwo.gld_interface_flag      = 'P'
+                            ), 0) - NVL(
+                            (SELECT
+                                SUM(cwo.csh_write_off_amount)
+                            FROM
+                                csh_write_off cwo,
+                                csh_transaction_headers cth,
+                                csh_transaction_lines ctl
+                            WHERE
+                                cwo.csh_transaction_line_id  = ctl.transaction_line_id AND
+                                cth.source_payment_header_id = v1.transaction_header_id AND
+                                cth.transaction_header_id    = ctl.transaction_header_id
+                            ), 0)) unreturned_amount
+                        FROM
+                            csh_transaction_v v1
+                        WHERE
+                            v1.company_id IN
+                            (SELECT
+                                eea.company_id
+                            FROM
+                                exp_employee_assigns eea
+                            WHERE
+                                eea.employee_id =
+                                (SELECT
+                                    su.employee_id
+                                FROM
+                                    sys_user su
+                                WHERE
+                                    su.user_id = ${/session/@user_id}
+                                ) AND
+                                eea.enabled_flag = 'Y'
+                            ) AND
+                            v1.posted_flag      = 'Y' AND
+                            v1.transaction_type = 'PAYMENT' AND
+                            v1.returned_flag   IN ('Y', 'N') AND
+                            (
+                                v1.reversed_flag IS NULL OR
+                                v1.reversed_flag  = 'N'
+                            )
+                            AND
+                            v1.transaction_date >= to_date(${@transaction_date_from},'YYYY-MM-DD') AND
+                            v1.transaction_date <= to_date(${@transaction_date_to},'YYYY-MM-DD')
+                        ) v,
+                        gld_currency_vl gld
+                    WHERE
+                        v.unreturned_amount != 0 AND
+                        v.currency_code      = gld.currency_code(+)
+                    ) #WHERE_CLAUSE#
+                ORDER BY
+                    transaction_num DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="doc_type" expression="doc_type = &apos;PAYMENT_REQUISITION&apos;"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="partner_category" dataType="java.lang.String" queryExpression="PARTNER_CATEGORY like  &apos;%&apos;||${@partner_category}||&apos;%&apos;"/>
+        <bm:query-field name="partner_id" dataType="java.lang.String" queryExpression="PARTNER_ID like ${@partner_id}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="CURRENCY_CODE like  &apos;%&apos;||${@currency_code}||&apos;%&apos;"/>
+        <bm:query-field name="transaction_num" dataType="java.lang.String" queryExpression="TRANSACTION_NUM like &apos;%&apos;||${@transaction_num}||&apos;%&apos;"/>
+        <bm:query-field name="bank_account_code" dataType="java.lang.String" queryExpression="BANK_ACCOUNT_CODE like ${@bank_account_code}"/>
+        <bm:query-field name="payment_method_id" dataType="java.lang.String" queryExpression="PAYMENT_METHOD_ID like  &apos;%&apos;||${@payment_method_id}||&apos;%&apos;"/>
+        <bm:query-field name="user_name" dataType="java.lang.String" queryExpression="USER_NAME like  &apos;%&apos;||${@user_name}||&apos;%&apos;"/>
+        <bm:query-field name="agent_name" dataType="java.lang.String" queryExpression="AGENT_NAME like  &apos;%&apos;||${@agent_name}||&apos;%&apos;"/>
+        <bm:query-field name="transaction_category" dataType="java.lang.String" queryExpression="TRANSACTION_CATEGORY like  &apos;%&apos;||${@transaction_category}||&apos;%&apos;"/>
+        <bm:query-field name="contact_number" dataType="java.lang.String" queryExpression="CONTACT_NUMBER like  &apos;%&apos;||${@contact_number}||&apos;%&apos;"/>
+        <bm:query-field name="number_from" dataType="java.lang.Float" queryExpression="TRANSACTION_AMOUNT &gt;= ${@number_from}"/>
+        <bm:query-field name="number_to" dataType="java.lang.Float" queryExpression="TRANSACTION_AMOUNT &lt;= ${@number_to}"/>
+        <bm:query-field name="doc_number" queryExpression="doc_number = ${@doc_number}"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: qwm  
+    $Date: 2012-11-9 下午01:12:35  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="rpt_instance_sheet_filter_check_link" model="rpt.RPT1030.rpt_instance_sheet_filter_check" modelaction="execute"/>
+        <script type="text/javascript"><![CDATA[
+            function setinitdata(ds, record, index) {
+                record.set('assign_id', '${/parameter/@assign_id}');
+                record.set('filter_value', '');
+            }
+            
+            function init() {
+                $('instance_sheet_filter_result_ds').setQueryParameter('assign_id', '${/parameter/@assign_id}');
+                $('instance_sheet_filter_result_ds').query();
+            }
+            
+            function backtype() {
+                $('rpt_instance_sheet_filter_screen').close();
+            }
+            
+            function sortNumber(a, b) {
+                return a - b;
+            }
+            
+            function BubbleSort(array) {
+                var temp;
+                for (var i = 1;i < array.length;i++) {
+                    for (var j = array.length - 1;j >= i;j--) {
+                        if (array[j] < array[j - 1]) { //如果当前元素值比前一个元素小，就更换两个元素的位置，否则继续循环
+                            temp = array[j - 1]; //把前一个元素值存到临时变量中
+                            array[j - 1] = array[j]; //把当前元素值赋给前一个元素，实现连个元素位置的互调，大的在后面，小的在前面
+                            array[j] = temp; //把前一个元素值的存到当前元素的数组单元中，当第二次循环的时候当前元素的值不变，只不过位置靠前了
+                        }
+                    }
+                }
+                return array;
+            }
+            
+            function save_report() {
+                var ds = $('instance_sheet_filter_result_ds');
+                var records = ds.getAll();
+                var arrays = new Array();
+                var last_filter='';
+                var temp;
+                var temp2;
+                var last_filter_field;
+                var filter_field;
+                var logic_method;
+                var filter_value; 
+                var all_datas = $('instance_sheet_filter_result_ds').getJsonData(false);
+                for (var i = 0;i < records.length;i++) {
+                    //alert( records[m].get('filter_seq'));
+                    //for(var i=0;i<records.length;i++){
+                    filter_field=records[i].get('filter_field');
+                    if(records[i].get('filter_value_type')=='DATE'){
+                        last_filter_field='to_char('+filter_field+',\'yyyy-mm-dd\')';
+                    }else{
+                        last_filter_field=filter_field;
+                    }
+                   
+                    if(records[i].get('logic_method')==undefined){
+                        logic_method='';
+                    }
+                    else{
+                        logic_method=records[i].get('logic_method');
+                    }
+                    if(records[i].get('filter_value')==undefined){
+                        filter_value='';
+                    }
+                    else{
+                        filter_value=records[i].get('filter_value');
+                    }
+                    arrays[i] = new Array();
+                    if (records[i].get('filter_method')=='IS NULL' || records[i].get('filter_method')=='IS NOT NULL'){
+                        arrays[i][0] = records[i].get('filter_seq');
+                        arrays[i][1] = records[i].get('left_backets') + last_filter_field+' '+ records[i].get('filter_method')+ filter_value + records[i].get('right_backets')+ logic_method;
+                    }else{
+                    for (var j = 0;j < 2;j++) {
+                        arrays[i][0] = records[i].get('filter_seq');
+                        arrays[i][1] = records[i].get('left_backets') + last_filter_field+' '+ records[i].get('filter_method')+'\''+ filter_value+'\'' + records[i].get('right_backets')+ logic_method;
+            
+                    }
+                    }
+                    //}
+                }
+                for (var m = 1;m <records.length;m++) {
+                    for(var n = records.length - 1;n >= m;n--){                        
+                        if (arrays[n][0] < arrays[n-1][0]){
+                            temp = arrays[n-1][0];
+                            arrays[n-1][0] = arrays[n][0];
+                            arrays[n][0] = temp;
+                            
+                            temp2 = arrays[n-1][1];
+                            arrays[n-1][1] = arrays[n][1];
+                            arrays[n][1] = temp2;
+                        }
+                    }
+                     
+                }
+                for (var a = 0;a < records.length;a++){
+                    
+                   last_filter=last_filter+arrays[a][1];
+                }
+            
+                 Aurora.request({
+                 url: $('rpt_instance_sheet_filter_check_link').getUrl(),
+                 para: {
+                 'last_filter': last_filter,
+                 'instance_id': ${/parameter/@instance_id}
+                 },
+                 success: function(rst) {
+                 if(rst.result.v_checked==-1)
+                 {
+                      Aurora.showErrorMessage('警告','您输入的条件错误，请修改。');
+                 }
+                 else
+                 {
+                     //Aurora.showErrorMessage('成功','您保存成功');
+                     $('instance_sheet_filter_result_ds').submit();
+                 return;
+                 }
+                 },
+                 scope: this,
+                 sync: true
+                 }); 
+            
+            
+            }
+            
+            function editFunction(record, name) {
+                	var data_type = record.get('filter_value_type');
+                	if (data_type == 'NUMBER') {
+                    	return 'sheet_filter_nf';
+                	}
+                	else if (data_type == 'DATE') {
+                    	return 'sheet_filter_dp';
+                	}
+                	else if (data_type == 'VARCHAR2') {
+                    	return 'sheet_filter_tf';
+                	}
+                	return '';
+                
+            }
+            function renderer_value(value,record, name)
+            {
+            	
+                var data_type = record.get('filter_value_type');
+                //var value=record.get('filter_value');
+                if(data_type == 'DATE'){
+                	value=Aurora.formatDate(value);
+                	
+                }
+                    record.set('filter_value',value);
+                    return value;
+                    
+            }
+            
+            function change_value(ds,record, name, value,oldvalue )
+            {
+            	if(name=='filter_field')
+            	{
+            		record.set('filter_value','');
+            	}
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="operator_ds" lookupCode="RPT_INSTANCE_METHOD"/>
+            <a:dataSet id="leftBracket_ds">
+                <a:datas>
+                    <a:record name=" " value=" "/>
+                    <a:record name="(" value="("/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="rightBracket_ds">
+                <a:datas>
+                    <a:record name=" " value=" "/>
+                    <a:record name=")" value=")"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="logic_ds">
+                <a:datas>
+                    <a:record code_value=" " code_value_name=" "/>
+                    <a:record code_value="OR" code_value_name="OR"/>
+                    <a:record code_value="AND" code_value_name="AND"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="instance_sheet_filter_query_ds" loadData="true" model="rpt.RPT1030.rpt_instance_sheet_assign">
+                <a:fields>
+                    <a:field name="sheet_name" prompt="RPT_REPORT_SHEETS.RPT_SHEET_NAME" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="instance_sheet_filter_result_ds" fetchAll="true" model="rpt.RPT1030.rpt_instance_sheet_filter" queryDataSet="instance_sheet_filter_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="filter_field" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovService="rpt.RPT1020.rpt_datasource_field_lov?datasource_id=${/parameter/@datasource_id}" lovWidth="400" prompt="RPT_INSTANCE_SHEET_FILTER.FILTER_FIELD" title="RPT_INSTANCE_SHEET_FILTER.FILTER_FIELD">
+                        <a:mapping>
+                            <a:map from="field_name" to="filter_field"/>
+                            <a:map from="field_title" to="filter_field_title"/>
+                            <a:map from="field_type" to="filter_value_type"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="left_backets" displayField="name" options="leftBracket_ds" returnField="left_backets" valueField="value"/>
+                    <a:field name="right_backets" displayField="name" options="rightBracket_ds" returnField="right_backets" valueField="value"/>
+                    <a:field name="logic_method" displayField="code_value" options="logic_ds" returnField="logic_operator" valueField="code_value"/>
+                    <a:field name="filter_method"/>
+                    <a:field name="filter_method_display" displayField="code_value_name" options="operator_ds" returnField="filter_method" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="setinitdata"/>
+                    <a:event name="update" handler="change_value"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:fieldSet column="1" labelWidth="120" title="RPT_INSTANCE_SHEET_FILTER.FILTER" width="400">
+                <a:label name="sheet_name" bindTarget="instance_sheet_filter_query_ds" prompt="RPT_REPORT_SHEETS.SHEET_NAME"/>
+            </a:fieldSet>
+            <!-- <a:hBox>
+                <a:button click="save_report" text="保存报表"/>
+            </a:hBox> -->
+            <a:grid id="grid" bindTarget="instance_sheet_filter_result_ds" height="370" navBar="true" width="700">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <!-- <a:button type="save"/> -->
+                    <a:button click="save_report" icon="${/request/@context_path}/images/save.gif" text="PROMPT.SAVE"/>
+                    <a:button type="delete"/>
+                    <a:button type="clear"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="filter_seq" editor="sheet_filter_nf" width="80"/>
+                    <a:column name="left_backets" editor="sheet_filter_cb" width="80"/>
+                    <a:column name="filter_field" editor="sheet_filter_lov" width="80"/>
+                    <a:column name="filter_method_display" editor="sheet_filter_cb" prompt="RPT_INSTANCE_SHEET_FILTER.FILTER_METHOD" width="80"/>
+                    <a:column name="filter_value" editor="sheet_filter_tf" editorFunction="editFunction" prompt="RPT_INSTANCE_SHEET_FILTER.FILTER_VALUE" renderer="renderer_value" width="80"/>
+                    <!-- <a:column name="filter_value_type" editor="sheet_filter_tf" width="80"/> -->
+                    <a:column name="right_backets" editor="sheet_filter_cb" width="80"/>
+                    <a:column name="logic_method" editor="sheet_filter_cb" width="150"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="sheet_filter_cb"/>
+                    <a:textField id="sheet_filter_tf"/>
+                    <a:lov id="sheet_filter_lov"/>
+                    <a:numberField id="sheet_filter_nf" allowDecimals="false" allowNegative="false"/>
+                    <a:datePicker id="sheet_filter_dp"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+           init();
+        ]]></script>
+    </a:view>
+</a:screen>

@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    (SELECT e.name FROM EXP_EMPLOYEES e WHERE e.employee_id=v.employee_id
+                    ) applicant,
+                    (SELECT
+                        S.DESCRIPTION
+                    FROM
+                        acp_company_acp_req_types T,
+                        acp_sys_acp_req_types_vl S
+                    WHERE
+                        T.ACP_REQ_TYPE_ID = S.ACP_REQ_TYPE_ID AND
+                        T.ENABLED_FLAG    = 'Y' AND
+                        T.COMPANY_ID      = ${/session/@company_id} AND
+                        t.ACP_REQ_TYPE_ID =v.acp_req_type_id
+                    )req_type_desc,
+                    (SELECT
+                        DECODE(vl.ebanking_flag, 'Y', vl.description
+                        ||'-网银', vl.description
+                        ||'-手工') description
+                    FROM
+                        csh_payment_methods_vl vl
+                    WHERE
+                        vl.enabled_flag     = 'Y' AND
+                        vl.payment_method_id=v.payment_method_id
+                    ) payment_method,
+                    (SELECT
+                        B.CODE_VALUE_NAME
+                    FROM
+                        SYS_CODES_VL A,
+                        SYS_CODE_VALUES_VL B
+                    WHERE
+                        A.CODE_ID   = B.CODE_ID AND
+                        A.CODE      = 'PAYMENT_OBJECT' AND
+                        b.code_value=v.partner_category
+                    ) partner_category_display,
+                    DECODE(V.PARTNER_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        EE.EMPLOYEE_CODE
+                        || '-'
+                        || EE.NAME
+                    FROM
+                        EXP_EMPLOYEES EE
+                    WHERE
+                        EE.EMPLOYEE_ID = V.PARTNER_ID
+                    ), 'VENDER',
+                    (SELECT
+                        SVV.VENDER_CODE
+                        || '-'
+                        || SVV.DESCRIPTION
+                    FROM
+                        PUR_SYSTEM_VENDERS_VL SVV
+                    WHERE
+                        SVV.VENDER_ID = V.PARTNER_ID
+                    ), 'CUSTOMER',
+                    (SELECT
+                        SCV.CUSTOMER_CODE
+                        || '-'
+                        || SCV.DESCRIPTION
+                    FROM
+                        ORD_SYSTEM_CUSTOMERS_VL SCV
+                    WHERE
+                        SCV.CUSTOMER_ID = V.PARTNER_ID
+                    ), NULL) P_PARTNER_NAME,
+                    DECODE(V.PARTNER_CATEGORY, 'EMPLOYEE',
+                    (SELECT EE.NAME FROM EXP_EMPLOYEES EE WHERE EE.EMPLOYEE_ID = V.PARTNER_ID
+                    ), 'VENDER',
+                    (SELECT
+                        SVV.DESCRIPTION
+                    FROM
+                        PUR_SYSTEM_VENDERS_VL SVV
+                    WHERE
+                        SVV.VENDER_ID = V.PARTNER_ID
+                    ), 'CUSTOMER',
+                    (SELECT
+                        SCV.DESCRIPTION
+                    FROM
+                        ORD_SYSTEM_CUSTOMERS_VL SCV
+                    WHERE
+                        SCV.CUSTOMER_ID = V.PARTNER_ID
+                    ), NULL) P_PAYEE_NAME_DESC,
+                    DECODE(V.PARTNER_CATEGORY, 'VENDER',
+                    (SELECT
+                        SVV.ADDRESS
+                    FROM
+                        pur_system_venders_vl SVV
+                    WHERE
+                        SVV.VENDER_ID = V.PARTNER_ID
+                    ), 'CUSTOMER',
+                    (SELECT
+                        SCV.ADDRESS
+                    FROM
+                        ORD_SYSTEM_CUSTOMERS_VL SCV
+                    WHERE
+                        SCV.CUSTOMER_ID = v.PARTNER_ID
+                    ), NULL) ADDRESS ,
+                    DECODE(V.PARTNER_CATEGORY, 'VENDER',
+                    (SELECT
+                        SVV.BANK_BRANCH_CODE
+                    FROM
+                        pur_system_venders_vl SVV
+                    WHERE
+                        SVV.VENDER_ID = V.PARTNER_ID
+                    ), 'CUSTOMER',
+                    (SELECT
+                        SCV.BANK_BRANCH_CODE
+                    FROM
+                        ORD_SYSTEM_CUSTOMERS_VL SCV
+                    WHERE
+                        SCV.CUSTOMER_ID = v.PARTNER_ID
+                    ), 'EMPLOYEE',
+                    (SELECT
+                        EMP.BANK_OF_DEPOSIT
+                    FROM
+                        EXP_EMPLOYEES EMP
+                    WHERE
+                        EMP.EMPLOYEE_ID = v.PARTNER_ID
+                    ), NULL) BANK_BRANCH_CODE ,
+                    DECODE(V.PARTNER_CATEGORY, 'VENDER',
+                    (SELECT
+                        SVV.BANK_ACCOUNT_CODE
+                    FROM
+                        pur_system_venders_vl SVV
+                    WHERE
+                        SVV.VENDER_ID = V.PARTNER_ID
+                    ), 'CUSTOMER',
+                    (SELECT
+                        SCV.BANK_ACCOUNT_CODE
+                    FROM
+                        ORD_SYSTEM_CUSTOMERS_VL SCV
+                    WHERE
+                        SCV.CUSTOMER_ID = v.PARTNER_ID
+                    ), 'EMPLOYEE',
+                    (SELECT
+                        EMP.BANK_ACCOUNT
+                    FROM
+                        EXP_EMPLOYEES EMP
+                    WHERE
+                        EMP.EMPLOYEE_ID = v.PARTNER_ID
+                    ), NULL) BANK_ACCOUNT_CODE,
+                    (SELECT
+                        B.CODE_VALUE_NAME
+                    FROM
+                        SYS_CODES_VL A,
+                        SYS_CODE_VALUES_VL B
+                    WHERE
+                        A.CODE_ID    = B.CODE_ID AND
+                        A.CODE       = 'PAYMENT_REQUISITION_STATUS' AND
+                        B.CODE_VALUE = V.P_STATUS
+                    ) STATUS_NAME
+                FROM
+                    (SELECT
+                        CPRH.ACP_REQUISITION_HEADER_ID,
+                        CPRH.EMPLOYEE_ID,
+                        TO_CHAR(CPRH.REQUISITION_DATE, 'YYYY-MM-DD') REQUISITION_DATE,
+                        CPRH.CURRENCY_CODE,
+                        CPRH.REQUISITION_NUMBER,
+                        CPRH.PARTNER_CATEGORY,
+                        CPRH.PARTNER_ID,
+                        CPRH.AMOUNT,
+                        CPRH.PAYMENT_METHOD_ID,
+                        CPRH.DESCRIPTION,
+                        CPRH.OPERATION_UNIT_ID,
+                        CPRH.POSITION_ID,
+                        (SELECT
+                            (T.POSITION_CODE
+                            ||'-'
+                            ||T.DESCRIPTION) PARENT_POS_DESC
+                        FROM
+                            EXP_ORG_POSITION_VL T
+                        WHERE
+                            T.ENABLED_FLAG ='Y' AND
+                            T.POSITION_ID  = CPRH.POSITION_ID AND
+                            T.COMPANY_ID   = CPRH.COMPANY_ID
+                        ) POS_DESC ,
+                        (SELECT
+                            (T.POSITION_CODE
+                            ||'-'
+                            ||T.DESCRIPTION) PARENT_POS_DESC
+                        FROM
+                            EXP_ORG_POSITION_VL T ,
+                            EXP_EMPLOYEE_ASSIGNS_V EMP
+                        WHERE
+                            T.ENABLED_FLAG            ='Y' AND
+                            T.POSITION_ID             = EMP.POSITION_ID AND
+                            T.COMPANY_ID              = CPRH.COMPANY_ID AND
+                            EMP.EMPLOYEE_ID           = CPRH.EMPLOYEE_ID AND
+                            EMP.PRIMARY_POSITION_FLAG = 'Y' AND
+                            EMP.assign_enabled_flag   = 'Y' AND
+                            EMP.employee_enabled_flag = 'Y'
+                        ) PARENT_POS_DESC ,
+                        CPRH.STATUS P_STATUS,
+                        CPRH.PAYMENT_COM_ID,
+                        (SELECT
+                            fc.COMPANY_SHORT_NAME
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = CPRH.PAYMENT_COM_ID
+                        ) COMPANY_SHORT_NAME,
+                        CPRH.ACP_REQ_TYPE_ID ,
+                        CPRH.SOURCE_TYPE
+                    FROM
+                        ACP_ACP_REQUISITION_HDS CPRH
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

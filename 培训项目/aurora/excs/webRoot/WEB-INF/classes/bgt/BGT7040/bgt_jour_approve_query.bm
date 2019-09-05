@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Administrator  
+    $Date: 2017-7-25 上午9:49:10  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" baseTable="BGT_JOUR_RELEASE_HEADERS">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT o.*,
+			       (SELECT fcv.company_code
+			          FROM fnd_companies_vl fcv
+			         WHERE fcv.company_id = o.company_id) company_code,
+			       (SELECT fcv.company_short_name
+			          FROM fnd_companies_vl fcv
+			         WHERE fcv.company_id = o.company_id) company_name,
+			        nvl((SELECT SUM(bbr.amount)
+             FROM bgt_budget_reserves bbr
+            WHERE bbr.reserve_company_id = o.company_id
+              AND bbr.budget_item_id = o.budget_item_id
+              AND bbr.period_name >= nvl(${@period_name_from}, bbr.period_name)
+              AND bbr.period_name <= nvl(${@period_name_to}, bbr.period_name)
+              AND bbr.status = 'P'),
+           0) reserve_amount
+			  FROM (SELECT fc.company_id,
+			               l.budget_item_id,
+			               bbi.budget_item_code,
+			               bbi.description budget_item_name,
+			               biv.description budget_item_types,
+			               SUM(decode(h.status, 'SUBMITTED', l.amount, 0)) submit_amount,
+			               SUM(decode(h.status, 'APPROVED', l.amount, 0)) approve_amount,
+			               SUM(decode(h.status, 'POSTED', l.amount, 0)) post_amount
+			          FROM bgt_journal_lines        l,
+			               bgt_journal_headers      h,
+			               fnd_companies            fc,
+			               bgt_budget_item_types_vl biv,
+			               bgt_budget_items_vl      bbi
+			         WHERE l.journal_header_id = h.journal_header_id
+			           AND h.status IN ('POSTED', 'APPROVED', 'SUBMITTED')
+			           AND biv.budget_item_type_id = bbi.budget_item_type_id
+			           AND bbi.budget_item_id = l.budget_item_id
+			           AND l.company_id = fc.company_id
+			           AND fc.company_code = nvl(${@company_code}, fc.company_code)
+			           AND l.line_period_name >= nvl(${@period_name_from}, l.line_period_name)
+			           AND l.line_period_name <= nvl(${@period_name_to}, l.line_period_name)
+			           AND biv.budget_item_type_code =
+			               nvl(${@budget_item_type_code}, biv.budget_item_type_code)
+			           AND bbi.budget_item_code = nvl(${@budget_item_code}, bbi.budget_item_code)
+			         GROUP BY fc.company_id,
+			                  l.budget_item_id,
+			                  bbi.budget_item_code,
+			                  bbi.description,
+			                  biv.description) o
+			         order by o.company_id
+
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

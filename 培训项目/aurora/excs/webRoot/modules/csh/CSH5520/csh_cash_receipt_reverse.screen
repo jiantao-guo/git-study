@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wby  
+    $Date: 2013-2-20 下午1:46:29  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="csh.payment_method_with_ebank_list" rootPath="payment_method_list"/>
+        <a:model-query fetchAll="true" model="expm.exp_rate_quotation" rootPath="rate_quotation"/>
+        <a:model-query model="csh.CSH5315.csh_partner_category_list" rootPath="partner_category_list"/>
+        <a:model-query defaultwhereclause="t1.ENABLED_FLAG =&apos;Y&apos;" fetchAll="true" model="gld.gld_exchangerate_types_vl" rootPath="exchangerate_types"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="get_precision_link" model="gld.gld_currency_vl" modelaction="query"/>
+        <a:link id="csh_transaction_reverse_link" model="csh.CSH5520.csh_cash_receipt_reverse" modelaction="execute"/>
+        <script><![CDATA[
+        
+        	function getFunctionAmount(record,value){
+        	    if(value == ''){
+        	        record.set('function_amount','');
+        	        return;
+        	    }
+    	    	var quotation = record.get('exchange_rate_quotation');
+            	var a = value;
+            	var b = record.get('exchange_rate');
+            	var currency_code = record.get('currency_code');
+            	Aurora.request({
+            	    url:$('get_precision_link').getUrl(),
+            	    para: {
+                        currency_code: currency_code
+                    },
+            	    success: function(res){
+            	        var records = res.result.record;
+            	        var precision='';
+            	        if (records.length) {
+                            precision = records[0].precision;
+                        } else {
+                            precision = records.precision;
+                        }
+                        var function_amount='';
+            	        if (quotation == 'DIRECT QUOTATION') {
+                			 function_amount = isNaN(a * b) ? '' : Aurora.formatMoney((a * b).toFixed(precision));
+            			 } else {
+                			 function_amount = isNaN(a / b) ? '' : Aurora.formatMoney((a / b).toFixed(precision));
+            			 }
+            			 record.set('function_amount',function_amount);
+            	    },
+            	    scope: this
+            	});
+        	}
+        	
+        	function header_load(){
+        	    var header_record = $('csh_cash_receipt_header_ds').getAt(0);
+        	    var date = new Date();
+	            var day = date.getDate() < 10 ? "0" + date.getDate() : date.getDate();
+	            var month = (date.getMonth() + 1) < 10 ? "0" + (date.getMonth() + 1) : (date.getMonth() + 1);
+	            var dates = date.getFullYear() + "-" + month + "-" + day;
+	            header_record.set('reverse_date',dates);
+        	}
+        	
+        	function line_load(){
+        	    var record = $('csh_cash_receipt_lines_ds').getAt(0);
+        	    var amount = record.get('transaction_amount');
+        	    getFunctionAmount(record,amount);
+        	}
+        	
+            
+            function returnFunc(){
+                $('csh_cash_receipt_reverse_win').close();
+            }
+            
+            function reverseFunc(){
+               var transaction_header_id = $('csh_cash_receipt_header_ds').getAt(0).get('transaction_header_id');
+               Aurora.request({
+                   url: $('csh_transaction_reverse_link').getUrl(),
+                   para: {
+                       transaction_header_id: transaction_header_id,
+                       reverse_date : $('csh_cash_receipt_header_ds').getAt(0).get('reverse_date')
+                   },
+                   success: function(res){
+                       var reverse_header_id = res.result.reverse_header_id;
+                       showReverse(reverse_header_id);
+                   },
+                   scope:this
+               });
+            }
+            
+            function Convert(value, record, name) {
+                if(value){
+            	var s = value;
+            	 s += "";
+            	 if (s.indexOf(".") == -1){ s += ".00";}
+            	 if (/\.\d$/.test(s)){ s += "0";}   //正则判断
+                 while (/\d{4}(\.|,)/.test(s)){
+            	 	s = s.replace(/(\d)(\d{3}(\.|,))/, "$1,$2"); 
+            	 }       
+            	   return s;  
+                }else{
+                    return '';
+                }      
+           }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="csh_cash_transaction_category_ds" lookupCode="CSH_TRANSACTION_CATEGORY"/>
+            <a:dataSet id="csh_cash_dr_cr_ds" lookupCode="DR_CR_FLAG"/>
+            <a:dataSet id="csh_cash_payment_method_ds">
+                <a:datas dataSource="/model/payment_method_list"/>
+            </a:dataSet>
+            <a:dataSet id="exchangerate_types_ds">
+                <a:datas dataSource="/model/exchangerate_types"/>
+            </a:dataSet>
+            <a:dataSet id="rate_quotation_ds">
+                <a:datas dataSource="/model/rate_quotation"/>
+            </a:dataSet>
+            <a:dataSet id="partner_category_list_ds">
+                <a:datas dataSource="/model/partner_category_list"/>
+            </a:dataSet>
+            <a:dataSet id="transaction_id_ds" autoCreate="true"/>
+            <a:dataSet id="csh_cash_receipt_header_ds" autoCreate="true" model="csh.CSH5315.csh_transaction_headers" queryDataSet="transaction_id_ds">
+                <a:fields>
+                    <a:field name="transaction_num"/>
+                    <a:field name="created_by"/>
+                    <a:field name="transaction_category_display" displayField="code_value_name" options="csh_cash_transaction_category_ds" required="true" returnField="transaction_category" valueField="code_value"/>
+                    <a:field name="transaction_category"/>
+                    <a:field name="payment_method_display" displayField="description" options="csh_cash_payment_method_ds" required="true" returnField="payment_method_id" valueField="payment_method_id">
+                        <a:mapping>
+                            <a:map from="ebanking_flag" to="ebanking_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="transaction_date" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="header_load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="csh_cash_receipt_lines_ds" autoCreate="true" bindName="lines_ds" bindTarget="csh_cash_receipt_header_ds" model="csh.CSH5315.csh_transaction_lines">
+                <a:fields>
+                    <a:field name="bank_account_code_display" autoComplete="true" autoCompleteField="bank_name_code" lovGridHeight="320" lovHeight="450" lovService="csh.CSH5315.csh_cash_bank_acount_lov" lovWidth="600" required="true">
+                        <a:mapping>
+                            <a:map from="bank_name_code" to="bank_account_code_display"/>
+                            <a:map from="bank_account_id" to="bank_account_id"/>
+                            <a:map from="bank_account_name" to="bank_account_name"/>
+                            <a:map from="bank_account_num" to="bank_account_num"/>
+                            <a:map from="bank_name" to="bank_name"/>
+                            <a:map from="branch_name" to="branch_name"/>
+                            <a:map from="address" to="address"/>
+                            <!-- <a:map from="currency_name" to="currency_display"/> -->
+                            <a:map from="currency_code" to="currency_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="transaction_amount"/>
+                    <a:field name="exchange_rate_type_code"/>
+                    <a:field name="exchange_rate_type_display" displayField="type_name" options="exchangerate_types_ds" returnField="exchange_rate_type" valueField="type_code">
+                        <a:mapping>
+                            <a:map from="rate_method_code" to="exchange_rate_type_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate_quotation_display" displayField="code_value_name" options="rate_quotation_ds" returnField="exchange_rate_quotation" valueField="code_value"/>
+                    <a:field name="exchange_rate" required="true"/>
+                    <a:field name="partner_category_display" displayField="code_value_name" options="partner_category_list_ds" required="true" returnField="partner_category" valueField="code_value"/>
+                    <a:field name="partner_category"/>
+                    <a:field name="partner_display" lovGridHeight="300" lovHeight="450" lovWidth="500" required="true"/>
+                    <a:field name="partner_id"/>
+                    <a:field name="partner_bank_account_id"/>
+                    <a:field name="partner_account" lovGridHeight="320" lovHeight="450" lovWidth="600">
+                        <a:mapping>
+                            <a:map from="account_number" to="partner_account"/>
+                            <a:map from="account_name" to="partner_account_name"/>
+                            <a:map from="account_number" to="partner_bank_account_id"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="line_load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="csh_cash_receipt_dists_ds" bindName="dists_ds" bindTarget="csh_cash_receipt_lines_ds" model="csh.CSH5315.csh_transaction_dists" selectable="true">
+                <a:fields>
+                    <a:field name="responsibility_center_display" lovHeight="490" lovService="csh.CSH5315.csh_cash_responsibility_lov" lovWidth="600" required="true">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_code_display" lovHeight="490" lovService="csh.CSH5315.csh_cash_accounts_lov" lovWidth="600" required="true">
+                        <a:mapping>
+                            <a:map from="account_id" to="account_id"/>
+                            <a:map from="description" to="account_code_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="debit_flag_display" displayField="code_value_name" options="csh_cash_dr_cr_ds" required="true" returnField="debit_flag" valueField="code_value"/>
+                    <a:field name="amount" required="true"/>
+                    <a:field name="description" defaultValue="${/parameter/lines_ds/@description}"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="csh_transaction_accounts_ds" autoCreate="false" bindName="accounts_ds" bindTarget="csh_cash_receipt_lines_ds" model="csh.CSH5315.csh_transaction_accounts"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="3" title="现金收款反冲" width="970">
+                <a:textField name="transaction_num" bindTarget="csh_cash_receipt_header_ds" prompt="现金事务号" readOnly="true"/>
+                <a:textField name="created_by" bindTarget="csh_cash_receipt_header_ds" prompt="制单人" readOnly="true"/>
+                <a:comboBox name="transaction_category_display" bindTarget="csh_cash_receipt_header_ds" prompt="收款类型" readOnly="true"/>
+                <a:comboBox name="payment_method_display" bindTarget="csh_cash_receipt_header_ds" prompt="收款方式" readOnly="true"/>
+                <a:datePicker name="transaction_date" bindTarget="csh_cash_receipt_header_ds" prompt="收款日期" readOnly="true"/>
+                <a:textField name="period_name" bindTarget="csh_cash_receipt_header_ds" prompt="收款期间" readOnly="true"/>
+                <a:datePicker name="reverse_date" bindTarget="csh_cash_receipt_header_ds" prompt="反冲日期"/>
+            </a:form>
+            <a:hBox>
+                <a:button id="reverseButton" click="reverseFunc" text="反冲"/>
+                <a:button click="returnFunc" text="返回"/>
+            </a:hBox>
+            <a:tabPanel id="csh_cash_gathering_tabPanel" height="400" width="970">
+                <a:tabs>
+                    <a:tab prompt="收款账户信息" width="100">
+                        <a:form>
+                            <a:hBox labelWidth="80">
+                                <a:lov name="bank_account_code_display" bindTarget="csh_cash_receipt_lines_ds" prompt="收款账户" readOnly="true"/>
+                                <a:numberField name="transaction_amount" allowFormat="true" allowNegative="false" bindTarget="csh_cash_receipt_lines_ds" prompt="收款金额" readOnly="true"/>
+                                <a:numberField name="function_amount" allowFormat="true" bindTarget="csh_cash_receipt_lines_ds" prompt="本币金额" readOnly="true"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:textField name="bank_account_name" bindTarget="csh_cash_receipt_lines_ds" prompt="账户名称" readOnly="true"/>
+                                <a:textField name="bank_account_num" bindTarget="csh_cash_receipt_lines_ds" prompt="账号" readOnly="true"/>
+                                <a:textField name="bank_name" bindTarget="csh_cash_receipt_lines_ds" prompt="银行名称" readOnly="true"/>
+                                <a:textField name="branch_name" bindTarget="csh_cash_receipt_lines_ds" prompt="分行名称" readOnly="true"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:textField name="currency_code" bindTarget="csh_cash_receipt_lines_ds" prompt="币种" readOnly="true"/>
+                                <a:comboBox name="exchange_rate_type_display" bindTarget="csh_cash_receipt_lines_ds" prompt="汇率类型" readOnly="true"/>
+                                <a:comboBox name="exchange_rate_quotation_display" bindTarget="csh_cash_receipt_lines_ds" prompt="标价方法" readOnly="true"/>
+                                <a:numberField name="exchange_rate" bindTarget="csh_cash_receipt_lines_ds" prompt="汇率" readOnly="true"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:textField name="address" bindTarget="csh_cash_receipt_lines_ds" prompt="地址" readOnly="true" width="865"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:comboBox name="partner_category_display" bindTarget="csh_cash_receipt_lines_ds" prompt="收款对象" readOnly="true"/>
+                                <a:lov name="partner_display" bindTarget="csh_cash_receipt_lines_ds" prompt="收款方" readOnly="true"/>
+                                <a:lov name="partner_account" bindTarget="csh_cash_receipt_lines_ds" prompt="收款方账户" readOnly="true"/>
+                                <a:textField name="partner_account_name" bindTarget="csh_cash_receipt_lines_ds" prompt="账户名称" readOnly="true"/>
+                            </a:hBox>
+                            <a:hBox labelWidth="80">
+                                <a:textField name="description" bindTarget="csh_cash_receipt_lines_ds" prompt="摘要" readOnly="true" width="865"/>
+                            </a:hBox>
+                        </a:form>
+                    </a:tab>
+                    <a:tab prompt="分配信息">
+                        <a:grid id="dist_grid_id" bindTarget="csh_cash_receipt_dists_ds" height="270" width="900">
+                            <a:columns>
+                                <a:column name="description" prompt="摘要" width="300"/>
+                                <a:column name="responsibility_center_display" prompt="成本中心"/>
+                                <a:column name="account_code_display" prompt="科目代码" width="200"/>
+                                <a:column name="debit_flag_display" prompt="借贷"/>
+                                <a:column name="amount" prompt="金额" renderer="Convert"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab id="other_info_tab_id" prompt="财务信息">
+                        <a:grid bindTarget="csh_transaction_accounts_ds" width="950">
+                            <a:columns>
+                                <a:column name="description" prompt="摘要"/>
+                                <a:column name="period_name" prompt="期间" width="70"/>
+                                <a:column name="company_name" prompt="公司"/>
+                                <a:column name="responsibility_center_name" prompt="成本中心" width="100"/>
+                                <a:column name="account_code" prompt="科目代码"/>
+                                <a:column name="account_code_description" prompt="科目描述"/>
+                                <a:column name="entered_amount_dr" prompt="原币借方" renderer="Convert" width="80"/>
+                                <a:column name="entered_amount_cr" prompt="原币贷方" renderer="Convert" width="80"/>
+                                <a:column name="functional_amount_dr" prompt="本币借方" renderer="Convert" width="80"/>
+                                <a:column name="functional_amount_cr" prompt="本币贷方" renderer="Convert" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	function init(){
+        	    var transaction_header_id = '${/parameter/@transaction_header_id}';
+        	    initPage(transaction_header_id);
+        	}
+        	
+        	function initPage(transaction_header_id){
+        	    if(transaction_header_id){
+        	        $('transaction_id_ds').getAt(0).set('transaction_header_id',transaction_header_id);
+        	        $('csh_cash_receipt_header_ds').query();
+        	    }
+        	}
+        	Aurora.onReady(init);
+        ]]></script>
+    </a:view>
+</a:screen>

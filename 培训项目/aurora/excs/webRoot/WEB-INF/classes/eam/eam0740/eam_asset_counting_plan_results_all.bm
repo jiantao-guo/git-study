@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: MJJ  
+    $Date: 2014-1-6 上午11:30:16  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select t.* from (select
+       h.counting_plan_header_id, 
+       h.counting_plan_number,
+       h.counting_name,
+       to_char(h.plan_date, 'YYYY-MM-DD') plan_date,
+       r.line_number,
+       r.asset_id,
+       r.asset_code,
+       (select v.ASSET_NAME
+          from eam_asset_headers_vl v
+         where v.ASSET_ID = r.asset_id) asset_name,
+       (select vl.DESCRIPTION
+          from eam_locations_vl vl
+         where vl.LOCATION_ID = r.current_location_id) cur_location,
+       r.current_quantity,
+       r.counted_tag_number,
+       r.act_location_name,
+       r.act_quantity,
+       r.diff_flag,
+       r.diff_type,
+       (SELECT v.code_value_name
+          FROM sys_service_lookup_v v
+         WHERE v.enabled_flag = 'Y'
+           AND V.code_value = r.diff_type
+           AND code = 'EAM_COUNTING_DIFF_TYPE'
+           and language = ${/session/@lang}) diff_type_name,
+       r.description
+  from eam_counting_plan_headers h, eam_counting_analysis_results r
+ where h.counting_plan_header_id = r.counting_plan_header_id
+   and h.status in ('FINISHED', 'CLOSED')
+   and exists (select 1
+          from fnd_companies fc, eam_asset_books b
+         where b.set_of_book_id = fc.set_of_books_id
+           and fc.company_id = ${/session/@company_id}
+           and b.asset_book_id = h.asset_book_id)
+           and h.created_by = ${/session/@user_id}
+ order by r.asset_code) t #WHERE_CLAUSE#
+ ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="plan_date" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="diff_type" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="counting_plan_header_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="counting_plan_number" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="counting_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="line_number" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="asset_id" databaseType="VARCHAR2" datatype="java.lang.Long"/>
+        <bm:field name="asset_code" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="asset_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="cur_location" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="current_quantity" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="counted_tag_number" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="act_location_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="act_quantity" databaseType="VARCHAR2" datatype="java.lang.Long"/>
+        <bm:field name="diff_flag" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="diff_type_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="description" databaseType="VARCHAR2" datatype="java.lang.String"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="plan_date" queryOperator="="/>
+        <bm:query-field field="diff_type" queryOperator="="/>
+        <bm:query-field name="plan_number_from" queryExpression="${@plan_number_from} &lt;= t.counting_plan_number"/>
+        <bm:query-field name="plan_number_to" queryExpression="${@plan_number_to} &gt;= t.counting_plan_number"/>
+        <bm:query-field name="repeat_flag" queryExpression="exists((select 1 
+                 from eam_counting_plan_headers     ph, 
+                      eam_counting_analysis_results ar 
+                where ph.counting_plan_header_id = 
+                      ar.counting_plan_header_id 
+                  and ar.asset_code = t.asset_code 
+                group by ar.asset_code 
+               having count(1) &gt; 1 and ${@repeat_flag} = &apos;Y&apos;) union 
+              (select 1 from dual where ${@repeat_flag} = &apos;N&apos;))"/>
+    </bm:query-fields>
+</bm:model>

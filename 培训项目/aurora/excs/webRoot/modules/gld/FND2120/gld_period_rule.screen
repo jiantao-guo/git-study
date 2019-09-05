@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="gld_period_create_link_1" url="${/request/@context_path}/modules/gld/FND2120/gld_period_create.screen"/>
+        <script><![CDATA[
+            function monthValidator(record, name, value){
+                if(name == 'month_from' || name == 'month_to'){
+                    if(value < 1 || value > 12){
+                        return '${l:INCORRECT_MONTH_ENTERED}';
+                    }
+                }
+                return true;
+            }
+            
+            function dateValidator(record, name, value){
+                var array = new  Array(31,28,31,30,31,30,31,31,30,31,30,31);
+                if(name == 'date_from' || name == 'date_to'){
+                    var month = 1;
+                    if(name == 'date_from'){
+                        month = record.get('month_from');
+                    }else{
+                       month = record.get('month_to'); 
+                    }
+                    if(value < 1 || value > array[month - 1]){
+                        return '${l:DATE_ENTERED_INCORRECTLY}';
+                    }
+                }
+                return true;
+            }
+            
+            function addValidator(record, name, value){
+                if (!value) {
+                    return true;
+                }
+                var addreg = /^(0?[[1-9]|1[0-2])$/;
+                if (!addreg.test(value)) {
+                    return '期间名附加必须为01-12的月份！';
+                }
+                return true;
+            }
+            
+            function onRuleUpdate(ds,record,name,value){
+                if(name == 'month_from' || name == 'month_to'){
+                    record.validate((name == 'month_from') ? 'date_from' : 'date_to');
+                }
+            }
+            
+            function periodSetCodeEdit(record,name){
+                if(record.isNew){
+                    return 'period_set_code_grid_tf';
+                }else{
+                    return '';
+                }
+            }
+            
+            function quarterNumValidator(record, name, value){
+                if(value > 4 || value < 1){
+                    return '${l:QUARTERLY_INPUT_ERROR}';
+                }
+                return true;
+            }
+            
+            function validateRules(){
+                $('gld_period_rules_ds').validate();
+               
+                var totalPeriodNum = $('gld_period_set_info_ds').getCurrentRecord().get('total_period_num');
+                var records = $('gld_period_rules_ds').getAll();
+                if(records == '' || records == null || records.length != totalPeriodNum){
+                    Aurora.showMessage('${l:PROMPT}','${l:DURING_THE_RULE_DEFINITION_IS_NOT_COMPLETE}');
+                    return false;
+                }else{
+                    for(var i = 1; i < records.length; i++){
+                        var  currentRecord = records[i];  
+                        if(currentRecord.get('adjustment_flag')== 'Y'){
+                            break;
+                        }
+                        var  currentDateFrom =  new Date(2000,currentRecord.get('month_from')-1,currentRecord.get('date_from'));
+                        var  currentDateTo = new Date(2000,currentRecord.get('month_to')-1,currentRecord.get('date_to'));
+                        for (var j=0; j<i ;j++){
+                            var  compareRecord = records[j];
+                            if(compareRecord.get('adjustment_flag')=='Y'){
+                                break;
+                            }
+                            var  compareDateFrom =  new Date(2000,compareRecord.get('month_from')-1,compareRecord.get('date_from'));
+                            var  compareDateTo = new Date(2000,compareRecord.get('month_to')-1,compareRecord.get('date_to'));   
+                            if ( currentDateFrom > compareDateFrom && currentDateFrom < compareDateTo ||  currentDateTo > compareDateFrom && currentDateTo< compareDateTo)
+                            {
+                                Aurora.showMessage('${l:PROMPT}','${l:GLD_PERIOD_RULE_RO.TIME}'+parseInt(i+1)+'${l:LINE}'+'${l:DURING_THE_RULE_DEFINITION_IS_NOT_COMPLETE}');
+                                return false;
+                            }   
+                        }
+                        currentRecord.set('period_num',i+1);
+                    }
+                    records[0].set('period_num',1);
+                    return true;
+                }
+            }
+            function onRulesSubmit(){
+            	var records = $('gld_period_rules_ds').getAll();
+            	for(var i=0;i<records.length;i++){
+					records[i].set('period_num',i+1);
+				}
+				if($('gld_period_rules_ds').validate()){
+                if(validateRules()){
+                    $('gld_period_rules_ds').submit();
+                }}
+            }
+            
+        function newPeriod()
+        {
+            var records = $('gld_period_rules_ds').getNewRecords();
+            if ($('gld_period_rules_ds').isModified()){
+                Aurora.showMessage('${l:PROMPT}','${l:BGT_SOLUTION.SAVE_FIRST}');
+                return;
+            }
+            if(validateRules()){
+                new Aurora.Window({id:'gld_period_create_window', url:/*gld_period_create.screen*/$('gld_period_create_link_1').getUrl()+'?period_set_code='+ $('gld_period_set_info_ds').getCurrentRecord().get('period_set_code'), title:'${l:DEFINITION_OF_ACCOUNTING_PERIOD_CREATE_PERIOD}', height:205,width:300});
+            }
+        }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="gld_period_set_info_ds" fetchAll="false" loadData="true" model="gld.gld_period_sets" selectable="true">
+                <a:fields>
+                    <a:field name="period_set_code" readOnly="true"/>
+                    <a:field name="period_set_name" readOnly="true"/>
+                    <a:field name="total_period_num" readOnly="true"/>
+                    <a:field name="period_additional_flag_display" displayField="code_value_name" options="gld_period_set_additional_flag_ds" readOnly="true" returnField="period_additional_flag" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="gld_period_rules_ds" autoQuery="true" fetchAll="false" model="gld.FND2120.gld_period_rules" queryUrl="${/request/@context_path}/autocrud/gld.FND2120.gld_period_rules/query?ORDER_FIELD=period_num&amp;period_set_code=${/parameter/@period_set_code}" selectable="true" submitUrl="${/request/@context_path}/modules/gld/FND2120/gld_period_rules.svc">
+                <a:fields>
+                    <a:field name="period_set_code" defaultValue="${/parameter/@period_set_code}"/>
+                    <a:field name="period_additional_name" required="true"/>
+                    <a:field name="month_from" required="true" validator="monthValidator"/>
+                    <a:field name="month_to" required="true" validator="monthValidator"/>
+                    <a:field name="date_from" required="true" validator="dateValidator"/>
+                    <a:field name="date_to" required="true" validator="dateValidator"/>
+                    <a:field name="quarter_num" required="true" validator="quarterNumValidator"/>
+                    <a:field name="adjustment_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onRuleUpdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="2" title="GLD_PERIOD_SET.PERIOD_SET_QUERY" width="500">
+                <a:textField name="period_set_code" bindTarget="gld_period_set_info_ds"/>
+                <a:textField name="period_set_name" bindTarget="gld_period_set_info_ds"/>
+                <a:textField name="total_period_num" bindTarget="gld_period_set_info_ds"/>
+                <a:comboBox name="period_additional_flag_display" bindTarget="gld_period_set_info_ds"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="newPeriod" text="GLD_PERIOD_RULE_CREATE_PERIOD"/>
+            </a:hBox>
+            <a:grid bindTarget="gld_period_rules_ds" height="330" navBar="true" width="680">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="clear"/>
+                    <a:button click="onRulesSubmit" icon="${/request/@context_path}/images/save.gif" text="HAP_SAVE"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="period_additional_name" align="center" editor="period_additional_name_grid_tf" width="100"/>
+                    <a:column name="month_from" align="center" editor="number_grid_num" width="85"/>
+                    <a:column name="date_from" align="center" editor="number_grid_num" width="85"/>
+                    <a:column name="month_to" align="center" editor="number_grid_num" width="85"/>
+                    <a:column name="date_to" align="center" editor="number_grid_num" width="85"/>
+                    <a:column name="quarter_num" align="center" editor="number_grid_num" width="85"/>
+                    <a:column name="adjustment_flag" editor="adjustment_flag_grid_cb"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="period_additional_name_grid_tf"/>
+                    <a:numberField id="number_grid_num" allowDecimals="false" allowNegative="false"/>
+                    <a:checkBox id="adjustment_flag_grid_cb"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

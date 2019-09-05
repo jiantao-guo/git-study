@@ -1,0 +1,417 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: myh 
+    $Date: 2013-10-29 上午09:41:19  
+    $Revision: 1.0  
+    $Purpose: 申请单事项关联资产页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query autoCount="false" model="eam.common.get_asset_object_type" rootPath="asset_object_type"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="eam_asset_batch_link" url="${/request/@context_path}/modules/eam/public/eam_assset_batch_ref_exp_req_matters.screen"/>
+        <a:link id="asset_headers_lov_link" url="${/request/@context_path}/modules/eam/public/eam_asset_headers_readonly_for_requisition.screen"/>
+        <a:link id="matters_ref_asset_delete_link" model="eam.common.eam_asset_ref_exp_req_matters_batch_assign" modelaction="batch_update"/>
+        <a:link id="lines_ref_asset_delete_link" model="eam.common.eam_asset_ref_exp_req_batch_assign" modelaction="batch_update"/>
+        <a:link id="ref_asset_matters_link" url="${/request/@context_path}/modules/eam/public/eam_assset_ref_finance_matters.svc"/>
+        <a:link id="ref_asset_lines_link" url="${/request/@context_path}/modules/eam/public/eam_assset_ref_finance_line.svc"/>
+        <script><![CDATA[
+            //查询表单
+            
+            function query() {
+                $('eam_asset_ref_exp_req_result_ds').query();
+            }
+            //重置表单
+            
+            function reset() {
+                $('eam_asset_ref_exp_req_query_ds').reset();
+            }
+            
+            //批量关联资产
+            
+            function batch_ref_asset() {
+            
+                new Aurora.Window({
+                    id: 'eam_asset_batch_screen',
+                    url: $('eam_asset_batch_link').getUrl() + '?head_id=' + '${/parameter/@head_id}&document_type=${/parameter/@document_type}&employee_id=${/parameter/@employee_id}',
+                    title: '批量关联资产',
+                    width: 700,
+                    height: 480
+                });
+            }
+            
+            function back() {
+                $('cux_exp_req_ref_asset2').close();
+            }
+            
+            function onAddFunction(dataSet, record, index) {
+                record.set('head_id', '${/parameter/@head_id}');
+                record.set('document_type', '${/parameter/@document_type}');
+            }
+            
+            function onSubmitsuccess() {
+                $('eam_asset_ref_exp_req_result_ds').query();
+                var ref_num = $('eam_asset_ref_exp_req_result_ds').getAll().length;
+                $('test_ref').setText('关联资产(' + ref_num + '条)');
+                var head_id = $('exp_requisition_head_ds').getCurrentRecord().get('head_id');
+                $('pmtplan_schedules_ds').query();
+                var ds = $('exp_requisition_line_ds');
+                ds.setQueryParameter('head_id', head_id);
+                ds.query();
+            }
+            
+            function asset_code_fun(record, name) {
+                if (record.isNew) {
+                    lovField = record.getField("asset_code");
+                    lovField.setLovPara('head_id', '${/parameter/@head_id}');
+                    return "asset_code_lv";
+                } else {
+                    return "";
+                }
+            }
+            
+            function assetRenderer(value, record, name) {
+                if (record.isNew) {
+                    return value;
+                } else {
+                    var asset_id = record.get("asset_id");
+                    return '<a href="javascript:viewAsset(' + asset_id + ')">' + value + '</a>';
+                }
+            }
+            
+            function editFunction(record, name) {
+                if (name == 'line_code') {
+                    if (record.isNew) {
+                        return 'line_tf';
+                    }
+                    return '';
+                }
+                if (name == 'ref_type') {
+                    if (record.isNew) {
+                        return 'com_Box';
+                    }
+                    return '';
+                }
+            }
+            
+            function viewAsset(asset_id) {
+                new Aurora.Window({
+                    id: 'eam_asset_headers_lov_window',
+                    url: $('asset_headers_lov_link').getUrl() + '?asset_id=' + asset_id,
+                    title: '${l:EAM_ASSET_HEADERS.SEARCH}',
+                    height: 430,
+                    width: 930
+                });
+            }
+            
+            function onUpdateFunction(dataset, record, name, value, oldValue) {
+                var records = dataset.getAll();
+                var mRecords = $('pmtplan_schedules_ds').getAll();
+                var lRecords = $('exp_requisition_line_ds').getAll();
+                if (name == 'ref_type') {
+                    record.set('line_code', '');
+                }
+                if (name == 'line_code') {
+                    var line_num_m = '';
+                    var line_num_l = '';
+                    var not_exist_m = 'Y';
+                    var not_exist_l = 'Y';
+                    var m_flag = false;
+                    var l_flag = false;
+                    for (i = 0;i < records.length;i++) {
+                        if (records[i].get('type_flag') == 'M') {
+                            if (mRecords.length > 0) {
+                                for (j = 0;j < mRecords.length;j++) {
+                                    if (records[i].get('line_code') == mRecords[j].get('line_number')) {
+                                        m_flag = true;
+                                        break;
+                                    } else {
+                                        line_num_m = records[i].get('line_code');
+                                    }
+                                }
+                            } else {
+                                alert('事项行不存在数据');
+                                return;
+                            }
+                        } else if (records[i].get('type_flag') == 'L') {
+                            if (lRecords.length > 0) {
+            
+                                for (j = 0;j < lRecords.length;j++) {
+                                    if (records[i].get('line_code') == lRecords[j].get('line_number')) {
+                                        l_flag = true;
+                                        break;
+                                    } else {
+                                        line_num_l = records[i].get('line_code');
+                                    }
+                                }
+                            } else {
+                                alert('单据行不存在数据');
+                                return;
+                            }
+                        }
+                    }
+            
+                    for (i = 0;i < records.length;i++) {
+                        if (records[i].get('type_flag') == 'M') {
+                            if (!m_flag) {
+                                not_exist_m = 'N';
+                            }
+                        }
+                    }
+            
+                    for (i = 0;i < records.length;i++) {
+                        if (records[i].get('type_flag') == 'L') {
+                            if (!l_flag) {
+                                not_exist_l = 'N';
+                            }
+                        }
+                    }
+                    if (not_exist_m == 'N') {
+                        alert('行号:' + line_num_m + '在事项行中不存在');
+                    }
+                    if (not_exist_l == 'N') {
+                        alert('行号:' + line_num_l + '在单据行中不存在');
+                    }
+                }
+            
+            
+            }
+            
+            function saveFunctionAsset() {
+                var m_flag = true;
+                var lineDataSet = $('eam_asset_ref_exp_req_result_ds');
+                var lineRecords = lineDataSet.getAll();
+                var url = '';
+                for (var i = 0;i < lineRecords.length;i++) {
+                    var record = lineRecords[i];
+                    var type_flag = record.get('type_flag');
+                    if (type_flag == 'M') {
+                        url = $('ref_asset_matters_link').getUrl();
+                    } else if (type_flag == 'L') {
+                        url = $('ref_asset_lines_link').getUrl();
+                    }
+                }
+                //保存到数据库
+                Aurora.request({
+                    url: url,
+                    para: {
+                        details: lineDataSet.getJsonData(false)
+                    },
+                    success: function() {
+                        Aurora.showMessage('提示', '保存成功！');
+                        onSubmitsuccess();
+                    },
+                    scope: this
+                });
+            
+            }
+            
+            
+            function deleteFunction() {
+                if ($('eam_asset_ref_exp_req_result_ds').getSelected().length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.SELECT_DATA}', null, 250, 100);
+                    return;
+                }
+                var okCan = Aurora.showConfirm('${l:PROMPT}', '${l:DELETE_DATA_CONFIRM}', function() {
+                    var ds = $('eam_asset_ref_exp_req_result_ds');
+                    var rs = ds.getSelected();
+                    for (var i = 0;i < rs.length;i++) {
+                        if (rs[i].isNew) {
+                            ds.remove(rs[i]);
+                            i--;
+                        }
+                    }
+                    var param = $('eam_asset_ref_exp_req_result_ds').getJsonData(true);
+                    if (param.length && param.length != 0) {
+                        var url = '';
+                        for (var i = 0;i < param.length;i++) {
+                            param[i]['_status'] = 'delete';
+                        }
+            
+                        var type_flag = $('eam_asset_ref_exp_req_result_ds').getCurrentRecord().get('type_flag');
+                        if (type_flag == 'M') {
+                            url = $('matters_ref_asset_delete_link').getUrl();
+                        } else if (type_flag == 'L') {
+                            url = $('lines_ref_asset_delete_link').getUrl();
+                        }
+                        Aurora.request({
+                            url: url,
+                            para: param,
+                            success: function() {
+                                var rs = ds.getSelected();
+                                for (var i = rs.length - 1;i >= 0;i--) {
+                                    rs[i].isNew = true;
+                                    ds.remove(rs[i]);
+                                }
+                                onSubmitsuccess();
+                            },
+                            scope: this
+                        });
+                        okCan.close();
+                    } else {}
+                }, null, 250, 100);
+            }
+            
+            /*      function createAssetCodeReq(array) {
+             initFlag = 2;
+             for (var i = 0;i < array.length;i++) {
+             var item = array[i];
+             $('eam_asset_ref_exp_req_result_ds').getAt(0).set('asset_code', item["asset_code"]);
+             $('eam_asset_ref_exp_req_result_ds').getAt(0).set('asset_name', item["asset_name"]);
+             }
+             initFlag = 1;
+             }*/
+            
+            //行号校验
+            
+            function mValidator(record, name, value) {
+                var dataset = $('eam_asset_ref_exp_req_result_ds');
+                var records = dataset.getAll();
+                var linerecords = $('exp_requisition_line_ds').getAll();
+                var mRecords = $('pmtplan_schedules_ds').getAll();
+                var line_num = '';
+                var l_n = 0;
+                var m_n = 0;
+                var flag = false;
+                var m_flag = false;
+                for (i = 0;i < records.length;i++) {
+                    if (records[i].get('type_flag') == 'L') {
+                        if (linerecords.length > 0) {
+                            l_n++;
+                            for (j = 0;j < linerecords.length;j++) {
+                                if (records[i].get('line_code') == linerecords[j].get('line_number')) {
+                                    flag = true;
+                                    break;
+                                } else {
+                                    line_num = records[i].get('line_code');
+                                    flag = false;
+                                }
+                            }
+                        } else {
+                            record.set('line_code', '');
+                            return '单据行没有数据';
+                        }
+                    } else if (records[i].get('type_flag') == 'M') {
+                        if (mRecords.length > 0) {
+                            m_n++;
+                            for (m = 0;m < mRecords.length;m++) {
+                                if (records[i].get('line_code') == mRecords[m].get('line_number')) {
+                                    m_flag = true;
+                                    break;
+                                } else {
+                                    line_num = records[i].get('line_code');
+                                    m_flag = false;
+                                }
+                            }
+                        } else {
+                            record.set('line_code', '');
+                            return '事项行没有数据';
+                        }
+                    }
+                }
+            
+                if (l_n > 0 && !flag) {
+                    record.set('line_code', '');
+                    return '单据行中不存在' + line_num;
+                }
+            
+                if (m_n > 0 && !m_flag) {
+                    record.set('line_code', '');
+                    return '事项行中不存在' + line_num;
+                }
+                return true; //校验通过返回true
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="ref_type_ds">
+                <a:datas>
+                    <a:record name="单据行" code="L"/>
+                    <a:record name="事项行" code="M"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_ref_exp_req_query_ds">
+                <a:fields>
+                    <a:field name="asset_code"/>
+                    <a:field name="asset_name"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_ref_exp_req_result_ds" autoQuery="true" model="eam.common.eam_asset_headers_query_requisition_matters" pageSize="50" queryDataSet="eam_asset_ref_exp_req_query_ds" queryUrl="${/request/@context_path}/autocrud/eam.common.eam_asset_headers_query_requisition_matters/query?head_id=${/parameter/@head_id}&amp;document_type=${/parameter/@document_type}" selectable="true" submitUrl="${/request/@context_path}/autocrud/eam.common.eam_asset_ref_exp_req_matters_batch_assign/batch_update">
+                <a:fields>
+                    <a:field name="line_code" prompt="行号" required="true" validator="mValidator"/>
+                    <a:field name="asset_id"/>
+                    <a:field name="asset_code" lovGridHeight="300" lovHeight="460" lovUrl="${/request/@context_path}/modules/eam/public/eam_asset_ref_exp_requisition_sql_query_lov.screen?employee_id=${/parameter/@employee_id}" lovWidth="680" required="true" title="EAM_ASSET_HEADERS.SEARCH">
+                        <a:mapping>
+                            <a:map from="asset_id" to="asset_id"/>
+                            <a:map from="asset_code" to="asset_code"/>
+                            <a:map from="asset_name" to="asset_name"/>
+                            <a:map from="status" to="status"/>
+                            <a:map from="status_desc" to="status_desc"/>
+                            <a:map from="location_id" to="location_id"/>
+                            <a:map from="current_location_desc" to="current_location_desc"/>
+                            <a:map from="entity_class_id" to="entity_class_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="asset_name"/>
+                    <a:field name="status"/>
+                    <a:field name="status_desc"/>
+                    <a:field name="location_id"/>
+                    <a:field name="current_location_desc"/>
+                    <a:field name="head_id"/>
+                    <a:field name="document_type"/>
+                    <a:field name="entity_class_id"/>
+                    <a:field name="ref_type" displayField="name" options="ref_type_ds" prompt="类型" returnField="type_flag" valueField="code"/>
+                    <a:field name="type_flag"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="onAddFunction"/>
+                    <!-- <a:event name="update" handler="onUpdateFunction"/>-->
+                    <a:event name="submitsuccess" handler="onSubmitsuccess"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form labelWidth="100" row="1" title="关联资产" width="600">
+                <a:textField name="asset_code" bindTarget="eam_asset_ref_exp_req_query_ds" prompt="EAM_COUNTING_ANALYSIS_RESULTS.ASSET_CODE"/>
+                <a:textField name="asset_name" bindTarget="eam_asset_ref_exp_req_query_ds" prompt="EAM_ASSET_HEADERS.DESCRIPTION"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="query" text="HAP_QUERY"/>
+                <a:button click="reset" text="HAP_RESET"/>
+                <!--  <a:button id="refBtn" click="batch_ref_asset" text="批量关联资产" width="90"/>-->
+                <a:button click="back" text="HAP_BACK" width="60"/>
+            </a:hBox>
+            <a:grid bindTarget="eam_asset_ref_exp_req_result_ds" height="330" navBar="true" width="600">
+                <a:toolBar>
+                    <a:button id="addBtn" type="add"/>
+                    <a:button id="saveBtn" click="saveFunctionAsset" icon="${/request/@context_path}/images/save.gif" text="HAP_SAVE"/>
+                    <a:button id="delBtn" click="deleteFunction" icon="${/request/@context_path}/images/remove.gif" text="PROMPT.DELETE"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="ref_type" editorFunction="editFunction" width="120"/>
+                    <a:column name="line_code" editorFunction="editFunction" width="60"/>
+                    <a:column name="asset_code" editorFunction="asset_code_fun" renderer="assetRenderer" width="120"/>
+                    <a:column name="asset_name" width="160"/>
+                    <a:column name="status_desc" width="80"/>
+                    <a:column name="current_location_desc" width="80"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="line_tf"/>
+                    <a:lov id="asset_code_lv"/>
+                    <a:comboBox id="com_Box"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+           	new function() {
+           	   if('${/parameter/@flag}' == 'Y') {
+           	        $('addBtn').disable();
+           	     //   $('refBtn').disable();
+           	        $('delBtn').disable();
+           	        $('saveBtn').disable();
+           	   }
+           	}
+            
+            ]]></script>
+    </a:view>
+</a:screen>

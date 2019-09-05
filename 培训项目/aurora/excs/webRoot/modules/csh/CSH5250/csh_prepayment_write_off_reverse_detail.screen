@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao2658 $
+    $Date: 2011/03/31 $
+    $Revision: 1.1 $
+    $Purpose: 预付款核销反冲
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="eam.eam0310.eam0310_sysdate_query" rootPath="sysdate"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="csh_prepayment_write_off_reverse_detail_reverse_control_link" url="${/request/@context_path}/modules/csh/CSH5250/csh_prepayment_write_off_reverse_detail_reverse_control.svc"/>
+        <div/>
+        <script><![CDATA[
+            function closeWindow() {
+                $('csh_prepayment_write_off_reverse_detail_window').close();
+            }
+            
+            function nowWriteOffAmountValidator(record, name, value) {
+                if (name == 'now_write_off_amount') {
+                    var head_ds = $('csh_prepayment_header_detail_ds').getCurrentRecord();
+            
+                    var unwrite_off_amount = head_ds.get('unwrite_off_amount');
+                    var unwriteOffAmount = record.get('unwrite_off_amount');
+            
+                    if (!Ext.isEmpty(value)) {
+                        if (value <= 0 || value > unwriteOffAmount || value > unwrite_off_amount) {
+                            return '${l:CSH_PREPAYMENT_POST.CHECK1}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function onSelect(tab, index) {
+                if (index == 1) { //选中第2个选项卡
+                    var writeoffhistory_ds = $('csh_prepayment_write_off_reverse_detail_writeoffhistory_ds');
+                    var records = writeoffhistory_ds.getSelected();
+            
+                    if (records.length != 1) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                    } else {
+                        var record = records[0];
+                        var write_off_id = record.get('write_off_id');
+                        var financeinfor_ds = $('csh_prepayment_write_off_reverse_detail_financeinfor_ds');
+                        financeinfor_ds.setQueryParameter('write_off_id', write_off_id);
+                        financeinfor_ds.query();
+                    }
+                }
+            }
+            
+            function onUpdate(dataSet, record, name, value, oldvalue) {
+                if (name == 'reversed_date') {
+                    var reversed_date_x = record.get('reversed_date').format('yyyy-mm-dd');
+                    var get_period_name_ds = $('get_period_name_ds');
+                    get_period_name_ds.setQueryParameter('p_date', reversed_date_x);
+                    get_period_name_ds.query();
+                }
+            }
+            
+            function reverseWriteOff() {
+                var flag = dateValidate();
+                if (flag) {
+                    var reverse_ds = $('csh_payment_header_detail_reverse_ds');
+                    var writeoffhistory_ds = $('csh_prepayment_write_off_reverse_detail_writeoffhistory_ds');
+            
+                    if (reverse_ds.validate()) {
+                        if (writeoffhistory_ds.getSelected().length < 1) {
+                            Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                        } else {
+                            var form = reverse_ds.getCurrentRecord();
+                            var data = [];
+                            var line = [];
+                            data.push({
+                                transaction_header_id: form.get('transaction_header_id'),
+                                transaction_line_id: form.get('transaction_line_id'),
+                                reversed_date: form.get('reversed_date').format('yyyy-mm-dd')
+                            });
+                            var records = writeoffhistory_ds.getSelected();
+                            for (var i = 0;i < records.length;i++) {
+                                line.push(records[i].data);
+                            }
+                            var parameters = new Object();
+                            parameters['para'] = data;
+                            parameters['line'] = line;
+                            Aurora.request({
+                                url: $('csh_prepayment_write_off_reverse_detail_reverse_control_link').getUrl(),
+                                para: parameters,
+                                success: dispacth,
+                                scope: this
+                            });
+                        }
+                    }
+                }
+            }
+            
+            function dispacth() {
+                var window = Aurora.showMessage('${l:PROMPT}', '${l:FND_DIMENSION_VALUES.OPR_SUC}', function() {
+                    closeWindow();
+                    window.close();
+                });
+            }
+            
+            function dateValidate() {
+                var flag = true;
+                var record = $('csh_payment_header_detail_reverse_ds').getCurrentRecord();
+                var date = new Date;
+                var year = date.getFullYear();
+                var month = date.getMonth() + 1;
+                var reversed_date = record.get('reversed_date');
+                var newYear = reversed_date.getFullYear();
+                var newMonth = reversed_date.getMonth() + 1;
+                if (year > newYear) {
+                    Aurora.showMessage('提示', '不能冲销到已往月份！');
+                    flag = false;
+                } else if (year == newYear && month > newMonth) {
+                    Aurora.showMessage('提示', '不能冲销到已往月份！');
+                    flag = false;
+                }
+                return flag;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="csh_payment_header_detail_reverse_ds" loadData="true" model="csh.CSH5250.csh_payment_header_detail_reverse">
+                <a:fields>
+                    <a:field name="transaction_num" readOnly="true"/>
+                    <a:field name="transaction_date" readOnly="true"/>
+                    <a:field name="reversed_date" dataType="date" required="true"/>
+                    <a:field name="partner_category" readOnly="true"/>
+                    <a:field name="partner" readOnly="true"/>
+                    <a:field name="currency_code" readOnly="true"/>
+                    <a:field name="exchange_rate_type" readOnly="true"/>
+                    <a:field name="exchange_rate_quotation" readOnly="true"/>
+                    <a:field name="exchange_rate" readOnly="true"/>
+                    <a:field name="transaction_amount" readOnly="true"/>
+                    <a:field name="unwrite_off_amount" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="get_period_name_ds" autoQuery="false" model="csh.sys_fun_get_period_name">
+                <a:fields>
+                    <a:field name="period_name" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="csh_prepayment_write_off_reverse_detail_writeoffhistory_ds" autoQuery="true" model="csh.CSH5250.csh_prepayment_write_off_reverse_detail_writeoffhistory" queryUrl="${/request/@context_path}/autocrud/csh.CSH5250.csh_prepayment_write_off_reverse_detail_writeoffhistory/query?transaction_header_id=${/parameter/@transaction_header_id}" selectable="true" submitUrl="${/request/@context_path}/modules/csh/CSH5250/csh_prepayment_write_off_reverse_detail_reverse_control.svc"/>
+            <a:dataSet id="csh_prepayment_write_off_reverse_detail_financeinfor_ds" autoQuery="false" model="csh.CSH5250.csh_prepayment_write_off_reverse_detail_financeInfor"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="reverseWriteOff" text="PROMPT.REVERSE_WRITE_OFF" width="80"/>
+                <a:toolbarButton click="closeWindow" text="PROMPT.RETURN" width="80"/>
+            </a:screenTopToolbar>
+            <a:form id="csh_pre_write_off_head_form" column="4" title="CSH_PREPAYMENT_WRITE_OFF_REVERSE.TITLE">
+                <a:textField name="partner_category" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:textField name="partner" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:textField name="transaction_num" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:textField name="transaction_date" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:textField name="currency_code" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:textField name="exchange_rate_type" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:textField name="exchange_rate_quotation" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:textField name="exchange_rate" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:textField name="transaction_amount" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:textField name="unwrite_off_amount" bindTarget="csh_payment_header_detail_reverse_ds"/>
+                <a:datePicker name="reversed_date" bindTarget="csh_payment_header_detail_reverse_ds" renderer="Aurora.formatDate"/>
+                <a:textField name="period_name" bindTarget="get_period_name_ds"/>
+            </a:form>
+            <a:tabPanel id="csh_pre_write_off_tabpanel" marginHeight="235">
+                <a:tabs>
+                    <a:tab prompt="CSH_PAYMENT_DETAIL.WRITEOFFHISTORYTAB" width="100">
+                        <a:grid id="writeoffdetail_gird" bindTarget="csh_prepayment_write_off_reverse_detail_writeoffhistory_ds" marginHeight="289" navBar="true" style="margin:5px;" width="730">
+                            <a:columns>
+                                <a:column name="write_off_date" align="center" width="80"/>
+                                <a:column name="period_name" align="center" width="80"/>
+                                <a:column name="write_off_type" align="left" width="120"/>
+                                <a:column name="exp_report_number" align="left" width="120"/>
+                                <a:column name="transaction_num" align="left" width="120"/>
+                                <a:column name="csh_write_off_amount" align="right" renderer="Aurora.formatMoney" width="100"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="CSH_PAYMENT_DETAIL.FINANCETAB" width="100">
+                        <a:grid id="writeoffhistory_gird" bindTarget="csh_prepayment_write_off_reverse_detail_financeinfor_ds" marginHeight="289" navBar="true" style="margin:5px;" width="730">
+                            <a:columns>
+                                <a:column name="description" align="left" width="150"/>
+                                <a:column name="company_short_name" align="left" width="120"/>
+                                <a:column name="responsibility_center_name" align="left" width="120"/>
+                                <a:column name="account_code" align="center" width="80"/>
+                                <a:column name="account_name" align="left" width="120"/>
+                                <a:column name="entered_amount_dr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                                <a:column name="entered_amount_cr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                                <a:column name="functional_amount_dr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                                <a:column name="functional_amount_cr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+                <a:events>
+                    <a:event name="select" handler="onSelect"/>
+                </a:events>
+            </a:tabPanel>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function expRepWriteOffPrepayPostInitSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                //留白宽度
+                var marginWidth = 35 ;
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = autoWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置组件的自适应宽度
+                Ext.get('csh_pre_write_off_head_form').setWidth(autoWidth + 4);
+                $('csh_pre_write_off_tabpanel').setWidth(autoWidth + 4);
+                $('writeoffdetail_gird').setWidth(autoWidth + 4 - 17);
+                $('writeoffhistory_gird').setWidth(autoWidth + 4 - 17);
+            }
+            //Ext.fly(window).on('resize', expRepWriteOffPrepayPostInitSize);
+            expRepWriteOffPrepayPostInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

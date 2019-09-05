@@ -1,0 +1,544 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangguangfan  
+    $Date: 2013-1-24 下午02:30:10  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="enabled_flag = &apos;Y&apos;" model="gld.gld_currency_vl" rootpath="cry_list"/>
+        <a:model-query model="cont.sys_date" rootPath="sysdate"/>
+        <a:model-query model="expm.gld_get_default_period_name" rootPath="default_period_name"/>
+        <a:model-query model="csh.csh_pay_req_create_init_currency" rootPath="company_currency_code"/>
+        <a:model-query model="csh.CSH5070.csh_pay_req_audit_account_init_exch_rate_type" rootPath="exchange_rate_type"/>
+        <a:model-query autoCount="false" fetchAll="ture" model="cux.CUX1000.cux_wbc_document_get_image_url" rootpath="cux_exp_img"/>
+        <a:model-query autoCount="false" fetchAll="true" model="csh.csh_pay_req_attachment" rootPath="attachment"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_bank_assign_link_1" url="${/request/@context_path}/modules/exp/EXP1050/exp_bank_assign_pmt_schedule_readonly.screen"/>
+        <a:link id="csh_payment_req_audit_reject_link" model="db.csh_payment_req_audit_pkg.audit_reject_csh_pmt_req" modelaction="update"/>
+        <a:link id="csh_payment_req_audit_link" model="db.csh_payment_req_audit_pkg.audit_csh_pmt_req" modelaction="update"/>
+        <a:link id="csh_pay_req_detail_history_link" url="${/request/@context_path}/modules/csh/public/csh_pay_req_detail_history.screen"/>
+        <a:link id="csh_payment_req_audit_log_link" url="${/request/@context_path}/modules/csh/CSH5070/csh_payment_req_audit_log.screen"/>
+        <a:link id="csh_payment_req_audit_accounts_link" url="${/request/@context_path}/modules/wbc/WBC1010/csh_payment_req_audit_accounts.screen"/>
+        <a:link id="csh_payment_req_audit_account_tmp_control_link" url="${/request/@context_path}/modules/wbc/WBC1010/csh_payment_req_audit_account_tmp_control.svc"/>
+        <a:link id="csh_pay_req_query_detail_link_1" url="${/request/@context_path}/modules/csh/public/csh_pay_req_query_detail.screen"/>
+        <a:link id="get_period_name_link_7" model="csh.sys_fun_get_period_name" modelaction="query"/>
+        <a:link id="get_exchange_rate_link_8" model="csh.get_exchange_rate" modelaction="query"/>
+        <a:link id="get_accounts_result_link_6" model="csh.csh_payment_req_audit_accounts_query" modelaction="query"/>
+        <a:link id="csh_pay_req_audit_account_create_control_link_9" url="${/request/@context_path}/modules/csh/CSH5070/csh_pay_req_audit_account_create_control.svc"/>
+        <a:link id="uploadFile_link" url="${/request/@context_path}/check_uploadFile.screen"/>
+        <script><![CDATA[
+        		/** 创建凭证  */ 
+            	var flag = 0; /** 创建凭证  */
+			
+				function queryFunction(){
+					$('audit_result_ds').query();
+				}
+				
+				
+	    		//查看详细
+	    		function reqNumRenFunction(value,record,name){
+	    			var url='<a href = "javascript:reqNumDispatch(' + record.get('payment_requisition_header_id') + ')">' + value + '</a>';
+	    			return url;
+	    		}
+	    		
+	    		function reqNumDispatch(header_id){
+	    			window.open(/*${/request/@context_path}/modules/csh/csh_pay_req_query_detail.screen*/$('csh_pay_req_query_detail_link_1').getUrl()+'?payment_requisition_header_id='+header_id,'csh_pay_req_query_detail_screen','fullscreen=no,resizable=yes,width=1000,height=500');
+	    		}
+    			
+    			function financeSaveFunction(){
+					$('audit_finance_ds').submit();	
+    			}
+    			
+    			function refresh() {
+	                flag = 0;
+	                Aurora.showMessage('${l:PROMPT}', '${l:EXP_REPORT_ACCOUNTS.PROMPT}', function() {
+	                    if (queryFunction && typeof(queryFunction) == 'function') {
+	                        queryFunction();
+	                        $('audit_finance_ds').query();
+	                    }
+	                });
+	            }
+    			
+    			//变凭证日期
+    			function journalDateChange(com,value,oldValue){
+					var dateStr = $('input_date_ds').getAt(0).get('journal_date');
+					Aurora.request({
+				        url: /*${/request/@context_path}/autocrud/csh.sys_fun_get_period_name/query*/$('get_period_name_link_7').getUrl(),
+				        para: {
+				            p_date:dateStr
+				        },
+				        success: getPeriodName,
+				        scope: this
+				    });
+				}
+				
+				function getPeriodName(args) {
+	                var record = args.result.record;
+	                var red = $('input_date_ds').getAt(0);
+	                var period_name = '';
+	                if (record.length) {
+	                    period_name = record[0].period_name;
+	                } else {
+	                    period_name = record.period_name;
+	                }
+	                red.set('period_name', period_name);
+	                if (!period_name) {
+	                   // Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+	                   Aurora.showErrorMessage('${l:PROMPT}','${l:EXP_EXPENSE_REPORT_REVERSE.CHECK1}',null,250,100);
+	                }
+	            }
+				
+				
+    			
+    			//创建凭证
+    			function createJournal(){ 
+    				var param = new Object();
+	                var data = $('audit_result_ds').getAt(0);
+	                param['detail']=[data.data];
+    				Aurora.request({
+    					url:$('csh_payment_req_audit_account_tmp_control_link').getUrl(),
+    					para:param,
+    					success:createSuccess,
+    					scope:this
+    				});
+    			}
+    			
+    			function createSuccess() {
+	                Aurora.request({
+	                    url: $('get_accounts_result_link_6').getUrl(),
+	                    para: null,
+	                    success: checkPeriodName,
+	                    scope: this
+	                });
+	            }
+	            
+	            function checkPeriodName(args) {
+	                var records = args.result.record;
+	                var period_name = $('input_date_ds').getAt(0).get('period_name');
+	                if (period_name) {
+	                    checkChangeRateRecord(records, records, records.length);
+	                } else {
+	                    Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+	                }
+	            }
+	            
+	            function checkChangeRateRecord(rs, record, length) {
+	                var f_cur_code = '${/model/company_currency_code/record/@del_currency}';
+	                var cur_code = record.currency_code;
+	                if (f_cur_code == cur_code) {
+	                    flagIncrease(rs, length);
+	                } else {
+	                    // if (!record.get('exchange_rate_type')){
+								// record.set('exchange_rate_type','${/model/exchange_rate_type/record/@value_code}');
+							// }	
+						    var from_currency = f_cur_code;
+			                var to_currency = cur_code;
+			                var exchange_rate_type =record.exchange_rate_type;
+			                var exchange_date = $('input_date_ds').getAt(0).get('journal_date'); 
+			                var exchange_period_name = $('input_date_ds').getAt(0).get('period_name');
+			                exchange_date = Aurora.formatDate(exchange_date);
+			                Aurora.request({
+			                	url:/*${/request/@context_path}/autocrud/csh.get_exchange_rate/query*/$('get_exchange_rate_link_8').getUrl(),
+			                	para:{
+			                		"from_currency": from_currency,
+			                		"to_currency": to_currency ,
+			                		"exchange_rate_type": exchange_rate_type ,
+			                		"exchange_date": exchange_date,
+			                		"exchange_period_name":exchange_period_name
+			                	},
+			                	success:function(args){
+				                	var pluscols = args.result.record;
+		                            if (pluscols.length) {
+		                                if (pluscols[0].exchange_rate) {
+		                                    flagIncrease(rs, length);
+		                                } else {
+		                                    if (record.exchange_rate_type_code != 'MANUAL') {
+		                                        flag = 0;
+		                                        Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+		                                    }
+		                                }
+		                            } else {
+		                                if (pluscols.exchange_rate) {
+		                                    flagIncrease(rs, length);
+		                                } else {
+		                                    if (record.exchange_rate_type_code != 'MANUAL') {
+		                                        flag = 0;
+		                                        Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+		                                    }
+		                                }
+		                            }
+			                	},
+			                	scope:this
+			                });
+	                }
+	            }
+	            
+	            function flagIncrease(rs, args) {
+	                flag++;
+	                if (flag == args || (args == null && flag == 1)) {
+	                    createFunction(rs);
+	                }
+	            }
+	            
+	            function createFunction(records) {
+	                
+	                if ($('input_date_ds').validate()) {
+	                    var journal_date = $('input_date_ds').getAt(0).get('journal_date');
+	                    journal_date = Aurora.formatDate(journal_date);
+	                    var period_name = $('input_date_ds').getAt(0).get('period_name');
+	                    var param = new Object();
+	                    var datas = [];
+	                    for (var i = 0,
+	                        l = records.length;i < l;i++) {
+	                        var data = records[i].data;
+	                        datas.push(data);
+	                    }
+	                    param['detail'] = datas;
+	                    param['journal_date'] = journal_date;
+	                    Aurora.request({
+	                        url: /*${/request/@context_path}/modules/expm/exp_report_accounts_create_control.svc*/
+	                        $('csh_pay_req_audit_account_create_control_link_9').getUrl(),
+	                        para: param,
+	                        success: refresh,
+	                        error: function(){
+	                            flag = 0;
+	                        },
+	                        scope: this
+	                    });
+	                }
+	            }
+	            
+	            //修改汇率
+	            function exchangeRateModify() {
+	                //    			
+	                var param = new Object();
+	                var data = $('audit_result_ds').getAt(0);
+	                param['detail'] = [data.data];
+	                Aurora.request({
+	                    url: /*${/request/@context_path}/modules/expm/exp_report_audit_account_tmp_control.svc*/
+	                    $('csh_payment_req_audit_account_tmp_control_link').getUrl(),
+	                    para: param,
+	                    success: modifySuccess,
+	                    scope: this
+	                });
+	            }
+	            
+	            function modifySuccess() {
+	                var journal_date = Aurora.formatDate($('input_date_ds').getAt(0).get('journal_date'));
+	                var url = /*${/request/@context_path}/modules/expm/exp_report_accounts.screen*/
+	                $('csh_payment_req_audit_accounts_link').getUrl() + '?journal_date=' + journal_date;
+	                //window.open(url,'','fullscreen=no,resizable=yes,width=530,height=515');
+	                new Aurora.Window({
+	                    id: 'csh_payment_req_audit_accounts_screen',
+	                    url: url,
+	                    title: '${l:PROMPT.CREATE_JE}',
+	                    height: 515,
+	                    width: 620
+	                });
+	            }
+    			
+    			//查看日志
+    			function lookOverLog(){
+    				new Aurora.Window({
+    					id:'csh_payment_req_audit_log_screen',
+    					url:/*${/request/@context_path}/modules/csh/csh_payment_req_audit_log.screen*/$('csh_payment_req_audit_log_link').getUrl(),
+    					title:'${l:LOGS_MESSAGE}',
+    					width:650,
+    					height:520
+    				});
+    			}
+    			//跟踪单据
+    			function trackHistory(){
+    				var header_id = $('audit_result_ds').getAt(0).get('payment_requisition_header_id');
+	                var urlPath = /*${/request/@context_path}/modules/csh/csh_pay_req_detail_history.screen*/$('csh_pay_req_detail_history_link').getUrl()+'?csh_pay_header_id='+ header_id;
+	                new Aurora.Window({
+	                	id:'pay_req_detail_history_screen',
+	                	url:urlPath,
+	                	title:'${l:PROMPT.HISTORY}',
+	                	width:750,
+	                	height:550
+	                });
+    			}
+    			//审核 
+    			function auditFunction(){
+    				var header_id = $('audit_result_ds').getAt(0).get('payment_requisition_header_id');
+    				Aurora.request({
+    					url:/*${/request/@context_path}/autocrud/csh.csh_payment_req_audit/update*/$('csh_payment_req_audit_link').getUrl(),
+    					para:{payment_requisition_header_id:header_id},
+    					success:function(args){
+    						$('audit_result_ds').query();
+    					},
+    					scope:this
+    				});
+    			}
+    			//拒绝
+    			function rejectFunction(){
+	                var header_id = $('audit_result_ds').getAt(0).get('payment_requisition_header_id');
+    				Aurora.request({
+    					url:/*${/request/@context_path}/autocrud/csh.csh_payment_req_audit_reject/update*/$('csh_payment_req_audit_reject_link').getUrl(),
+    					para:{payment_requisition_header_id:header_id,
+    					      p_reject:''},
+    					success:function(args){
+    						$('audit_result_ds').query();
+    					},
+    					scope:this
+    				});
+    			}
+    		
+    			function bankAssign(value, record, name) {
+                var lineIndex = $('pay_req_update_line_ds').indexOf(record);
+                return '<a href="javascript:bankAssignInfo(' + lineIndex + ')">${l:CSH_PAYMENT.BANK_ACCOUNT_CODE}</a>';
+            }
+            
+            function bankAssignInfo(lineIndex) {
+                new Aurora.Window({
+                    id: 'exp_bank_assign_window',
+                    url: $('exp_bank_assign_link_1').getUrl() + '?line_index=' + lineIndex + '&ds_name=pay_req_update_line_ds',
+                    title: '${l:CSH_PAYMENT.BANK_ACCOUNT_CODE}',
+                    fullScreen: true
+                });
+            }
+            
+            //add by Qu yuanyuan 只能选择当前期间
+            function dateValidate(cell,date,text){
+               var year = date.getFullYear();
+               var journal_date = '${/model/sysdate/record/@now}';
+               var journal_year = journal_date.substr(0,4);
+               
+               if (year!=journal_year){
+               		cell.disabled=true;
+               }
+            }
+            
+            function initStyle() {
+                var attach_number = '${/model/attachment/record/@atm_count}';
+                if (attach_number > 0) {
+            		Ext.get('attachmentButton').setStyle('color', 'red');
+                }
+            
+            }
+            function uploadFile() {
+            	var header_id = $('audit_result_ds').getAt(0).get('payment_requisition_header_id');
+                var url = $('uploadFile_link').getUrl() + '?table_name=CSH_PAYMENT_REQUISITION_HDS&header_id='+header_id;
+            	new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'check_upload_file_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+			
+		]]></script>
+        <a:dataSets>
+            <a:dataSet id="input_date_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="journal_date" defaultValue="${/model/sysdate/record/@now}" required="true"/>
+                    <a:field name="period_name" defaultValue="${/model/default_period_name/record/@period_name}" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="cry_list_ds">
+                <a:datas dataSource="/model/cry_list"/>
+            </a:dataSet>
+            <a:dataSet id="pay_obj_list_ds" lookupCode="PAYMENT_OBJECT"/>
+            <a:dataSet id="batch_id_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="batch_id" defaultValue="${/session/@session_id}"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="audit_result_ds" autoQuery="true" model="csh.WBC1010.csh_payment_req_audit_query" queryUrl="${/request/@context_path}/autocrud/csh.WBC1010.csh_payment_req_audit_query/query?header_id=${/parameter/@head_id}">
+                <a:fields>
+                    <a:field name="requisition_number" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_NUMBER"/>
+                    <a:field name="req_type_desc" prompt="PAY_REQ_TYPE"/>
+                    <a:field name="requisition_date" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_DATE"/>
+                    <a:field name="employee_name" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITOR"/>
+                    <a:field name="category_desc" prompt="CSH_PREPAYMENT_BALANCE_QUERY.PARTNER_CATEGORY"/>
+                    <a:field name="p_partner_name" prompt="CSH_PAYMENT_REQUISITION_LNS.P_PARTNER_NAME"/>
+                    <a:field name="currency_code" prompt="CSH_PAYMENT_REQUISITION_HDS.CURRENCY_CODE"/>
+                    <a:field name="currency_name" prompt="CSH_PAYMENT_REQUISITION_HDS.CURRENCY_CODE"/>
+                    <a:field name="amount" prompt="CSH_PAYMENT_REQUISITION_HDS.AMOUNT"/>
+                    <a:field name="description" prompt="CSH_PAYMENT_REQUISITION_HDS.DESCRIPTION"/>
+                    <a:field name="je_creation_status" checkedValue="Y" prompt="PROMPT.CREATE_JE" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="status"/>
+                    <a:field name="payment_requisition_header_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="audit_finance_ds" autoQuery="true" fetchAll="false" model="csh.csh_pay_req_finance_list_query" queryUrl="${/request/@context_path}/autocrud/csh.csh_pay_req_finance_list_query/query?header_id=${/parameter/@head_id}" submitUrl="${/request/@context_path}/autocrud/db.csh_payment_req_audit_pkg.update_csh_pnt_req_accounts/batch_update">
+                <a:fields>
+                    <a:field name="description" prompt="CSH_PAYMENT_REQ_ACCOUNTS.DESCRIPTION"/>
+                    <a:field name="period_name" prompt="BGT_CHECK_LOGS.PERIOD_NAME"/>
+                    <a:field name="company_code" prompt="EXP_DOCUMENT_PERSON_AUTH.COMPANY_CODE"/>
+                    <a:field name="company_short_name" prompt="BGT_JOURNAL_INTERFACE.COMPANY_CODE"/>
+                    <a:field name="responsibility_center_code" lovGridHeight="300" lovHeight="450" lovService="expm.exp_expense_journal_adjust_center_lov" lovWidth="500" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_CODE" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="center_code" to="responsibility_center_code"/>
+                            <a:map from="center_code" to="account_segment2"/>
+                            <a:map from="center_id" to="responsibility_center_id"/>
+                            <a:map from="center_id_display" to="responsibility_center_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_name" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME_ID"/>
+                    <a:field name="account_code" lovGridHeight="300" lovHeight="450" lovService="expm.exp_expense_journal_adjust_account_lov" lovWidth="500" prompt="GLD_ACCOUNTS.ACCOUNT_CODE" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="account_code" to="account_code"/>
+                            <a:map from="account_code" to="account_segment3"/>
+                            <a:map from="account_desc" to="account_desc"/>
+                            <a:map from="account_id" to="account_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_desc" prompt="CSH_WRITE_OFF_ACCOUNTS.ACCOUNT_NAME"/>
+                    <a:field name="entered_amount_dr" prompt="CSH_BANK_BALANCES.ENTERED_DATE_NET_DR"/>
+                    <a:field name="entered_amount_cr" prompt="CSH_BANK_BALANCES.ENTERED_DATE_NET_CR"/>
+                    <a:field name="functional_amount_dr" prompt="CSH_PAY_REQ.FUNCTIONAL_AMOUNT_DR"/>
+                    <a:field name="functional_amount_cr" prompt="CSH_PAY_REQ.FUNCTIONAL_AMOUNT_CR"/>
+                    <a:field name="je_line_id"/>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="account_id"/>
+                    <a:field name="company_id"/>
+                    <a:field name="exchange_rate_quotation"/>
+                    <a:field name="exchange_rate"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pay_req_update_line_ds" autoQuery="true" model="csh.csh_pay_req_line_query" queryUrl="${/request/@context_path}/autocrud/csh.csh_pay_req_line_query/query?payment_requisition_header_id=${/parameter/@head_id}">
+                <a:fields>
+                    <a:field name="csh_transaction_class_code"/>
+                    <a:field name="csh_transaction_class_code_display" prompt="CSH_PAYMENT_REQUISITION_LNS.CLS_DES"/>
+                    <a:field name="payment_requisition_line_type"/>
+                    <a:field name="p_payment_req_line_type" prompt="CSH_PAYMENT_REQUISITION_LNS.PAYMENT_REQUISITION_LINE_TYPE"/>
+                    <a:field name="ref_document_id_display" prompt="CSH_PAYMENT_REQUISITION_LNS.REF_DOCUMENT_ID"/>
+                    <a:field name="partner_category"/>
+                    <a:field name="partner_category_display" prompt="EXP_REPORT_HEADERS.PAYEE_CATEGORY"/>
+                    <a:field name="partner_id"/>
+                    <a:field name="p_partner_name" prompt="ACP_INVOICE_HEADERS.PAYEE_ID"/>
+                    <a:field name="contract_number" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER"/>
+                    <a:field name="payment_schedule_line_number" prompt="CON_PAYMENT_SCHEDULES.PAYMENT_SCHEDULE_LINE_NUMBER"/>
+                    <a:field name="description" prompt="CSH_PAYMENT_REQUISITION_HDS.DESCRIPTION"/>
+                    <a:field name="need_payment_amount" prompt="CSH_PAYMENT_REQUISITION_LNS.NEED_PAYMENT_AMOUNT"/>
+                    <a:field name="requisited_amount" prompt="CSH_PAYMENT_REQUISITION_LNS.REQUISITED_AMOUNT"/>
+                    <a:field name="requisited_unpayment_amount" prompt="CSH_PAYMENT_REQUISITION_LNS.REQUISITED_UNPAYMENT_AMOUNT"/>
+                    <a:field name="amount" prompt="CSH_PAYMENT_REQUISITION_LNS.CURRENT_AMOUNT"/>
+                    <a:field name="payment_schedule_line_id"/>
+                    <a:field name="payment_requisition_header_id"/>
+                    <a:field name="payment_requisition_line_id"/>
+                    <a:field name="contract_header_id"/>
+                    <a:field name="ref_document_id"/>
+                    <a:field name="cont_flag"/>
+                    <a:field name="payment_method_id"/>
+                    <a:field name="payment_method_id_display" displayField="description" options="payment_methods_list_ds" prompt="CSH_TRANSACTION_HEADERS.PAYMENT_METHOD_ID" required="true" returnField="payment_method_id" valueField="payment_method_id"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:form id="t_csh_form" column="4" title="CSH_PAYMENT_REQUISITION_AUDIT.TITLE">
+            <a:label name="requisition_number" bindTarget="audit_result_ds" renderer="reqNumRenFunction"/>
+            <a:label name="req_type_desc" bindTarget="audit_result_ds"/>
+            <a:label name="requisition_date" bindTarget="audit_result_ds"/>
+            <!-- <a:label name="employee_name" bindTarget="audit_result_ds"/>
+            <a:label name="category_desc" bindTarget="audit_result_ds"/>
+            <a:label name="p_partner_name" bindTarget="audit_result_ds"/>
+            <a:label name="currency_name" bindTarget="audit_result_ds"/>
+            <a:label name="amount" bindTarget="audit_result_ds"/>
+            <a:label name="description" bindTarget="audit_result_ds"/>
+            <a:label name="je_creation_status" bindTarget="audit_result_ds"/> -->
+        </a:form>
+        <a:hBox>
+            <a:datePicker name="journal_date" bindTarget="input_date_ds" dayRenderer="dateValidate" enableBesideDays="none" enableMonthBtn="none" renderer="Aurora.formatDate" width="120">
+                <a:events>
+                    <a:event name="change" handler="journalDateChange"/>
+                </a:events>
+            </a:datePicker>
+            <a:button click="createJournal" text="PROMPT.CREATE_JE"/>
+            <!-- <a:button click="doDelete" text="PROMPT.DELETE_JE"/> -->
+            <!-- <a:button click="exchangeRateModify" text="CSH_PAYMENT_REQISITION.EXCHANGE_RATE_MODIFY"/> -->
+            <!-- <a:button click="lookOverLog" text="LOOK_OVER_LOG"/> -->
+            <a:button click="trackHistory" text="PROMPT.HISTORY"/>
+            <!-- <a:button click="auditFunction" text="PROMPT.AUDIT_FLAG"/>
+            <a:button click="rejectFunction" text="PROMPT.REJECT"/> -->
+            <a:button id="attachmentButton" click="uploadFile" text="PROMPT.VIEW_ATTACHMENT"/>
+        </a:hBox>
+        <a:tabPanel id="line_tab" marginHeight="210">
+            <a:tabs>
+                <a:tab marginHeight="255" prompt="HAP.WORK_ORDER_ACCOUNTS_INFO" width="150">
+                    <a:grid id="t_csh_grid" bindTarget="audit_finance_ds" marginHeight="255" minHeight="250" navBar="true">
+                        <a:toolBar>
+                            <a:button click="financeSaveFunction" icon="${/request/@context_path}/images/save.gif" text="PROMPT.SAVE"/>
+                        </a:toolBar>
+                        <a:columns>
+                            <a:column name="description" align="left" editor="textfield_finance" width="80"/>
+                            <a:column name="period_name" align="center" width="70"/>
+                            <a:column name="company_code" align="center" width="80"/>
+                            <a:column name="company_short_name" align="center" width="80"/>
+                            <a:column name="responsibility_center_code" align="center" editor="lov_finance" width="80"/>
+                            <a:column name="responsibility_center_name" align="center" width="80"/>
+                            <a:column name="account_code" align="center" editor="lov_finance" width="80"/>
+                            <a:column name="account_desc" align="left" width="80"/>
+                            <a:column name="entered_amount_dr" align="center" width="80"/>
+                            <a:column name="entered_amount_cr" align="center" width="80"/>
+                            <!-- <a:column name="functional_amount_dr" align="center" width="80"/> -->
+                            <!-- <a:column name="functional_amount_cr" align="center" width="80"/> -->
+                            <a:column name="account_segment1" align="center" prompt="ACCOUNT_SEGMENT1" width="80"/>
+                            <a:column name="account_segment2" align="center" prompt="ACCOUNT_SEGMENT2" width="80"/>
+                            <a:column name="account_segment3" align="center" prompt="ACCOUNT_SEGMENT3" width="80"/>
+                            <a:column name="account_segment4" align="center" prompt="ACCOUNT_SEGMENT4" width="80"/>
+                            <a:column name="account_segment5" align="center" prompt="ACCOUNT_SEGMENT5" width="80"/>
+                            <a:column name="account_segment6" align="center" prompt="ACCOUNT_SEGMENT6" width="80"/>
+                            <a:column name="account_segment7" align="center" prompt="ACCOUNT_SEGMENT7" width="80"/>
+                            <a:column name="account_segment8" align="center" prompt="ACCOUNT_SEGMENT8" width="80"/>
+                            <a:column name="account_segment9" align="center" prompt="ACCOUNT_SEGMENT9" width="80"/>
+                            <!-- <a:column name="account_segment10" align="center" prompt="ACCOUNT_SEGMENT10" width="80"/> -->
+                            <!-- <a:column name="account_segment11" align="center" prompt="ACCOUNT_SEGMENT11" width="80"/> -->
+                        </a:columns>
+                        <a:editors>
+                            <a:textField id="textfield_finance"/>
+                            <a:lov id="lov_finance"/>
+                        </a:editors>
+                    </a:grid>
+                </a:tab>
+                <!-- <a:tab marginHeight="255" prompt="EXP_REQUISITION_LINES.EXP_REQ_LINES_INFO">
+                    <a:grid id="grid_1" bindTarget="pay_req_update_line_ds" marginHeight="255" minHeight="250" navBar="true">
+                        <a:columns>
+                            <a:column name="csh_transaction_class_code_display" align="left" sortable="true" width="120"/>
+                            <a:column name="p_payment_req_line_type" align="left" sortable="true" width="120"/>
+                            <a:column name="ref_document_id_display" align="left" sortable="true" width="120"/>
+                            <a:column name="partner_category_display" align="left" sortable="true" width="120"/>
+                            <a:column name="p_partner_name" align="left" sortable="true" width="120"/>
+                            <a:column name="payment_method_id_display" align="center" prompt="ACP.DESCRIPTION_METHOD" sortable="true"/>
+                            <a:column name="account_number" align="left" prompt="CSH_BANK_ACCOUNTS.BANK_ACCOUNT_NUM" sortable="true" width="120"/>
+                            <a:column name="account_name" align="left" prompt="EXP_EMPLOYEE_ACCOUNTS.BANK_ACCOUNT_NAME" sortable="true" width="120"/>
+                            <a:column name="contract_number" align="left" sortable="true" width="120"/>
+                            <a:column name="payment_schedule_line_number" align="left" sortable="true" width="120"/>
+                            <a:column name="description" align="left" sortable="true" width="150"/>
+                            <a:column name="need_payment_amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                            <a:column name="requisited_amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                            <a:column name="requisited_unpayment_amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                            <a:column name="amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                            <a:column name="bank_id" align="center" prompt="CSH_PAYMENT.BANK_ACCOUNT_CODE" renderer="bankAssign"/>
+                        </a:columns>
+                        <a:editors>
+                            <a:comboBox id="line_combox"/>
+                        </a:editors>
+                    </a:grid>
+                </a:tab> -->
+            </a:tabs>
+        </a:tabPanel>
+        <script purpose="auto_resize"><![CDATA[
+            function expInitSize() {
+                var vw = $A.getViewportWidth();
+                var marginWidth=35;
+                var vh = $A.getViewportHeight();
+                if (vw>1800){
+                //系统参数定义影像查看页面的宽度
+                	 marginWidth = parseInt('${/model/cux_exp_img/record/@cux_img_window_width}') + 35;
+                }
+                var autoWidth = vw - marginWidth;
+                Ext.get('t_csh_form').setWidth(autoWidth+6);
+                $('line_tab').setWidth(autoWidth+8);
+                $('t_csh_grid').setWidth(autoWidth);
+                $('grid_1').setWidth(autoWidth);
+            }
+            expInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

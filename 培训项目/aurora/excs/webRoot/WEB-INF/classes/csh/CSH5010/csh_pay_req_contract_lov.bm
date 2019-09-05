@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT DISTINCT
+                        v.contract_header_id,
+                        v.contract_number,
+                        v.document_number,
+                        v.document_desc,
+                        v.amount,
+                        v.status,
+                        v.company_id
+                    FROM
+                        exp_requisition_lines l,
+                        (SELECT
+                            cch.contract_header_id,
+                            ccpl.partner_category,
+                            ccpl.partner_id,
+                            cch.contract_number,
+                            cch.document_number,
+                            cch.document_desc,
+                            cps.payment_schedule_line_id,
+                            cch.company_id,
+                            cch.status,
+                            cch.amount,
+                            cps.payment_schedule_line_number,
+                            cdf.source_document_id,
+                            cdf.source_document_line_id
+                        FROM
+                            con_document_flows cdf,
+                            con_contract_headers cch,
+                            con_contract_partner_lines ccpl,
+                            con_payment_schedules cps
+                        WHERE
+                            cdf.document_type        = 'CON_CONTRACT' AND
+                            cdf.source_document_type = 'EXP_REQUISITION_LINES' AND
+                            cdf.document_id          = cch.contract_header_id AND
+                            cdf.document_line_id     = cps.payment_schedule_line_id AND
+                            ccpl.contract_header_id  = cch.contract_header_id AND
+                            cch.contract_header_id   = cps.contract_header_id AND
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                con_contract_ref_authority ccra
+                            WHERE
+                                ccra.enabled_flag       ='Y' AND
+                                ccra.contract_header_id = cch.contract_header_id AND
+                                ccra.company_id         = ${/session/@company_id}
+                            )
+                        ) v
+                    WHERE
+                        l.exp_requisition_header_id  = v.source_document_id AND
+                        v.source_document_line_id(+) = l.exp_requisition_line_id AND
+                        (
+                            v.source_document_id = ${/parameter/@ref_document_id} OR
+                            (
+                                ${/parameter/@ref_document_id} IS NULL
+                            )
+                        )
+                        AND
+                        (
+                            v.partner_id = ${/parameter/@partner_id} OR
+                            (
+                                ${/parameter/@partner_id} IS NULL
+                            )
+                        )
+                        AND
+                        (
+                            v.partner_category = ${/parameter/@partner_category} OR
+                            (
+                                ${/parameter/@partner_category} IS NULL
+                            )
+                        )
+                    UNION
+                    SELECT DISTINCT
+                        v.contract_header_id,
+                        v.contract_number,
+                        v.document_number,
+                        v.document_desc,
+                        v.amount,
+                        v.status,
+                        v.company_id
+                    FROM
+                        (SELECT
+                            cch.contract_header_id,
+                            l.partner_id,
+                            l.partner_category,
+                            cch.contract_number,
+                            cch.document_number,
+                            cch.document_desc,
+                            cch.company_id,
+                            cch.status,
+                            cch.amount
+                        FROM
+                            con_contract_headers cch,
+                            con_contract_partner_lines l
+                        WHERE
+                            l.contract_header_id = cch.contract_header_id AND
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                con_contract_ref_authority ccra
+                            WHERE
+                                ccra.enabled_flag       ='Y' AND
+                                ccra.contract_header_id = cch.contract_header_id AND
+                                ccra.company_id         = ${/session/@company_id}
+                            )
+                        ) v
+                    WHERE
+                        (
+                            v.partner_id = ${/parameter/@partner_id} OR
+                            (
+                                ${/parameter/@partner_id} IS NULL
+                            )
+                        )
+                        AND
+                        (
+                            v.partner_category = ${/parameter/@partner_category} OR
+                            (
+                                ${/parameter/@partner_category} IS NULL
+                            )
+                        )
+                    ) k #WHERE_CLAUSE#
+                ORDER BY
+                    k.contract_number
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="contract_header_id"/>
+        <bm:field name="contract_number" displayWidth="110" forDisplay="true" forQuery="true" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER"/>
+        <bm:field name="document_number" displayWidth="110" forDisplay="true" prompt="CSH_DOC_PAYMENT_COMPANY.DOCUMENT_ID"/>
+        <bm:field name="document_desc" displayWidth="110" forDisplay="true" prompt="CON_CONTRACT_HEADERS.DOCUMENT_DESC"/>
+        <bm:field name="amount" displayWidth="110" forDisplay="true" prompt="CON_CONTRACT_HEADERS.AMOUNT"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="contract_number" dataType="java.lang.String" queryExpression="k.contract_number like &apos;%&apos;||${@contract_number}||&apos;%&apos;"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression=" k.status = &apos;CONFIRM&apos; "/>
+    </bm:data-filters>
+</bm:model>

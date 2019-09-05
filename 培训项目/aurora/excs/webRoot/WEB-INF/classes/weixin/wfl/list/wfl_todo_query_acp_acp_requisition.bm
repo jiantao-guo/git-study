@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:fields>
+        <bm:field name="ins_doc_num"/>
+        <bm:field name="ins_doc_emp"/>
+        <bm:field name="ins_doc_hd_title"/>
+        <bm:field name="ins_doc_amount"/>
+        <bm:field name="ins_param"/>
+        <bm:field name="ins_sub_emp"/>
+        <bm:field name="ins_sub_date"/>
+        <bm:field name="ins_sub_date_day"/>
+        <bm:field name="ins_sub_date_format"/>
+        <bm:field name="ins_doc_desc"/>
+        <bm:field name="ins_id"/>
+        <bm:field name="ins_node_id"/>
+        <bm:field name="ins_node_name"/>
+        <bm:field name="ins_rcpt_id"/>
+        <bm:field name="ins_doc_category"/>
+        <bm:field name="ins_doc_category_desc"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        temp.ins_doc_num,
+                        sys_mobile_pkg.get_ins_doc_hd_title(temp.ins_param, temp.ins_doc_category) AS ins_doc_hd_title,
+                        temp.ins_doc_amount,
+                        temp.ins_param,
+                        (SELECT t.name FROM exp_employees t WHERE t.employee_id = aarh.employee_id
+                        ) ins_sub_emp,
+                    	sys_mobile_pkg.get_ins_doc_emp(temp.ins_id) AS ins_doc_emp,
+                        temp.ins_sub_date,
+                        temp.ins_sub_date_day,
+                        temp.ins_sub_date_format,
+                        temp.ins_doc_desc,
+                        temp.ins_id,
+                        temp.ins_node_id,
+                        temp.ins_node_name,
+                        temp.ins_rcpt_id,
+                        temp.ins_doc_category,
+                        temp.ins_doc_category_desc
+                    FROM
+                        (SELECT
+                            t1.creation_date AS ins_sub_date,
+                            TO_CHAR(t1.creation_date,'yyyy-mm-dd') AS ins_sub_date_day,
+                            sys_mobile_pkg.get_date_format(t1.creation_date) AS ins_sub_date_format,
+                            t1.instance_desc AS ins_doc_desc,
+                            t1.instance_amount AS ins_doc_amount,
+                            t1.instance_id AS ins_id,
+                            t1.current_node AS ins_node_id,
+                            (SELECT
+                                name
+                            FROM
+                                wfl_workflow_node_vl wnv
+                            WHERE
+                                wnv.node_id = t1.current_node
+                            ) AS ins_node_name,
+                            t1.document_number AS ins_doc_num,
+                            r.record_id AS ins_rcpt_id,
+                            ww.workflow_category AS ins_doc_category,
+                            (SELECT
+                                v.code_value_name
+                            FROM
+                                sys_codes sc,
+                                sys_code_values_vl v
+                            WHERE
+                                sc.code_id   = v.code_id AND
+                                sc.code      = 'WFL_WORKFLOW_CATEGORY' AND
+                                v.code_value = ww.workflow_category
+                            ) AS ins_doc_category_desc,
+                            t1.instance_param AS ins_param
+                        FROM
+                            wfl_workflow_instance t1
+                        INNER JOIN wfl_instance_node_recipient r
+                        ON
+                            t1.instance_id = r.instance_id
+                        INNER JOIN wfl_workflow ww
+                        ON
+                            t1.workflow_id = ww.workflow_id
+                        WHERE
+                            r.user_id = ${/session/@user_id}
+                        ORDER BY
+                            t1.creation_date DESC
+                        ) temp,
+                        acp_acp_requisition_hds aarh,
+                        acp_sys_acp_req_types asart
+                    WHERE
+                        aarh.requisition_number = temp.ins_doc_num AND
+                        aarh.acp_req_type_id    = asart.acp_req_type_id
+                    ) t3 #WHERE_CLAUSE#
+                ORDER BY
+                    ins_sub_date DESC
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="user_id" inputPath="/session/@user_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field field="ins_doc_num" queryOperator="="/>
+        <bm:query-field field="ins_sub_emp" queryExpression="t3.ins_sub_emp like &apos;%&apos; || ${@ins_sub_emp} || &apos;%&apos;"/>
+        <bm:query-field name="ins_sub_date_from" queryExpression="t3.ins_sub_date &gt;= to_date(${@ins_sub_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="ins_sub_date_to" queryExpression="t3.ins_sub_date &lt;= to_date(${@ins_sub_date_to},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field field="ins_doc_desc" queryExpression="t3.ins_sub_emp like &apos;%&apos; || ${@ins_doc_desc} || &apos;%&apos;"/>
+        <bm:query-field field="ins_node_name" queryOperator="="/>
+        <bm:query-field field="ins_doc_category" queryOperator="="/>
+        <bm:query-field name="ins_doc_amount_from" queryExpression="t3.ins_doc_amount &gt;= ${@ins_doc_amount_from}"/>
+        <bm:query-field name="ins_doc_amount_to" queryExpression="t3.ins_doc_amount &lt;= ${@ins_doc_amount_to}"/>
+        <!-- update by fangqi 20151210 -->
+        <bm:query-field name="fuzzy_query" queryexpression="t3.ins_doc_num like &apos;%&apos;|| UPPER(${@fuzzy_query}) ||&apos;%&apos; or t3.ins_doc_amount like &apos;%&apos;||${@fuzzy_query}||&apos;%&apos; or t3.ins_sub_emp like &apos;%&apos;||${@fuzzy_query}||&apos;%&apos; or t3.ins_doc_hd_title like &apos;%&apos;||${@fuzzy_query}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

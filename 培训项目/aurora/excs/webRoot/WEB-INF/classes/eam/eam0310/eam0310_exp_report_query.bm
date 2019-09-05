@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: sunyongqing 
+    $Date: 2015-12-26 下午3:31:09  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        v.*,
+                        (v.report_amount - v.release_amount) remain_amount,
+                        (v.primary_quantity - v.release_quantity) remain_quantity
+                    FROM
+                        (SELECT
+                            h.exp_report_header_id,
+                            h.exp_report_number,
+                            h.report_date,
+                            l.line_number,
+                            t.description exp_report_type_name,
+                            l.company_id,
+                            (SELECT
+                                c.company_short_name
+                            FROM
+                                fnd_companies_vl c
+                            WHERE
+                                c.company_id = l.company_id
+                            ) company_name,
+                            l.unit_id,
+                            (SELECT u.description FROM exp_org_unit_vl u WHERE u.unit_id = l.unit_id
+                            ) unit_name,
+                            l.expense_item_id,
+                            (SELECT
+                                eeit.description
+                            FROM
+                                exp_expense_items_vl eeit
+                            WHERE
+                                eeit.expense_item_id = l.expense_item_id
+                            ) expense_item_name,
+                            l.exp_report_line_id,
+                            l.description req_line_desc,
+                            l.primary_quantity,
+                            l.price,
+                            (SELECT
+                                NVL(SUM(er.release_quantity), 0)
+                            FROM
+                                eam_document_req_releases er
+                            WHERE
+                                er.source_document_line_id  = l.exp_report_line_id AND
+                                er.source_document_category = 'EXP_RPT'
+                            ) release_quantity,
+                            l.report_amount,
+                            (SELECT
+                                TRUNC(NVL(SUM(er.release_amount), 0), 2)
+                            FROM
+                                eam_document_req_releases er,
+                                eam_requisition_headers erh
+                            WHERE
+                                er.source_document_line_id  = l.exp_report_line_id AND
+                                erh.requisition_header_id   = er.requisition_header_id AND
+                                erh.requisition_status NOT IN ('GENERATE', 'TAKEN_BACK', 'REJECTED') AND
+                                er.source_document_category = 'EXP_RPT'
+                            ) release_amount
+                        FROM
+                            exp_report_headers h,
+                            exp_report_lines l,
+                            exp_sob_report_types st,
+                            exp_expense_report_types_vl t,
+                            eam_requisition_types et,
+                            eam_req_type_source_doc_type ertt
+                        WHERE
+                            h.exp_report_header_id       = l.exp_report_header_id AND
+                            h.exp_report_type_id         = t.expense_report_type_id AND
+                            t.expense_report_type_code   = st.expense_report_type_code AND
+                            ertt.document_category       = 'EXP_RPT' AND
+                            ertt.ast_requisition_type_id = et.ast_requisition_type_id AND
+                            st.expense_report_type_id    = ertt.document_type_id AND
+                            h.report_status              = 'COMPLETELY_APPROVED' AND
+                            ertt.ast_requisition_type_id = ${@ast_requisition_type_id} AND
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                eam_asset_companies_vl eacv
+                            WHERE
+                                eacv.parent_company_id = ${@company_id} AND
+                                l.company_id           = eacv.company_id
+                            )
+                        ) v
+                    WHERE
+                        v.report_amount - v.release_amount>0
+                    ) #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="exp_report_type_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="160" forDisplay="true" forQuery="false" prompt="单据类型"/>
+        <bm:field name="exp_report_number" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="160" forDisplay="true" forQuery="true" prompt="单据编号"/>
+        <bm:field name="line_number" databaseType="NUMBER" datatype="java.lang.Long" displayWidth="40" forDisplay="true" physicalName="LINE_NUMBER" prompt="行号"/>
+        <bm:field name="company_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="100" forDisplay="true" prompt="费用机构"/>
+        <bm:field name="unit_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="100" forDisplay="true" prompt="费用部门"/>
+        <bm:field name="primary_quantity" databaseType="NUMBER" datatype="java.lang.Long" displayWidth="60" forDisplay="true" forQuery="false" physicalName="PRIMARY_QUANTITY" prompt="数量"/>
+        <bm:field name="price" databaseType="NUMBER" datatype="java.lang.Long" displayWidth="60" forDisplay="true" forQuery="false" prompt="单价"/>
+        <bm:field name="exp_report_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="EXP_REPORT_HEADER_ID"/>
+        <bm:field name="exp_report_line_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="EXP_REPORT_LINE_ID"/>
+        <bm:field name="expense_item_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="100" forQuery="true" prompt="费用项目"/>
+        <bm:field name="req_line_desc" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="100"/>
+        <bm:field name="release_quantity" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="remain_quantity" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="report_amount" databaseType="NUMBER" datatype="java.lang.Double" displayWidth="80" forDisplay="true" forQuery="false" physicalName="REPORT_AMOUNT" prompt="行金额"/>
+        <bm:field name="release_amount" databaseType="NUMBER" datatype="java.lang.Double" displayWidth="80" forDisplay="true" physicalName="RELEASE_AMOUNT" prompt="已核销金额"/>
+        <bm:field name="remain_amount" databaseType="NUMBER" datatype="java.lang.Double" displayWidth="80" forDisplay="true" physicalName="RELEASE_AMOUNT" prompt="剩余金额"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="exp_report_header_id" queryOperator="="/>
+        <bm:query-field field="exp_report_line_id" queryOperator="="/>
+        <bm:query-field field="exp_report_number" queryOperator="like"/>
+        <bm:query-field field="expense_item_name" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ns1:model xmlns:ns2="aurora.database.local.oracle" xmlns:ns1="http://www.aurora-framework.org/schema/bm" defaultOrderBy="t.order_no desc" needAccessControl="false">
+    <ns1:operations>
+        <ns1:operation name="query">
+            <ns1:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        t.*,
+                        DECODE(t.last_approve_name, NULL, NULL, TO_CHAR(t.last_update_date, 'yyyy-mm-dd hh24:mi')) last_update_date_desc
+                    FROM
+                        (SELECT
+                            rs.*,
+                            TO_CHAR(rs.creation_date, 'yyyy-mm-dd hh24:mi') creation_date_desc,
+                            (SELECT
+                                code_value_name
+                            FROM
+                                sys_service_lookup_v
+                            WHERE
+                                code       = 'WFL_WORKFLOW_INSTANCE_STATUS' AND
+                                code_value = TO_CHAR(rs.status) AND
+                                language   = 'ZHS'
+                            ) status_name,
+                            wfl_common_pkg.get_current_node(rs.workflow_id, rs.instance_id, rs.current_node) curr_approve_name,
+                            wfl_common_pkg.get_wfl_user_name(rs.created_by) create_by_name,
+                            wfl_common_pkg.get_wfl_user_name(rs.created_by) AS employee_name,
+                            rs.created_by AS employee_id,
+                            wfl_common_pkg.get_wfl_user_name(
+                            (SELECT
+                                r.created_by
+                            FROM
+                                wfl_approve_record r
+                            WHERE
+                                r.record_id =
+                                (SELECT
+                                    MAX(record_id)
+                                FROM
+                                    wfl_approve_record
+                                WHERE
+                                    instance_id = rs.instance_id
+                                )
+                            )) last_approve_name,
+                            (SELECT
+                                wdr.document_desc
+                            FROM
+                                wfl_document_reference_vl wdr
+                            WHERE
+                                rs.order_type_code = wdr.workflow_category
+                            ) order_type,
+                            TO_CHAR(
+                            (SELECT
+                                MAX(nr.date_limit)
+                            FROM
+                                wfl_instance_node_recipient nr,
+                                wfl_workflow_node n
+                            WHERE
+                                nr.instance_id = rs.instance_id AND
+                                nr.node_id     = n.node_id AND
+                                n.sequence_num = rs.current_node
+                            ), 'yyyy-mm-dd hh24:mi') date_limit,
+                            wfl_core_pkg.get_can_back_to_pre_node_flag(rs.instance_id,${@user_id}) can_back_to_pre_node_flag,
+                            CASE rs.order_type_code
+                                WHEN 'EXP_REPORT'
+                                THEN
+                                    (SELECT
+                                        eertv.DESCRIPTION
+                                    FROM
+                                        exp_expense_report_types_vl eertv,
+                                        exp_report_headers h
+                                    WHERE
+                                        rs.order_no          = h.exp_report_number AND
+                                        h.exp_report_type_id = eertv.expense_report_type_id
+                                    )
+                                WHEN 'EXP_REQUISITION'
+                                THEN
+                                    (SELECT
+                                        ev.description
+                                    FROM
+                                        exp_expense_req_types_vl ev,
+                                        exp_requisition_headers erh
+                                    WHERE
+                                        rs.order_no                    = erh.exp_requisition_number AND
+                                        ev.EXPENSE_REQUISITION_TYPE_ID = erh.exp_requisition_type_id
+                                    )
+                                WHEN 'PAYMENT_REQUISITION'
+                                THEN
+                                    (SELECT
+                                        fd.description_text
+                                    FROM
+                                        csh_pay_req_types_vl cprtv,
+                                        csh_payment_requisition_hds cprh,
+                                        fnd_descriptions fd
+                                    WHERE
+                                        rs.order_no       = cprh.requisition_number AND
+                                        cprtv.type_id     = cprh.payment_req_type_id AND
+                                        fd.description_id = cprtv.description_id AND
+                                        fd.language       = 'ZHS'
+                                    )
+                            END document_type
+                        FROM
+                            (SELECT
+                                a.instance_id,
+                                a.workflow_id,
+                                a.current_node,
+                                a.created_by,
+                                a.creation_date,
+                                a.document_number order_no,
+                                b.name workflow_name,
+                                a.last_update_date,
+                                b.workflow_category order_type_code,
+                                a.status,
+                                a.status_desc,
+                                a.instance_amount
+                            FROM
+                                wfl_workflow_instance a,
+                                Wfl_Workflow_Vl b
+                            WHERE
+                                a.workflow_id = b.workflow_id AND
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    wfl_approve_record
+                                WHERE
+                                    instance_id = a.instance_id AND
+                                    created_by  = ${@user_id}
+                                )
+                            ) rs
+                        ) t
+                    WHERE
+                        (
+                            CASE t.order_type_code
+                                WHEN 'EXP_REPORT'
+                                THEN
+                                    (SELECT
+                                        eert.mobile_approve
+                                    FROM
+                                        exp_report_headers erh,
+                                        exp_expense_report_types eert
+                                    WHERE
+                                        t.order_no             =erh.exp_report_number AND
+                                        erh.exp_report_type_id = eert.expense_report_type_id
+                                    )
+                                WHEN 'EXP_REQUISITION'
+                                THEN
+                                    (SELECT
+                                        eertv.mobile_approve
+                                    FROM
+                                        exp_requisition_headers er,
+                                        exp_expense_req_types_vl eertv
+                                    WHERE
+                                        t.order_no                 = er.exp_requisition_number AND
+                                        er.exp_requisition_type_id = eertv.EXPENSE_REQUISITION_TYPE_ID
+                                    )
+                                WHEN 'PAYMENT_REQUISITION'
+                                THEN
+                                    (SELECT
+                                        cprtv.mobile_approve
+                                    FROM
+                                        csh_payment_requisition_hds cprh,
+                                        csh_pay_req_types_vl cprtv
+                                    WHERE
+                                        t.order_no               = cprh.requisition_number AND
+                                        cprh.payment_req_type_id = cprtv.type_id
+                                    )
+                            END
+                        )
+                        ='Y'
+                    
+                    ) t3 #WHERE_CLAUSE#
+                    ORDER BY
+                        t3.last_update_date_desc DESC
+            ]]></ns1:query-sql>
+        </ns1:operation>
+    </ns1:operations>
+    <ns1:query-fields>
+        <ns1:query-field name="query_param" queryExpression="t3.order_no like &apos;%&apos;||${@query_param}||&apos;%&apos; or t3.create_by_name like &apos;%&apos;||${@query_param}||&apos;%&apos;"/>
+    </ns1:query-fields>
+</ns1:model>

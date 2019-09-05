@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: gaoyang  
+    $Date: 2011-10-11 上午8:23:29  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select *
+  from (select l.vender_item_list_id,
+       l.item_code,
+       l.description,
+       (select description vender_item_type
+          from inv_system_item_types_vl t
+         where item_type_id = t.item_type_id
+          and rownum=1) vender_item_type,
+       item_id,
+       item_type_id,
+       item_specs,
+       item_model,
+       l.vender_item_vender_id,
+       (select decode( (select p.price/p.price_quantity
+          from pur_vender_item_prices p, pur_vender_item_periods period
+         where period.vender_item_period_id = p.vender_item_period_id
+           and period.vender_item_list_id = l.vender_item_list_id
+           and period.currency=${@currency_code}
+           and to_date(${@default_requisition_date_id},'yyyy-mm-dd') between period.start_date and nvl(period.end_date,to_date('9999-12-31','yyyy-mm-dd'))
+           and p.quantity_scale_from = (select min(quantity_scale_from) from pur_vender_item_prices p, pur_vender_item_periods period
+         where period.vender_item_period_id = p.vender_item_period_id
+           and period.vender_item_list_id = l.vender_item_list_id
+           and period.currency=${@currency_code}
+           and to_date(${@default_requisition_date_id},'yyyy-mm-dd') between period.start_date and nvl(period.end_date,to_date('9999-12-31','yyyy-mm-dd')))
+           ),null,'',(select p.price/p.price_quantity
+          from pur_vender_item_prices p, pur_vender_item_periods period
+         where period.vender_item_period_id = p.vender_item_period_id
+           and period.vender_item_list_id = l.vender_item_list_id
+           and period.currency=${@currency_code}
+           and to_date(${@default_requisition_date_id},'yyyy-mm-dd') between period.start_date and nvl(period.end_date,to_date('9999-12-31','yyyy-mm-dd'))
+           and p.quantity_scale_from = (select min(quantity_scale_from) from pur_vender_item_prices p, pur_vender_item_periods period
+         where period.vender_item_period_id = p.vender_item_period_id
+           and period.vender_item_list_id = l.vender_item_list_id
+           and period.currency=${@currency_code}
+           and to_date(${@default_requisition_date_id},'yyyy-mm-dd') between period.start_date and nvl(period.end_date,to_date('9999-12-31','yyyy-mm-dd')))
+           )) from dual
+           ) price,
+          (select period.vender_item_period_id from pur_vender_item_periods period
+       where period.vender_item_list_id=l.vender_item_list_id
+       and period.currency=${@currency_code}
+       and to_date(${@default_requisition_date_id},'yyyy-mm-dd') between period.start_date and nvl(period.end_date,to_date('9999-12-31','yyyy-mm-dd')))vender_item_period_id,
+       l.lead_time,
+       expense_item_id,
+       (select description
+          from exp_expense_items_vl e,fnd_companies f
+         where e.expense_item_id = l.expense_item_id
+         and e.set_of_books_id=f.set_of_books_id
+         and f.company_id=${/session/@company_id}) as expense_description,
+       v.vender_id vender_id,
+       (select vender.payment_method
+          from pur_system_venders_vl vender
+         where v.vender_id = vender.vender_id) payment_method,
+       (select vender.description
+          from pur_system_venders_vl vender
+         where v.vender_id = vender.vender_id) venders_desc,
+       primary_uom,
+        (select cch.contract_header_id
+          from con_contract_headers cch,
+               con_contract_partner_lines  l
+where status = 'CONFIRM'
+         and  l.contract_header_id = cch.contract_header_id 
+         and rownum=1
+         and l.partner_category ='VENDER'
+         and l.partner_id = nvl(v.vender_id, l.partner_id)
+         and cch.currency_code=nvl(${@currency_code},cch.currency_code)
+         and exists(select 1 from con_contract_ref_authority ccra
+where ccra.contract_header_id=cch.contract_header_id
+and ccra.company_id=${/session/@company_id}
+and ccra.enabled_flag='Y'
+))contract_header_id,
+   (select cch.contract_number
+          from con_contract_headers cch,
+               con_contract_partner_lines  l
+where status = 'CONFIRM'
+         and rownum=1
+         and  l.contract_header_id = cch.contract_header_id 
+         and l.partner_category ='VENDER'
+         and l.partner_id = nvl(v.vender_id, l.partner_id)
+         and cch.currency_code=nvl(${@currency_code},cch.currency_code)
+         and exists(select 1 from con_contract_ref_authority ccra
+where ccra.contract_header_id=cch.contract_header_id
+and ccra.company_id=${/session/@company_id}
+and ccra.enabled_flag='Y'
+))contract_number,
+(select b.buyer_id from pur_buyers_priority b
+where nvl(b.company_id,nvl(${/session/@company_id},'-1'))=nvl(${/session/@company_id},'-1')
+and nvl(b.unit_id,nvl(${@unit_id},'-1'))=nvl(${@unit_id},'-1')
+and nvl(b.item_id,nvl(l.item_id,'-1'))=nvl(l.item_id,'-1')
+and nvl(b.item_type_id,nvl(l.item_type_id,'-1'))=nvl(l.item_type_id,'-1')
+and nvl(b.expense_item_id,nvl(l.expense_item_id,'-1'))= nvl(l.expense_item_id,'-1')
+and nvl(b.vender_type_id,'-1')  =(select nvl(sv.vender_type_id,'-1')  from pur_system_venders sv where sv.vender_id=v.vender_id)
+and nvl(b.vender_id,nvl(v.vender_id,'-1')) =nvl(v.vender_id,'-1')
+and b.enabled_flag='Y'
+and b.priority=(select max(b.priority) from pur_buyers_priority b
+where nvl(b.company_id,nvl(${/session/@company_id},'-1'))=nvl(${/session/@company_id},'-1')
+and nvl(b.unit_id,nvl(${@unit_id},'-1'))=nvl(${@unit_id},'-1')
+and nvl(b.item_id,nvl(l.item_id,'-1'))=nvl(l.item_id,'-1')
+and nvl(b.item_type_id,nvl(l.item_type_id,'-1'))=nvl(l.item_type_id,'-1')
+and nvl(b.expense_item_id,nvl(l.expense_item_id,'-1'))= nvl(l.expense_item_id,'-1')
+and nvl(b.vender_type_id,'-1')  =(select nvl(sv.vender_type_id,'-1')  from pur_system_venders sv where sv.vender_id=v.vender_id)
+and nvl(b.vender_id,nvl(v.vender_id,'-1')) =nvl(v.vender_id,'-1')
+and b.enabled_flag='Y'
+)
+and rownum=1)buyer_id,
+(select pb.description from pur_buyers_priority b,pur_buyers_vl pb
+where b.buyer_id= pb.buyer_id
+and nvl(b.company_id,nvl(${/session/@company_id},'-1'))=nvl(${/session/@company_id},'-1')
+and nvl(b.unit_id,nvl(${@unit_id},'-1'))=nvl(${@unit_id},'-1')
+and nvl(b.item_id,nvl(l.item_id,'-1'))=nvl(l.item_id,'-1')
+and nvl(b.item_type_id,nvl(l.item_type_id,'-1'))=nvl(l.item_type_id,'-1')
+and nvl(b.expense_item_id,nvl(l.expense_item_id,'-1'))= nvl(l.expense_item_id,'-1')
+and nvl(b.vender_type_id,'-1')  =(select nvl(sv.vender_type_id,'-1')  from pur_system_venders sv where sv.vender_id=v.vender_id)
+and nvl(b.vender_id,nvl(v.vender_id,'-1')) =nvl(v.vender_id,'-1')
+and b.enabled_flag='Y'
+and b.priority=(select max(b.priority) from pur_buyers_priority b
+where nvl(b.company_id,nvl(${/session/@company_id},'-1'))=nvl(${/session/@company_id},'-1')
+and nvl(b.unit_id,nvl(${@unit_id},'-1'))=nvl(${@unit_id},'-1')
+and nvl(b.item_id,nvl(l.item_id,'-1'))=nvl(l.item_id,'-1')
+and nvl(b.item_type_id,nvl(l.item_type_id,'-1'))=nvl(l.item_type_id,'-1')
+and nvl(b.expense_item_id,nvl(l.expense_item_id,'-1'))= nvl(l.expense_item_id,'-1')
+and nvl(b.vender_type_id,'-1')  =(select nvl(sv.vender_type_id,'-1')  from pur_system_venders sv where sv.vender_id=v.vender_id)
+and nvl(b.vender_id,nvl(v.vender_id,'-1')) =nvl(v.vender_id,'-1')
+and b.enabled_flag='Y'
+)
+and rownum=1)buyer_desc,
+       (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     AND FV.dimension_sequence = 1)E1,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 1)d1,
+      (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 2)e2,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 2)d2, 
+      (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 3)e3,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 3)d3, 
+      (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 4)e4,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 4)d4, 
+      (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 5)e5,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence =5)d5, 
+      (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 6)e6,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 6)d6, 
+      (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 7)e7,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 7)d7, 
+      (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 8)e8,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 8)d8, 
+      (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 9)e9,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 9)d9, 
+      (select fdv.dimension_value_id
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 10)e10,
+    (select fdv.description
+    from pur_req_ref_dimensions  pr,
+       fnd_dimension_values_vl fdv,
+       fnd_dimensions_vl       fv
+     where pr.dimension_id = fv.dimension_id
+     and pr.default_dim_value_id = fdv.dimension_value_id(+)
+     and pr.layout_position = 'DOCUMENTS_LINE'
+     and fv.dimension_sequence = 10)d10
+  from pur_vender_item_lists_vl l,pur_vender_item_venders_vl v
+  where l.vender_item_vender_id = v.vender_item_vender_id) v
+            #WHERE_CLAUSE#
+   order by v.vender_item_list_id desc
+   ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="item_type" dataType="java.lang.String" queryExpression="item_type_id = ${@item_type}"/>
+        <bm:query-field name="item_code" dataType="java.lang.String" queryExpression="item_code like &apos;%&apos;||${@item_code}||&apos;%&apos;"/>
+        <bm:query-field name="description" dataType="java.lang.String" queryExpression="description like &apos;%&apos;||${@description}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

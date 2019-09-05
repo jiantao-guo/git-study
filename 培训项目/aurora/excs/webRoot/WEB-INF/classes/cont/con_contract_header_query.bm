@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t.contract_header_id,
+                    t.company_id,
+                    c.company_short_name
+                    ||'-'
+                    ||c.company_code company,
+                    t.contract_number,
+                    t.contract_type_id,
+                    (SELECT DISTINCT
+                        a.contract_type_code
+                        || '-'
+                        || a.description code
+                    FROM
+                        con_contract_types_vl a
+                    WHERE
+                        t.contract_type_id = a.contract_type_id AND
+                        a.enabled_flag     ='Y'
+                    ) contract_type,
+                    t.document_number,
+                    t.document_desc,
+                    t.created_by,
+                    ( SELECT DISTINCT
+                        su.description
+                        || '-'
+                        || su.user_name code
+                    FROM
+                        sys_user su
+                    WHERE
+                        su.user_id = t.created_by
+                    ) created_by_display,
+                    t.creation_date,
+                    t.document_date,
+                    TO_CHAR(t.creation_date,'YYYY-MM-DD') creation_date_display,
+                    TO_CHAR(t.document_date,'YYYY-MM-DD') document_date_display,
+                    t.unit_id,
+                    (SELECT
+                        un.description
+                        ||'-'
+                        ||un.unit_code code
+                    FROM
+                        exp_org_unit_vl un
+                    WHERE
+                        un.enabled_flag = 'Y' AND
+                        un.unit_id      = t.unit_id
+                    ) unit,
+                    t.employee_id,
+                    (SELECT
+                        b.name
+                        || '-'
+                        || b.employee_code code
+                    FROM
+                        exp_employees b
+                    WHERE
+                        b.enabled_flag = 'Y' AND
+                        b.employee_id  = t.employee_id
+                    ) employee,
+                    t.partner_category,
+                    (SELECT
+                        u.code_value_name code
+                    FROM
+                        sys_codes_vl c,
+                        sys_code_values_vl u
+                    WHERE
+                        c.code         = 'PAYMENT_OBJECT' AND
+                        u.code_id      = c.code_id AND
+                        u.enabled_flag = 'Y' AND
+                        u.code_value   = t.partner_category
+                    ) payment_object,
+                    t.partner_id,
+                    DECODE (t.partner_category,'EMPLOYEE' ,
+                    (SELECT
+                        name
+                        ||'-'
+                        ||employee_code
+                    FROM
+                        exp_employees ee
+                    WHERE
+                        ee.employee_id=t.partner_id
+                    ), 'CUSTOMER',
+                    (SELECT
+                        vc.DESCRIPTION
+                        ||'-'
+                        ||vc.CUSTOMER_CODE
+                    FROM
+                        ord_system_customers_vl vc
+                    WHERE
+                        vc.CUSTOMER_ID=t.partner_id
+                    ),
+                    (SELECT
+                        vv.DESCRIPTION
+                        ||'-'
+                        ||vv.VENDER_CODE
+                    FROM
+                        pur_system_venders_vl vv
+                    WHERE
+                        vv.VENDER_ID=t.partner_id
+                    )) partner_code,
+                    t.status,
+                    (SELECT
+                        u.code_value_name code
+                    FROM
+                        sys_codes_vl c,
+                        sys_code_values_vl u
+                    WHERE
+                        c.code         = 'CONTRACT_STATUS' AND
+                        u.code_id      = c.code_id AND
+                        u.enabled_flag = 'Y' AND
+                        u.code_value   = t.status
+                    ) contract_status,
+                    t.note,
+                    t.contract_id,
+                    (SELECT
+                        o.contract_code
+                    FROM
+                        con_contract_oa o
+                    WHERE
+                        o.contract_id =t.contract_id
+                    ) oa_contract
+                FROM
+                    con_contract_headers t,
+                    fnd_companies_vl c #WHERE_CLAUSE#
+                ORDER BY
+                    t.creation_date DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="contract_header_id"/>
+        <bm:field name="company_id"/>
+        <bm:field name="note"/>
+        <bm:field name="company"/>
+        <bm:field name="contract_number"/>
+        <bm:field name="contract_type"/>
+        <bm:field name="document_number"/>
+        <bm:field name="document_desc"/>
+        <bm:field name="created_by_display"/>
+        <bm:field name="creation_date_display"/>
+        <bm:field name="document_date_display"/>
+        <bm:field name="unit"/>
+        <bm:field name="employee"/>
+        <bm:field name="payment_object"/>
+        <bm:field name="partner_code"/>
+        <bm:field name="contract_status"/>
+        <bm:field name="status"/>
+        <bm:field name="partner_id"/>
+        <bm:field name="oa_contract"/>
+        <bm:field name="contract_id"/>
+    </bm:fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="t.company_id=c.company_id"/>
+        <bm:data-filter enforceOperations="query" expression="con_contract_maintenance_pkg.exist_con_authorities(t.contract_header_id,(select s.employee_id from sys_user s where s.user_id = ${/session/@user_id}),${@authorities},${/session/@user_id})=&apos;Y&apos;"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="oa_contract" queryexpression="t.contract_id in (select o.contract_id from con_contract_oa o where o.contract_code like &apos;%&apos;||${@oa_contract}||&apos;%&apos;)"/>
+        <bm:query-field name="contract_header_id" queryexpression="t.contract_header_id = ${@contract_header_id}"/>
+        <bm:query-field name="contract_type_id" queryexpression="t.contract_type_id = ${@contract_type_id}"/>
+        <bm:query-field name="created_by" queryexpression="t.created_by = ${@created_by}"/>
+        <bm:query-field name="creation_date" queryexpression="to_char(t.creation_date,&apos;YYYY-MM-DD&apos;) = ${@creation_date}"/>
+        <bm:query-field name="document_date" queryexpression="to_char(t.document_date,&apos;YYYY-MM-DD&apos;) = ${@document_date}"/>
+        <bm:query-field name="company_id" queryexpression="t.company_id = ${@company_id}"/>
+        <bm:query-field name="unit_id" queryexpression="t.unit_id = ${@unit_id}"/>
+        <bm:query-field name="employee_id" queryexpression="t.employee_id = ${@employee_id}"/>
+        <bm:query-field name="partner_category" queryexpression="t.partner_category = ${@partner_category}"/>
+        <bm:query-field name="contract_number" queryexpression="t.contract_number like  &apos;%&apos;||${@contract_number}||&apos;%&apos;"/>
+        <bm:query-field name="status" queryexpression="t.status = ${@status}"/>
+        <bm:query-field name="partner_id" queryexpression="t.partner_id = ${@partner_id}"/>
+        <bm:query-field name="document_desc" queryexpression="upper(t.document_desc) like &apos;%&apos;||upper(${@document_desc})||&apos;%&apos;"/>
+        <bm:query-field name="document_number" queryexpression="upper(t.document_number) like &apos;%&apos;||upper(${@document_number})||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

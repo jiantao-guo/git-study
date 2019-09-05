@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select * from (
+			select hds.requisition_number csh_payment_number,
+			       (select name from exp_employees where employee_id = hds.employee_id) employee_nname,
+			       to_char(hds.requisition_date,'yyyy-mm-dd') requisition_date,
+			       hds.currency_code,
+			      (  select nvl(sum(ls.amount),0)
+			  from csh_payment_requisition_lns ls,csh_payment_requisition_hds hs
+			  where ls.payment_requisition_line_type='EXP_REQUISITION'
+			  and   ls.ref_document_id=${@head_id}
+			   and   hs.status  in ('SUBMITTED','APPROVED','CLOSED')
+			  and   ls.payment_requisition_header_id=hs.payment_requisition_header_id)  has_amount,
+			       hds.partner_category payee_category,
+			       hds.partner_id payee_id,
+			       decode(hds.partner_category,
+			              'EMPLOYEE',
+			              (select employee_code || '-' || name
+			                 from exp_employees ee
+			                where ee.employee_id = hds.partner_id),
+			              'CUSTOMER',
+			              (select vc.customer_code || '-' || vc.description
+			                 from ord_system_customers_vl vc
+			                where vc.customer_id = hds.partner_id),
+			              (select vv.vender_code || '-' || vv.description
+			                 from pur_system_venders_vl vv
+			                where vv.vender_id = hds.partner_id)) payee_code,
+			                '费用申请单' document_type,
+			                ed.exp_requisition_number document_number,
+			                 (select sum(s.requisition_amount)
+			          from exp_requisition_lines s
+			         where s.exp_requisition_header_id = ed.exp_requisition_header_id) total_amount,
+			         (select cch.contract_number
+			          from con_contract_headers cch, con_document_flows s
+			         where contract_header_id = s.document_id
+			           and s.document_type = 'CON_CONTRACT'
+			           and s.source_document_type = 'EXP_REQUISITION_HEADERS'
+			           and s.source_document_id = ed.exp_requisition_header_id) contract_number,
+			            hds.payment_method_id payment_type,
+			           hds.description,
+			           ed.exp_requisition_header_id req_head_id,
+			           hds.payment_requisition_header_id csh_head_id,
+			           ln.payment_requisition_line_id csh_line_id,
+			            hds.amount,
+			            hds.status,
+			            ln.csh_transaction_class_code  transaction_class,
+			            (select distinct v.description 
+			               from csh_transaction_classes_vl v
+			              where v.enabled_flag='Y'
+			                and v.csh_transaction_type_code='PREPAYMENT'
+			                and v.csh_transaction_class_code = ln.csh_transaction_class_code) transaction_class_desc,
+			            (select code_value_name
+			    from sys_code_values_vl b, sys_codes a
+			   where b.code_id = a.code_id
+			     and a.code = 'PAYMENT_REQUISITION_STATUS'
+			     and b.code_value=hds.status) statusment,
+			     hds.position_id,
+			     (select  cch.contract_number
+			from con_contract_headers cch 
+			where cch.contract_header_id=cdf.document_id
+			) contract_header_code,
+			cdf.document_id  contract_header_id,
+			(
+			   
+			select  cps.payment_schedule_line_number from con_payment_schedules cps
+			where cps.payment_schedule_line_id=cdf.document_line_id
+			) payment_schedule_line_code,
+			cdf.document_line_id payment_schedule_line_id,
+			 hds.payment_req_type_id  type_id,
+			 hds.source_type ,
+			 (select k.description
+			 from csh_pay_req_types_vl k
+			 where k.type_id = hds.payment_req_type_id) type_desc
+			 
+			  from csh_payment_requisition_hds hds, csh_payment_requisition_lns ln,exp_requisition_headers ed,con_document_flows cdf
+			 where ln.ref_document_id = ed.exp_requisition_header_id
+			 and  ed.exp_requisition_header_id=${@head_id}
+			 and ln.payment_requisition_header_id=cdf.source_document_id(+) 
+			and ln.payment_requisition_line_id=cdf.source_document_line_id(+)
+			and cdf.document_type(+)='CON_CONTRACT'
+			and cdf.source_document_type(+)='CSH_PAYMENT_REQUISITION_LNS'  
+			   and ln.payment_requisition_header_id = hds.payment_requisition_header_id
+			   and ln.payment_requisition_line_type = 'EXP_REQUISITION'
+			  )
+		#WHERE_CLAUSE# 
+		order by csh_payment_number
+		]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

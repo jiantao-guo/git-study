@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" defaultWhereClause=" enabled_flag = &apos;Y&apos; " fetchAll="false" model="gld.gld_currency_vl" rootPath="currency_list"/>
+        <a:model-query autoCount="false" defaultWhereClause=" exists(select 1  from exp_req_ref_user_groups egs where egs.expense_requisition_type_id =t1.expense_requisition_type_id and exists (select 1  from exp_user_group_lines el where el.expense_user_group_id = egs.expense_user_group_id  and el.employee_id = (select employee_id from sys_user where user_id = ${/session/@user_id}))) and t1.enabled_flag = &apos;Y&apos; and t1.company_id = ${/session/@company_id} order by t1.expense_requisition_type_code" fetchAll="true" model="expm.exp_expense_req_types_vl" rootPath="type_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_employeelist" rootPath="employee_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_requisition_deleteall_link" model="db.exp_requisition_pkg.delete_exp_requisition_headers" modelaction="batch_update"/>
+        <a:link id="exp_requisition_readonly_link_2" url="${/request/@context_path}/modules/expm/public/exp_requisition_readonly.screen"/>
+        <a:link id="exp_requisition_update_link" url="${/request/@context_path}/modules/expm/public/exp_requisition_update.screen"/>
+        <script><![CDATA[
+
+            function queryFunction() {
+                $('pay_req_result_ds').query();
+            }
+            
+            function resetFunction() {
+                $('req_query_ds').getCurrentRecord().getField('payee_name').setReadOnly(true);
+                $('req_query_ds').reset();
+            }
+            
+            function updateFunction(dataSet, record, name, value) {
+                if (name == 'payee_category') {
+                    record.getMeta().getField('payee_name').setReadOnly(false);
+                    record.set('payee_name', '');
+                    if (value == 'EMPLOYEE') {
+                        record.getMeta().getField('payee_name').setLovService('expm.exp_employee_req_lov');
+                        record.getMeta().getField('payee_name').setTitle('${l:EXP_EMPLOYEES.QUERY}');
+                    } else if (value == 'CUSTOMER') {
+                        record.getMeta().getField('payee_name').setLovService('expm.exp_customer_req_lov');
+                        record.getMeta().getField('payee_name').setTitle('${l:CUSTOMER_QUERY}');
+                    } else if (value == 'VENDER') {
+                        record.getMeta().getField('payee_name').setLovService('expm.exp_vender_req_lov');
+                        record.getMeta().getField('payee_name').setTitle('${l:VENDER_SEARCH}');
+                    } else {
+                        record.getMeta().getField('payee_name').setReadOnly(true);
+                    }
+                } else if (name == 'payee_name') {
+                    if (value == '') {
+                        record.set('payee_id', '');
+                    }
+                }
+            }
+            
+            function payeeCodeCommitFuncton(lov, r1, r2) {
+                var value = $('req_query_ds').getAt(0).get('payee_category');
+                if (value == 'EMPLOYEE') {
+                    r1.set('payee_name', r2.get('code_name'));
+                    r1.set('payee_id', r2.get('employee_id'));
+                } else if (value == 'CUSTOMER') {
+                    r1.set('payee_name', r2.get('code_name'));
+                    r1.set('payee_id', r2.get('customer_id'));
+                } else {
+                    r1.set('payee_name', r2.get('code_name'));
+                    r1.set('payee_id', r2.get('vender_id'));
+                }
+            }
+            
+            function reqNumRenderer(value, record, name) {
+            
+                if (record.get('requisition_status_value') == 'GENERATE' || record.get('requisition_status_value') == 'REJECTED' || record.get('requisition_status_value') == 'TAKEN_BACK') {
+                    return '<a href="javascript:reqNumUpdateNewWindow(' + record.get('exp_requisition_header_id') + ',' + record.get('exp_requisition_type_id') + ',' + record.get('employee_id') + ',\'' + record.get('update_page_name') + '\');">' + value + '</a>';
+                } else {
+                    return '<a href="javascript:reqNumReadOnlyNewWindow(' + record.get('exp_requisition_header_id') + ',' + record.get('exp_requisition_type_id') + ',' + record.get('employee_id') + ',\'' + record.get('query_page_name') + '\');">' + value + '</a>';
+                }
+            
+            }
+            
+            function reqNumUpdateNewWindow(exp_requisition_header_id, exp_requisition_type_id, employee_id, pageName) {
+                new Aurora.Window({
+                    url: '${/request/@context_path}/' + pageName + '?head_id=' + exp_requisition_header_id + '&exp_requisition_type_id=' + exp_requisition_type_id + '&employee_id=' + employee_id + '&company_id=' + '${/session/@company_id}',
+                    fullScreen: true
+                });
+            }
+            
+            function reqNumReadOnlyNewWindow(exp_requisition_header_id, exp_requisition_type_id, employee_id, pageName) {
+                new Aurora.Window({
+                    url: '${/request/@context_path}/' + pageName + '?head_id=' + exp_requisition_header_id + '&canUploadFlag=false',
+                    fullScreen: true
+                });
+            }
+            
+            function deleteFunction() {
+                var recordsData = $('pay_req_result_ds').getJsonData(true);
+                if (recordsData.length < 1) {
+                    Aurora.showInfoMessage('', '${l:PROMPT.PLEASE_SELECT_ONE}', null, 250, 100);
+                    return;
+                }
+                var msgBox = Aurora.showConfirm('${l:PROMPT}', '${l:EXP_REQUESTION_READONLY.SURE_DELETE_REQ}', function() {
+                    msgBox.close();
+                    processDeleteFunction();
+                }, null, 250, 100);
+            }
+            
+            function processDeleteFunction() {
+                var param = $('pay_req_result_ds').getJsonData(true);
+                for (var i = 0;i < param.length;i++) {
+                    param[i]._status = 'delete';
+                }
+                Aurora.request({
+                    para: param,
+                    url: /*${/request/@context_path}/autocrud/expm.exp_requisition_deleteall/batch_update*/
+                    $('exp_requisition_deleteall_link').getUrl(),
+                    success: function() {
+                        $('pay_req_result_ds').query();
+                    },
+                    scope: this
+                });
+            }
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="req_status_list_ds" autoQuery="true" model="expm.EXP5020.exp_requisition_status_display_combo"/>
+            <a:dataSet id="payment_object_ds" lookupCode="PAYMENT_OBJECT"/>
+            <a:dataSet id="close_list_ds" lookupCode="EXP_REQUISITION_CLOSE_STATUS"/>
+            <a:dataSet id="currency_list_ds">
+                <a:datas dataSource="/model/currency_list"/>
+            </a:dataSet>
+            <a:dataSet id="employee_list_ds">
+                <a:datas dataSource="/model/employee_list"/>
+            </a:dataSet>
+            <a:dataSet id="req_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="authority" defaultValue="MAINTENANCE"/>
+                    <a:field name="employee_id_display" displayField="name_code" options="employee_list_ds" prompt="EXP_REQUISITION_HEADERS.EMPLOYEE_ID" returnField="employee_id" valueField="employee_id"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="requesition_number" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_NUMBER"/>
+                    <a:field name="type_item_display" autoComplete="true" autoCompleteField="description" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovService="exp.exp_expense_req_types_lov" lovWidth="500" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_TYPE_ID" title="EXP_REQUISITION_HEADERS.EXP_REQUISITION_TYPE_ID">
+                        <a:mapping>
+                            <a:map from="expense_requisition_type_id" to="type_item"/>
+                            <a:map from="description" to="type_item_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="type_item"/>
+                    <a:field name="currency_name" displayField="currency_name" options="currency_list_ds" prompt="EXP_REQUISITION_HEADERS.CURRENCY_CODE" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="requesition_date_from" prompt="EXP_REQUISITION_HEADERS.REQUISITION_DATE_FROM"/>
+                    <a:field name="requesition_date_to" prompt="EXP_REQUISITION_HEADERS.REQUISITION_DATE_TO"/>
+                    <a:field name="create_date_from" prompt="EXP_REPORT_HEADERS.CREATE_DATE_FROM"/>
+                    <a:field name="create_date_to" prompt="EXP_REPORT_HEADERS.CREATE_DATE_TO"/>
+                    <a:field name="requisition_status_display" displayField="code_value_name" options="req_status_list_ds" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUS" returnField="requisition_status" valueField="code_value"/>
+                    <a:field name="requisition_amount_from" prompt="EXP_REQUISITION_HEADERS.REQUISITION_AMOUNT_FROM"/>
+                    <a:field name="requisition_amount_to" prompt="EXP_REPORT_HEADERS.REQUISITION_AMOUNT_TO"/>
+                    <a:field name="requisition_status"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pay_req_result_ds" autoPageSize="true" autoQuery="true" model="expm.exp_requisition_query" pageSize="15" queryDataSet="req_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="exp_requisition_number" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_NUMBER"/>
+                    <a:field name="type_description" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_TYPE_ID"/>
+                    <a:field name="requisition_date" prompt="EXP_REQUISITION_HEADERS.REQUISITION_DATE"/>
+                    <a:field name="currency_name" prompt="EXP_REQUISITION_HEADERS.CURRENCY_CODE"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="quarter_num" prompt="EXP_REQUISITION_LINES.REQUISITION_AMOUNT"/>
+                    <a:field name="quarter_num_fun" prompt="EXP_REQUISITION_LINES.REQUISITION_FUNCTIONAL_AMOUNT"/>
+                    <a:field name="usedamount" prompt="EXP_REQUISITION_RELEASE.REQ_RELEASE_AMOUNT"/>
+                    <a:field name="usedquanlity" prompt="EXP_REQUISITION_RELEASE.REQ_RELEASE_QUANTITY"/>
+                    <a:field name="employee_name" prompt="EXP_REQUISITION_HEADERS.EMPLOYEE_ID"/>
+                    <a:field name="requisition_status" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUS"/>
+                    <a:field name="description" prompt="EXP_REQUISITION_HEADERS.DESCRIPTION"/>
+                    <a:field name="isclose" prompt="EXP_REQUISITION_HEADERS.EXP_REQUISITION_CLOSE_STATUS"/>
+                    <a:field name="creation_date1" prompt="EXP_REQUISITION_HEADERS.CREATION_DATE"/>
+                    <a:field name="exp_requisition_header_id"/>
+                    <a:field name="exp_requisition_type_id"/>
+                    <a:field name="requisition_status_value"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="exp_requisition_maintain_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="resetFunction" text="PROMPT.RESET" width="80"/>
+                <a:gridButton click="deleteFunction" text="PROMPT.DELETE" type="delete" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="req_query_ds" resultTarget="pay_req_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="requesition_number" bindTarget="req_query_ds"/>
+                    <a:lov name="type_item_display" bindTarget="req_query_ds"/>
+                    <a:comboBox name="employee_id_display" bindTarget="req_query_ds"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:datePicker name="requesition_date_from" bindTarget="req_query_ds"/>
+                    <a:datePicker name="requesition_date_to" bindTarget="req_query_ds"/>
+                    <a:comboBox name="currency_name" bindTarget="req_query_ds"/>
+                    <a:datePicker name="create_date_from" bindTarget="req_query_ds"/>
+                    <a:datePicker name="create_date_to" bindTarget="req_query_ds"/>
+                    <a:numberField name="requisition_amount_from" bindTarget="req_query_ds"/>
+                    <a:numberField name="requisition_amount_to" bindTarget="req_query_ds"/>
+                    <a:comboBox name="requisition_status_display" bindTarget="req_query_ds"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="exp_requisition_maintain_grid" bindTarget="pay_req_result_ds" marginHeight="123" minHeight="250" navBar="true">
+                <!-- <a:toolBar>
+                    <a:button click="deleteFunction" icon="${/request/@context_path}/images/remove.gif" text="PROMPT.DELETE"/>
+                </a:toolBar> -->
+                <a:columns>
+                    <a:column name="exp_requisition_number" align="left" renderer="reqNumRenderer" width="160"/>
+                    <a:column name="type_description" align="left" width="130"/>
+                    <a:column name="requisition_date" align="center" width="100"/>
+                    <a:column name="currency_name" align="left" width="120"/>
+                    <a:column name="quarter_num" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="quarter_num_fun" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="employee_name" align="left" width="120"/>
+                    <a:column name="requisition_status" align="left" width="120"/>
+                    <a:column name="description" align="left" width="150"/>
+                    <a:column name="creation_date1" align="center" width="100"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+
+            function expReqMaintainInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            	   $('exp_requisition_maintain_grid').setWidth(autoWidth);
+            }
+            //Ext.fly(window).on('resize', expReqMaintainInitSize);
+            expReqMaintainInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="expm.get_exchange_rate_type" rootPath="exchange_rate_type"/>
+        <a:model-query defaultwhereclause="t1.ENABLED_FLAG =&apos;Y&apos;" fetchAll="true" model="gld.gld_exchangerate_types_vl" rootPath="exchangerate_types"/>
+        <a:model-query model="expm.get_company_currency_code" rootPath="company_currency_code"/>
+        <a:model-query fetchAll="true" model="expm.exp_rate_quotation" rootPath="rate_quotation"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="gld_get_period_name_link_2" model="expm.gld_get_period_name" modelaction="query"/>
+        <a:link id="get_exchange_rate_link_12" model="expm.get_exchange_rate" modelaction="query"/>
+        <a:link id="exp_report_accounts_create_control_link" url="${/request/@context_path}/modules/expm/public/exp_report_accounts_create_control.svc"/>
+        <script><![CDATA[
+
+            function doEdit(record, name) {
+                if (name == 'exchange_rate_type_display') {
+                    if (record.get('currency_code') == '${/model/company_currency_code/record/@company_currency_code}') {
+                        return '';
+                    } else {
+                        return 'acc_edit_cbx';
+                    }
+                } else if (name == 'exchange_rate_quotation_display') {
+                    if (record.get('exchange_rate_type_code') == 'MANUAL') {
+                        return 'acc_edit_cbx';
+                    } else {
+                        return '';
+                    }
+                } else {
+                    if (record.get('exchange_rate_type_code') == 'MANUAL') {
+                        return 'acc_edit_tf';
+                    } else {
+                        return '';
+                    }
+                }
+            }
+            
+            function doSelect(datePicker, date) {
+                var p_date = new Date();
+                if (date != null) {
+                    p_date = Aurora.formatDate(date);
+                } else {
+                    p_date = Aurora.formatDate(p_date);
+                }
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.gld_get_period_name/query*/
+                    $('gld_get_period_name_link_2').getUrl(),
+                    para: {
+                        p_date: p_date
+                    },
+                    success: periodName,
+                    scope: this
+                });
+            }
+            
+            function periodName(args) {
+                var record = args.result.record;
+                var period_name = '';
+                if (record.length) {
+                    period_name = record[0].period_name;
+                } else {
+                    period_name = record.period_name;
+                }
+                $('period_name').setValue(period_name);
+                if (period_name) {
+                    var records = $('accounts_result_ds').getAll();
+                    for (var i = 0,l = records.length;i < l;i++) {
+                        changeraterecord(records[i]);
+                    }
+                } else {
+                    Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+                }
+            }
+            
+            function closeFunction() {
+                $('exp_report_accounts_screen').close();
+            }
+            
+            function okFunction() {
+                var period = $('period_name').getValue();
+                if (!period) {
+                    doSelect();
+                } else {
+                    if ($('input_ds').validate()) {
+                        var records = $('accounts_result_ds').getAll();
+                        var journal_date = $('input_ds').getAt(0).get('journal_date');
+                        journal_date = Aurora.formatDate(journal_date);
+                        var period_name = $('input_ds').getAt(0).get('period_name');
+                        var param = new Object();
+                        var datas = [];
+                        for (var i = 0,
+                            l = records.length;i < l;i++) {
+                            var data = records[i].data;
+                            datas.push(data);
+                        }
+                        param['details'] = datas;
+                        param['journal_date'] = journal_date;
+                        param['batch_id'] = '${/parameter/@batch_id}';
+                        Aurora.request({
+                            url: /*${/request/@context_path}/modules/expm/exp_report_accounts_create_control.svc*/
+                            $('exp_report_accounts_create_control_link').getUrl(),
+                            para: param,
+                            success: reflush,
+                            scope: this
+                        });
+                    }
+                }
+            }
+            
+            function reflush() {
+                Aurora.showMessage('${l:PROMPT}', '${l:EXP_REPORT_ACCOUNTS.PROMPT}', function() {
+                    if (doQuery && typeof(doQuery) == 'function') {
+                        doQuery();
+                    }
+                    closeFunction();
+                });
+            }
+            
+            function doUpdate(dataSet, record, field, value, oldvalue) {
+                var rid = record.id;
+                if (field == 'currency_code' || field == 'exchange_rate_type') {
+                    var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}';
+                    var cur_code = record.get('currency_code');
+                    record.set('exchange_rate', '');
+                    if (f_cur_code == cur_code) {
+                        record.set('exchange_rate', 1);
+                        record.set('exchange_rate_type', '');
+                        record.set('exchange_rate_quotation', '');
+                    } else {
+                        if (record.get('exchange_rate_type')) {} else {
+                            record.set('exchange_rate_type', '${/model/exchange_rate_type/record/@value_code}');
+                        }
+                        var from_currency = f_cur_code;
+                        var to_currency = cur_code;
+                        var exchange_rate_type = record.get('exchange_rate_type');
+                        var exchange_date = '';
+                        var exchange_period_name = '';
+                        if ($('input_ds').getAt(0)) {
+                            exchange_date = $('input_ds').getAt(0).get('journal_date');
+                            exchange_date = Aurora.formatDate(exchange_date);
+                            exchange_period_name = $('input_ds').getAt(0).get('period_name');
+                        }
+                        Aurora.request({
+                            url: /*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/
+                            $('get_exchange_rate_link_12').getUrl(),
+                            para: {
+                                "from_currency": from_currency,
+                                "to_currency": to_currency,
+                                "exchange_rate_type": exchange_rate_type,
+                                "exchange_date": exchange_date,
+                                "exchange_period_name": exchange_period_name
+                            },
+                            success: callchange,
+                            scope: this
+                        });
+                    }
+                }
+            }
+            
+            function callchange(res) {
+            
+                var pluscols = res.result.record;
+                if (pluscols.exchange_rate) {
+                    $('accounts_result_ds').getCurrentRecord().set('exchange_rate', pluscols.exchange_rate);
+                    var exchange_rate_quotation = pluscols.exchange_rate_quotation;
+                    var exchange_rate_quotation_display = '';
+                    var ds = $('rate_quotation_ds');
+                    var records = ds.getAll();
+                    for (var i = 0,
+                        l = records.length;i < l;i++) {
+                        if (exchange_rate_quotation == records[i].get('code_value')) {
+                            exchange_rate_quotation_display = records[i].get('code_value_name');
+                            break;
+                        }
+                    }
+                    $('accounts_result_ds').getCurrentRecord().set('exchange_rate_quotation', pluscols.exchange_rate_quotation);
+                    $('accounts_result_ds').getCurrentRecord().set('exchange_rate_quotation_display', exchange_rate_quotation_display);
+                } else {
+                    if ($('accounts_result_ds').getCurrentRecord().get('exchange_rate_type_code') != 'MANUAL') {
+                        Aurora.showWarningMessage('', '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+                    }
+                }
+            }
+            
+            function changeraterecord(record) {
+                
+                var store = $('accounts_result_ds');
+                var red = store.findById(record.id);
+                var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}';
+                var cur_code = record.get('currency_code');
+                if (f_cur_code == cur_code) {
+                    record.set('exchange_rate', 1);
+                    record.set('exchange_rate_type', '');
+                    record.set('exchange_rate_quotation', '');
+                } else {
+                    var from_currency = f_cur_code;
+                    var to_currency = cur_code;
+                    var exchange_rate_type = record.get('exchange_rate_type');
+                    var exchange_date = $('input_ds').getAt(0).get('journal_date');
+                    var exchange_period_name = $('input_ds').getAt(0).get('period_name');
+                    exchange_date = Aurora.formatDate(exchange_date);
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/
+                        $('get_exchange_rate_link_12').getUrl(),
+                        para: {
+                            "from_currency": from_currency,
+                            "to_currency": to_currency,
+                            "exchange_rate_type": exchange_rate_type,
+                            "exchange_date": exchange_date,
+                            "exchange_period_name": exchange_period_name
+                        },
+                        success: function(args) {
+                            var pluscols = args.result.record;
+                            if (pluscols.length) {
+                                if (pluscols[0].exchange_rate) {
+                                    red.set('exchange_rate', pluscols[0].exchange_rate);
+                                    red.set('exchange_rate_quotation', pluscols[0].exchange_rate_quotation);
+                                } else {
+                                    if (red.get('exchange_rate_type_code') != 'MANUAL') {
+                                        red.set('exchange_rate', '');
+                                        Aurora.showWarningMessage('', '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+                                    }
+                                }
+                            } else {
+                                if (pluscols.exchange_rate) {
+                                    red.set('exchange_rate', pluscols.exchange_rate);
+                                    red.set('exchange_rate_quotation', pluscols.exchange_rate_quotation);
+                                } else {
+                                    if (red.get('exchange_rate_type_code') != 'MANUAL') {
+                                        red.set('exchange_rate', '');
+                                        Aurora.showWarningMessage('', '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+                                    }
+                                }
+                            }
+                        },
+                        scope: this
+                    });
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="exchangerate_types_ds">
+                <a:datas dataSource="/model/exchangerate_types"/>
+            </a:dataSet>
+            <a:dataSet id="rate_quotation_ds">
+                <a:datas dataSource="/model/rate_quotation"/>
+            </a:dataSet>
+            <a:dataSet id="input_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="journal_date" defaultValue="${/parameter/@journal_date}" required="true"/>
+                    <a:field name="period_name" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="accounts_result_ds" loadData="true" model="expm.exp_report_accounts_query" queryUrl="${/request/@context_path}/autocrud/expm.exp_report_accounts_query/query?batch_id=${/parameter/@batch_id}" selectable="true">
+                <a:fields>
+                    <a:field name="exchange_rate_type_code"/>
+                    <a:field name="exchange_rate_type_display" displayField="type_name" options="exchangerate_types_ds" returnField="exchange_rate_type" valueField="type_code">
+                        <a:mapping>
+                            <a:map from="rate_method_code" to="exchange_rate_type_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate_quotation_display" displayField="code_value_name" options="rate_quotation_ds" returnField="exchange_rate_quotation" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="doUpdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <script><![CDATA[
+
+            function loadComplete() {
+                var journal_date = '${/parameter/@journal_date}';
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.gld_get_period_name/query*/
+                    $('gld_get_period_name_link_2').getUrl(),
+                    para: {
+                        p_date: journal_date
+                    },
+                    success: periodName,
+                    scope: this
+                });
+            }
+            loadComplete();
+        ]]></script>
+        <a:screenBody>
+            <a:form column="2" title="EXP_REPORT_ACCOUNTS.TITLE">
+                <a:datePicker name="journal_date" bindTarget="input_ds" prompt="EXP_REPORT_ACCOUNTS.JOURNAL_DATE">
+                    <a:events>
+                        <a:event name="select" handler="doSelect"/>
+                    </a:events>
+                </a:datePicker>
+                <a:textField name="period_name" id="period_name" bindTarget="input_ds" prompt="EXP_REPORT_ACCOUNTS.PERIOD_NAME"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="okFunction" text="PROMPT.OK"/>
+                <a:button click="closeFunction" text="PROMPT.RETURN"/>
+            </a:hBox>
+            <a:grid bindTarget="accounts_result_ds" height="350" navBar="true" width="500">
+                <a:columns>
+                    <a:column name="currency_code" prompt="EXP_REPORT_ACCOUNTS.CURRENCY_CODE"/>
+                    <a:column name="exchange_rate_type_display" editorFunction="doEdit" prompt="EXP_REPORT_ACCOUNTS.EXCHANGE_RATE_TYPE"/>
+                    <a:column name="exchange_rate_quotation_display" editorFunction="doEdit" prompt="EXP_REPORT_ACCOUNTS.EXCHANGE_RATE_QUOTATION"/>
+                    <a:column name="exchange_rate" editorFunction="doEdit" prompt="EXP_REPORT_ACCOUNTS.EXCHANGE_RATE"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="acc_edit_cbx"/>
+                    <a:textField id="acc_edit_tf"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

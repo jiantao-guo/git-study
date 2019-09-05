@@ -1,0 +1,968 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+  FROM (
+        ------------------------ 报销 --------------------------------
+        SELECT temp.*,
+                eert.description,
+                erh.payee_id AS partner_id,
+                 -- (SELECT erps.payee_category
+                   -- FROM exp_report_pmt_schedules erps
+                  -- WHERE erps.exp_report_header_id = erh.exp_report_header_id
+                  -- and erps.usedes <> 'TB'
+                  -- GROUP BY erps.payee_category) partner_category,
+                --erh.payee_category AS partner_category,
+                (SELECT s.code_value_name
+                   FROM sys_service_lookup_v s
+                  WHERE s.code = 'PAYMENT_OBJECT'
+                    AND s.language = 'ZHS'
+                    AND s.code_value = erh.payee_category) partner_category_desc,
+                erh.company_id,
+                erh.unit_id,
+                erh.created_by,
+                (SELECT description
+                   FROM exp_org_unit_vl ev
+                  WHERE ev.unit_id = erh.unit_id) unit_name,
+                (SELECT f.company_short_name
+                   FROM fnd_companies_vl f
+                  WHERE f.company_id = erh.company_id) company_name,
+                (CASE
+                  WHEN erh.payee_category = 'EMPLOYEE' THEN
+                   (SELECT ee.name
+                      FROM exp_employees ee
+                     WHERE ee.employee_id = erh.payee_id)
+                  ELSE
+                   (SELECT pv.description
+                      FROM pur_system_venders_vl pv
+                     WHERE pv.vender_id = erh.payee_id)
+                END) AS partner_name,
+                (SELECT t.name
+                   FROM exp_employees t
+                  WHERE t.employee_id = erh.employee_id) employee_name,
+                erh.description memo,
+                cux_wfl_todo_info_pkg.get_exp_report_patername(erh.exp_report_header_id) partner_name1
+          FROM (SELECT decode(r.date_limit,
+                               NULL,
+                               0,
+                               decode(sign(r.date_limit - SYSDATE), -1, 1, 0)) AS is_late,
+                        (SELECT wwn.name
+                           FROM wfl_workflow_node_vl wwn
+                          WHERE wwn.node_id = r.node_id) AS node_name,
+                        (SELECT wdr.document_desc
+                           FROM wfl_document_reference_vl wdr
+                          WHERE ww.workflow_category = wdr.workflow_category) AS order_type,
+                        to_char(t1.creation_date, 'yyyy-mm-dd') AS creation_date_view,
+                        to_char(r.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+                        to_char(r.date_limit, 'yyyy-mm-dd hh24:mi') AS date_limit_view,
+                        t1.instance_desc,
+                        t1.instance_amount,
+                        t1.instance_id,
+                        t1.workflow_id,
+                        t1.status,
+                        t1.current_node,
+                        t1.instance_param,
+                        t1.date_from,
+                        t1.date_to,
+                        t1.object_version_number,
+                        t1.reason,
+                        t1.current_handler,
+                        t1.status_desc,
+                        t1.approve_count,
+                        t1.node_result,
+                        t1.attachment_id,
+                        t1.document_number,
+                        t1.attribute_n_1,
+                        t1.attribute_n_2,
+                        t1.attribute_n_3,
+                        t1.attribute_n_4,
+                        t1.attribute_n_5,
+                        t1.attribute_n_6,
+                        t1.attribute_n_7,
+                        t1.attribute_n_8,
+                        t1.attribute_n_9,
+                        t1.attribute_n_10,
+                        t1.attribute_c_1,
+                        t1.attribute_c_2,
+                        t1.attribute_c_3,
+                        t1.attribute_c_4,
+                        t1.attribute_c_5,
+                        t1.attribute_c_6,
+                        t1.attribute_c_7,
+                        t1.attribute_c_8,
+                        t1.attribute_c_9,
+                        t1.attribute_c_10,
+                        t1.attribute_d_1,
+                        t1.attribute_d_2,
+                        t1.attribute_d_3,
+                        t1.attribute_d_4,
+                        t1.attribute_d_5,
+                        t1.attribute_d_6,
+                        t1.attribute_d_7,
+                        t1.attribute_d_8,
+                        t1.attribute_d_9,
+                        t1.attribute_d_10,
+                        r.record_id,
+                        r.date_limit,
+                        r.creation_date AS apply_date,
+                        r.node_id,
+                        ww.workflow_category
+                   FROM wfl_workflow_instance t1
+                  INNER JOIN wfl_instance_node_recipient r
+                     ON t1.instance_id = r.instance_id
+                  INNER JOIN wfl_workflow ww
+                     ON t1.workflow_id = ww.workflow_id
+                  WHERE r.user_id = ${/session/@user_id}
+                  ORDER BY is_late DESC, creation_date_view DESC) temp,
+                exp_report_headers erh,
+                exp_expense_report_types_vl eert
+         WHERE erh.exp_report_number = temp.document_number
+           AND erh.exp_report_type_id = eert.expense_report_type_id
+           
+          ------------------------ 核算工单 --------------------------------      
+        UNION ALL
+        SELECT temp.*,
+                gt.work_order_type_desc,
+                1 partner_id,
+                -- '' partner_category,
+                '' partner_category_desc,
+                gh.company_id,
+                gh.unit_id,
+                gh.created_by,
+                (SELECT description
+                   FROM exp_org_unit_vl ev
+                  WHERE ev.unit_id = gh.unit_id) unit_name,
+                (SELECT f.company_short_name
+                   FROM fnd_companies_vl f
+                  WHERE f.company_id = gh.company_id) company_name,
+                '' partner_name,
+                (SELECT t.name
+                   FROM exp_employees t
+                  WHERE t.employee_id = gh.employee_id) employee_name,
+                gh.description memo,
+                '' partner_name
+          FROM (SELECT decode(r.date_limit,
+                               NULL,
+                               0,
+                               decode(sign(r.date_limit - SYSDATE), -1, 1, 0)) AS is_late,
+                        (SELECT wwn.name
+                           FROM wfl_workflow_node_vl wwn
+                          WHERE wwn.node_id = r.node_id) AS node_name,
+                        (SELECT wdr.document_desc
+                           FROM wfl_document_reference_vl wdr
+                          WHERE ww.workflow_category = wdr.workflow_category) AS order_type,
+                        to_char(t1.creation_date, 'yyyy-mm-dd') AS creation_date_view,
+                        to_char(r.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+                        to_char(r.date_limit, 'yyyy-mm-dd hh24:mi') AS date_limit_view,
+                        t1.instance_desc,
+                        t1.instance_amount,
+                        t1.instance_id,
+                        t1.workflow_id,
+                        t1.status,
+                        t1.current_node,
+                        t1.instance_param,
+                        t1.date_from,
+                        t1.date_to,
+                        t1.object_version_number,
+                        t1.reason,
+                        t1.current_handler,
+                        t1.status_desc,
+                        t1.approve_count,
+                        t1.node_result,
+                        t1.attachment_id,
+                        t1.document_number,
+                        t1.attribute_n_1,
+                        t1.attribute_n_2,
+                        t1.attribute_n_3,
+                        t1.attribute_n_4,
+                        t1.attribute_n_5,
+                        t1.attribute_n_6,
+                        t1.attribute_n_7,
+                        t1.attribute_n_8,
+                        t1.attribute_n_9,
+                        t1.attribute_n_10,
+                        t1.attribute_c_1,
+                        t1.attribute_c_2,
+                        t1.attribute_c_3,
+                        t1.attribute_c_4,
+                        t1.attribute_c_5,
+                        t1.attribute_c_6,
+                        t1.attribute_c_7,
+                        t1.attribute_c_8,
+                        t1.attribute_c_9,
+                        t1.attribute_c_10,
+                        t1.attribute_d_1,
+                        t1.attribute_d_2,
+                        t1.attribute_d_3,
+                        t1.attribute_d_4,
+                        t1.attribute_d_5,
+                        t1.attribute_d_6,
+                        t1.attribute_d_7,
+                        t1.attribute_d_8,
+                        t1.attribute_d_9,
+                        t1.attribute_d_10,
+                        r.record_id,
+                        r.date_limit,
+                        r.creation_date AS apply_date,
+                        r.node_id,
+                        ww.workflow_category
+                   FROM wfl_workflow_instance t1
+                  INNER JOIN wfl_instance_node_recipient r
+                     ON t1.instance_id = r.instance_id
+                  INNER JOIN wfl_workflow ww
+                     ON t1.workflow_id = ww.workflow_id
+                  WHERE r.user_id = ${/session/@user_id}
+                  ORDER BY is_late DESC, creation_date_view DESC) temp,
+                gld_work_order_headers gh,
+                gld_sob_work_order_types gt
+         WHERE gh.work_order_number = temp.document_number
+           AND gh.work_order_type_id = gt.work_order_type_id
+        
+        ------------------------ 付款 --------------------------------
+        
+        UNION ALL
+        SELECT temp.*,
+                eer.description,
+                er.payee_id AS partner_id,
+                -- er.payee_category partner_category,
+                (SELECT s.code_value_name
+                   FROM sys_service_lookup_v s
+                  WHERE s.code = 'PAYMENT_OBJECT'
+                    AND s.language = 'ZHS'
+                    AND s.code_value = er.payee_category) partner_category_desc,
+                er.company_id,
+                er.unit_id,
+                er.created_by,
+                (SELECT description
+                   FROM exp_org_unit_vl ev
+                  WHERE ev.unit_id = er.unit_id) unit_name,
+                (SELECT f.company_short_name
+                   FROM fnd_companies_vl f
+                  WHERE f.company_id = er.company_id) company_name,
+                (CASE
+                  WHEN er.payee_category = 'EMPLOYEE' THEN
+                   (SELECT ee.name
+                      FROM exp_employees ee
+                     WHERE ee.employee_id = er.payee_id)
+                  ELSE
+                   (SELECT pv.description
+                      FROM pur_system_venders_vl pv
+                     WHERE pv.vender_id = er.payee_id)
+                END) AS partner_name,
+                (SELECT t.name
+                   FROM exp_employees t
+                  WHERE t.employee_id = er.employee_id) employee_name,
+                er.description memo,
+                cux_wfl_todo_info_pkg.get_exp_requisition_patername(er.exp_requisition_header_id) partner_name1
+          FROM (SELECT decode(r.date_limit,
+                               NULL,
+                               0,
+                               decode(sign(r.date_limit - SYSDATE), -1, 1, 0)) AS is_late,
+                        (SELECT wwn.name
+                           FROM wfl_workflow_node_vl wwn
+                          WHERE wwn.node_id = r.node_id) AS node_name,
+                        (SELECT wdr.document_desc
+                           FROM wfl_document_reference_vl wdr
+                          WHERE ww.workflow_category = wdr.workflow_category) AS order_type,
+                        to_char(t1.creation_date, 'yyyy-mm-dd') AS creation_date_view,
+                        to_char(r.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+                        to_char(r.date_limit, 'yyyy-mm-dd hh24:mi') AS date_limit_view,
+                        t1.instance_desc,
+                        t1.instance_amount,
+                        t1.instance_id,
+                        t1.workflow_id,
+                        t1.status,
+                        t1.current_node,
+                        t1.instance_param,
+                        t1.date_from,
+                        t1.date_to,
+                        t1.object_version_number,
+                        t1.reason,
+                        t1.current_handler,
+                        t1.status_desc,
+                        t1.approve_count,
+                        t1.node_result,
+                        t1.attachment_id,
+                        t1.document_number,
+                        t1.attribute_n_1,
+                        t1.attribute_n_2,
+                        t1.attribute_n_3,
+                        t1.attribute_n_4,
+                        t1.attribute_n_5,
+                        t1.attribute_n_6,
+                        t1.attribute_n_7,
+                        t1.attribute_n_8,
+                        t1.attribute_n_9,
+                        t1.attribute_n_10,
+                        t1.attribute_c_1,
+                        t1.attribute_c_2,
+                        t1.attribute_c_3,
+                        t1.attribute_c_4,
+                        t1.attribute_c_5,
+                        t1.attribute_c_6,
+                        t1.attribute_c_7,
+                        t1.attribute_c_8,
+                        t1.attribute_c_9,
+                        t1.attribute_c_10,
+                        t1.attribute_d_1,
+                        t1.attribute_d_2,
+                        t1.attribute_d_3,
+                        t1.attribute_d_4,
+                        t1.attribute_d_5,
+                        t1.attribute_d_6,
+                        t1.attribute_d_7,
+                        t1.attribute_d_8,
+                        t1.attribute_d_9,
+                        t1.attribute_d_10,
+                        r.record_id,
+                        r.date_limit,
+                        r.creation_date AS apply_date,
+                        r.node_id,
+                        ww.workflow_category
+                   FROM wfl_workflow_instance t1
+                  INNER JOIN wfl_instance_node_recipient r
+                     ON t1.instance_id = r.instance_id
+                  INNER JOIN wfl_workflow ww
+                     ON t1.workflow_id = ww.workflow_id
+                  WHERE r.user_id = ${/session/@user_id}
+                  ORDER BY is_late DESC, creation_date_view DESC) temp,
+                exp_requisition_headers er,
+                exp_expense_req_types_vl eer
+         WHERE er.exp_requisition_number = temp.document_number
+           AND er.exp_requisition_type_id = eer.expense_requisition_type_id
+        --------------------------- 借款-----------------------------------------------
+        UNION ALL
+        SELECT temp.*,
+                cprtv.description,
+                cprh.partner_id,
+                -- cprh.partner_category,
+                (SELECT s.code_value_name
+                   FROM sys_service_lookup_v s
+                  WHERE s.code = 'PAYMENT_OBJECT'
+                    AND s.language = 'ZHS'
+                    AND s.code_value = cprh.partner_category) partner_category_desc,
+                cprh.company_id,
+                cprh.unit_id,
+                cprh.created_by,
+                (SELECT description
+                   FROM exp_org_unit_vl ev
+                  WHERE ev.unit_id = cprh.unit_id) unit_name,
+                (SELECT f.company_short_name
+                   FROM fnd_companies_vl f
+                  WHERE f.company_id = cprh.company_id) company_name,
+                (CASE
+                  WHEN cprh.partner_category = 'EMPLOYEE' THEN
+                   (SELECT ee.name
+                      FROM exp_employees ee
+                     WHERE ee.employee_id = cprh.partner_id)
+                  ELSE
+                   (SELECT pv.description
+                      FROM pur_system_venders_vl pv
+                     WHERE pv.vender_id = cprh.partner_id)
+                END) AS partner_name,
+                (SELECT t.name
+                   FROM exp_employees t
+                  WHERE t.employee_id = cprh.employee_id) employee_name,
+                cprh.description memo,
+                cux_wfl_todo_info_pkg.get_csh_payment_patername(cprh.payment_requisition_header_id) partner_name1
+          FROM (SELECT decode(r.date_limit,
+                               NULL,
+                               0,
+                               decode(sign(r.date_limit - SYSDATE), -1, 1, 0)) AS is_late,
+                        (SELECT wwn.name
+                           FROM wfl_workflow_node_vl wwn
+                          WHERE wwn.node_id = r.node_id) AS node_name,
+                        (SELECT wdr.document_desc
+                           FROM wfl_document_reference_vl wdr
+                          WHERE ww.workflow_category = wdr.workflow_category) AS order_type,
+                        to_char(t1.creation_date, 'yyyy-mm-dd') AS creation_date_view,
+                        to_char(r.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+                        to_char(r.date_limit, 'yyyy-mm-dd hh24:mi') AS date_limit_view,
+                        t1.instance_desc,
+                        t1.instance_amount,
+                        t1.instance_id,
+                        t1.workflow_id,
+                        t1.status,
+                        t1.current_node,
+                        t1.instance_param,
+                        t1.date_from,
+                        t1.date_to,
+                        t1.object_version_number,
+                        t1.reason,
+                        t1.current_handler,
+                        t1.status_desc,
+                        t1.approve_count,
+                        t1.node_result,
+                        t1.attachment_id,
+                        t1.document_number,
+                        t1.attribute_n_1,
+                        t1.attribute_n_2,
+                        t1.attribute_n_3,
+                        t1.attribute_n_4,
+                        t1.attribute_n_5,
+                        t1.attribute_n_6,
+                        t1.attribute_n_7,
+                        t1.attribute_n_8,
+                        t1.attribute_n_9,
+                        t1.attribute_n_10,
+                        t1.attribute_c_1,
+                        t1.attribute_c_2,
+                        t1.attribute_c_3,
+                        t1.attribute_c_4,
+                        t1.attribute_c_5,
+                        t1.attribute_c_6,
+                        t1.attribute_c_7,
+                        t1.attribute_c_8,
+                        t1.attribute_c_9,
+                        t1.attribute_c_10,
+                        t1.attribute_d_1,
+                        t1.attribute_d_2,
+                        t1.attribute_d_3,
+                        t1.attribute_d_4,
+                        t1.attribute_d_5,
+                        t1.attribute_d_6,
+                        t1.attribute_d_7,
+                        t1.attribute_d_8,
+                        t1.attribute_d_9,
+                        t1.attribute_d_10,
+                        r.record_id,
+                        r.date_limit,
+                        r.creation_date AS apply_date,
+                        r.node_id,
+                        ww.workflow_category
+                   FROM wfl_workflow_instance t1
+                  INNER JOIN wfl_instance_node_recipient r
+                     ON t1.instance_id = r.instance_id
+                  INNER JOIN wfl_workflow ww
+                     ON t1.workflow_id = ww.workflow_id
+                  WHERE r.user_id = ${/session/@user_id}
+                  ORDER BY is_late DESC, creation_date_view DESC) temp,
+                csh_payment_requisition_hds cprh,
+                csh_pay_req_types_vl cprtv
+         WHERE cprh.requisition_number = temp.document_number
+           AND cprtv.type_id = cprh.payment_req_type_id
+        UNION ALL
+        SELECT temp.*,
+                art.description,
+                ah.partner_id,
+                -- ah.partner_category,
+                (SELECT s.code_value_name
+                   FROM sys_service_lookup_v s
+                  WHERE s.code = 'PAYMENT_OBJECT'
+                    AND s.language = 'ZHS'
+                    AND s.code_value = ah.partner_category) partner_category_desc,
+                ah.company_id,
+                ah.unit_id,
+                ah.created_by,
+                (SELECT description
+                   FROM exp_org_unit_vl ev
+                  WHERE ev.unit_id = ah.unit_id) unit_name,
+                (SELECT f.company_short_name
+                   FROM fnd_companies_vl f
+                  WHERE f.company_id = ah.company_id) company_name,
+                (CASE
+                  WHEN ah.partner_category = 'EMPLOYEE' THEN
+                   (SELECT ee.name
+                      FROM exp_employees ee
+                     WHERE ee.employee_id = ah.partner_id)
+                  ELSE
+                   (SELECT pv.description
+                      FROM pur_system_venders_vl pv
+                     WHERE pv.vender_id = ah.partner_id)
+                END) AS partner_name,
+                (SELECT t.name
+                   FROM exp_employees t
+                  WHERE t.employee_id = ah.employee_id) employee_name,
+                ah.description memo,
+                cux_wfl_todo_info_pkg.get_acp_requisition_patername(ah.acp_requisition_header_id) partner_name1
+          FROM (SELECT decode(r.date_limit,
+                               NULL,
+                               0,
+                               decode(sign(r.date_limit - SYSDATE), -1, 1, 0)) AS is_late,
+                        (SELECT wwn.name
+                           FROM wfl_workflow_node_vl wwn
+                          WHERE wwn.node_id = r.node_id) AS node_name,
+                        (SELECT wdr.document_desc
+                           FROM wfl_document_reference_vl wdr
+                          WHERE ww.workflow_category = wdr.workflow_category) AS order_type,
+                        to_char(t1.creation_date, 'yyyy-mm-dd') AS creation_date_view,
+                        to_char(r.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+                        to_char(r.date_limit, 'yyyy-mm-dd hh24:mi') AS date_limit_view,
+                        t1.instance_desc,
+                        t1.instance_amount,
+                        t1.instance_id,
+                        t1.workflow_id,
+                        t1.status,
+                        t1.current_node,
+                        t1.instance_param,
+                        t1.date_from,
+                        t1.date_to,
+                        t1.object_version_number,
+                        t1.reason,
+                        t1.current_handler,
+                        t1.status_desc,
+                        t1.approve_count,
+                        t1.node_result,
+                        t1.attachment_id,
+                        t1.document_number,
+                        t1.attribute_n_1,
+                        t1.attribute_n_2,
+                        t1.attribute_n_3,
+                        t1.attribute_n_4,
+                        t1.attribute_n_5,
+                        t1.attribute_n_6,
+                        t1.attribute_n_7,
+                        t1.attribute_n_8,
+                        t1.attribute_n_9,
+                        t1.attribute_n_10,
+                        t1.attribute_c_1,
+                        t1.attribute_c_2,
+                        t1.attribute_c_3,
+                        t1.attribute_c_4,
+                        t1.attribute_c_5,
+                        t1.attribute_c_6,
+                        t1.attribute_c_7,
+                        t1.attribute_c_8,
+                        t1.attribute_c_9,
+                        t1.attribute_c_10,
+                        t1.attribute_d_1,
+                        t1.attribute_d_2,
+                        t1.attribute_d_3,
+                        t1.attribute_d_4,
+                        t1.attribute_d_5,
+                        t1.attribute_d_6,
+                        t1.attribute_d_7,
+                        t1.attribute_d_8,
+                        t1.attribute_d_9,
+                        t1.attribute_d_10,
+                        r.record_id,
+                        r.date_limit,
+                        r.creation_date AS apply_date,
+                        r.node_id,
+                        ww.workflow_category
+                   FROM wfl_workflow_instance t1
+                  INNER JOIN wfl_instance_node_recipient r
+                     ON t1.instance_id = r.instance_id
+                  INNER JOIN wfl_workflow ww
+                     ON t1.workflow_id = ww.workflow_id
+                  WHERE r.user_id = ${/session/@user_id}
+                  ORDER BY is_late DESC, creation_date_view DESC) temp,
+                acp_acp_requisition_hds ah,
+                acp_sys_acp_req_types_vl art
+         WHERE ah.requisition_number = temp.document_number
+           AND ah.acp_req_type_id = art.acp_req_type_id
+        ----------------------------- 预算日记账 --------------------------------------------
+        UNION ALL
+        SELECT temp.*,
+                bt.description,
+                1 partner_id,
+                -- '' partner_category,
+                '' partner_category_desc,
+                bh.company_id,
+                bh.unit_id,
+                bh.created_by,
+                (SELECT description
+                   FROM exp_org_unit_vl ev
+                  WHERE ev.unit_id = bh.unit_id) unit_name,
+                (SELECT f.company_short_name
+                   FROM fnd_companies_vl f
+                  WHERE f.company_id = bh.company_id) company_name,
+                '' partner_name,
+                (SELECT t.name
+                   FROM exp_employees t
+                  WHERE t.employee_id = bh.employee_id) employee_name,
+                bh.journal_header_notes memo,
+                '' partner_name
+          FROM (SELECT decode(r.date_limit,
+                               NULL,
+                               0,
+                               decode(sign(r.date_limit - SYSDATE), -1, 1, 0)) AS is_late,
+                        (SELECT wwn.name
+                           FROM wfl_workflow_node_vl wwn
+                          WHERE wwn.node_id = r.node_id) AS node_name,
+                        (SELECT wdr.document_desc
+                           FROM wfl_document_reference_vl wdr
+                          WHERE ww.workflow_category = wdr.workflow_category) AS order_type,
+                        to_char(t1.creation_date, 'yyyy-mm-dd') AS creation_date_view,
+                        to_char(r.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+                        to_char(r.date_limit, 'yyyy-mm-dd hh24:mi') AS date_limit_view,
+                        t1.instance_desc,
+                        t1.instance_amount,
+                        t1.instance_id,
+                        t1.workflow_id,
+                        t1.status,
+                        t1.current_node,
+                        t1.instance_param,
+                        t1.date_from,
+                        t1.date_to,
+                        t1.object_version_number,
+                        t1.reason,
+                        t1.current_handler,
+                        t1.status_desc,
+                        t1.approve_count,
+                        t1.node_result,
+                        t1.attachment_id,
+                        t1.document_number,
+                        t1.attribute_n_1,
+                        t1.attribute_n_2,
+                        t1.attribute_n_3,
+                        t1.attribute_n_4,
+                        t1.attribute_n_5,
+                        t1.attribute_n_6,
+                        t1.attribute_n_7,
+                        t1.attribute_n_8,
+                        t1.attribute_n_9,
+                        t1.attribute_n_10,
+                        t1.attribute_c_1,
+                        t1.attribute_c_2,
+                        t1.attribute_c_3,
+                        t1.attribute_c_4,
+                        t1.attribute_c_5,
+                        t1.attribute_c_6,
+                        t1.attribute_c_7,
+                        t1.attribute_c_8,
+                        t1.attribute_c_9,
+                        t1.attribute_c_10,
+                        t1.attribute_d_1,
+                        t1.attribute_d_2,
+                        t1.attribute_d_3,
+                        t1.attribute_d_4,
+                        t1.attribute_d_5,
+                        t1.attribute_d_6,
+                        t1.attribute_d_7,
+                        t1.attribute_d_8,
+                        t1.attribute_d_9,
+                        t1.attribute_d_10,
+                        r.record_id,
+                        r.date_limit,
+                        r.creation_date AS apply_date,
+                        r.node_id,
+                        workflow_category
+                   FROM wfl_workflow_instance t1
+                  INNER JOIN wfl_instance_node_recipient r
+                     ON t1.instance_id = r.instance_id
+                  INNER JOIN wfl_workflow ww
+                     ON t1.workflow_id = ww.workflow_id
+                  WHERE r.user_id = ${/session/@user_id}
+                  ORDER BY is_late DESC, creation_date_view DESC) temp,
+                bgt_journal_headers bh,
+                bgt_journal_types_vl bt
+         WHERE bh.budget_journal_number = temp.document_number
+           AND bh.bgt_journal_type_id = bt.bgt_journal_type_id
+           
+           ----------------------------- 预算释放申请 --------------------------------------------
+        UNION ALL
+        SELECT temp.*,
+                '预算释放申请',
+                1 partner_id,
+                -- '' partner_category,
+                '' partner_category_desc,
+                bjh.company_id,
+                bjh.unit_id,
+                bjh.created_by,
+                (SELECT description
+                   FROM exp_org_unit_vl ev
+                  WHERE ev.unit_id = bjh.unit_id) unit_name,
+                (SELECT f.company_short_name
+                   FROM fnd_companies_vl f
+                  WHERE f.company_id = bjh.company_id) company_name,
+                '' partner_name,
+                (SELECT t.name
+                   FROM exp_employees t
+                  WHERE t.employee_id = bjh.employee_id) employee_name,
+                bjh.notes memo,
+                '' partner_name
+          FROM (SELECT decode(r.date_limit,
+                               NULL,
+                               0,
+                               decode(sign(r.date_limit - SYSDATE), -1, 1, 0)) AS is_late,
+                        (SELECT wwn.name
+                           FROM wfl_workflow_node_vl wwn
+                          WHERE wwn.node_id = r.node_id) AS node_name,
+                        (SELECT wdr.document_desc
+                           FROM wfl_document_reference_vl wdr
+                          WHERE ww.workflow_category = wdr.workflow_category) AS order_type,
+                        to_char(t1.creation_date, 'yyyy-mm-dd') AS creation_date_view,
+                        to_char(r.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+                        to_char(r.date_limit, 'yyyy-mm-dd hh24:mi') AS date_limit_view,
+                        t1.instance_desc,
+                        t1.instance_amount,
+                        t1.instance_id,
+                        t1.workflow_id,
+                        t1.status,
+                        t1.current_node,
+                        t1.instance_param,
+                        t1.date_from,
+                        t1.date_to,
+                        t1.object_version_number,
+                        t1.reason,
+                        t1.current_handler,
+                        t1.status_desc,
+                        t1.approve_count,
+                        t1.node_result,
+                        t1.attachment_id,
+                        t1.document_number,
+                        t1.attribute_n_1,
+                        t1.attribute_n_2,
+                        t1.attribute_n_3,
+                        t1.attribute_n_4,
+                        t1.attribute_n_5,
+                        t1.attribute_n_6,
+                        t1.attribute_n_7,
+                        t1.attribute_n_8,
+                        t1.attribute_n_9,
+                        t1.attribute_n_10,
+                        t1.attribute_c_1,
+                        t1.attribute_c_2,
+                        t1.attribute_c_3,
+                        t1.attribute_c_4,
+                        t1.attribute_c_5,
+                        t1.attribute_c_6,
+                        t1.attribute_c_7,
+                        t1.attribute_c_8,
+                        t1.attribute_c_9,
+                        t1.attribute_c_10,
+                        t1.attribute_d_1,
+                        t1.attribute_d_2,
+                        t1.attribute_d_3,
+                        t1.attribute_d_4,
+                        t1.attribute_d_5,
+                        t1.attribute_d_6,
+                        t1.attribute_d_7,
+                        t1.attribute_d_8,
+                        t1.attribute_d_9,
+                        t1.attribute_d_10,
+                        r.record_id,
+                        r.date_limit,
+                        r.creation_date AS apply_date,
+                        r.node_id,
+                        workflow_category
+                   FROM wfl_workflow_instance t1
+                  INNER JOIN wfl_instance_node_recipient r
+                     ON t1.instance_id = r.instance_id
+                  INNER JOIN wfl_workflow ww
+                     ON t1.workflow_id = ww.workflow_id
+                  WHERE r.user_id = ${/session/@user_id}
+                  ORDER BY is_late DESC, creation_date_view DESC) temp,
+                bgt_jour_release_headers bjh
+         WHERE bjh.document_number = temp.document_number
+         
+         ----------------------------- 调拨申请 --------------------------------------------
+        UNION ALL
+        SELECT temp.*,
+                aht.description,
+                1 partner_id,
+                -- '' partner_category,
+                '' partner_category_desc,
+                ccai.company_id,
+                ccai.unit_id,
+                ccai.created_by,
+                (SELECT description
+                   FROM exp_org_unit_vl ev
+                  WHERE ev.unit_id = ccai.unit_id) unit_name,
+                (SELECT f.company_short_name
+                   FROM fnd_companies_vl f
+                  WHERE f.company_id = ccai.company_id) company_name,
+                '' partner_name,
+                (SELECT t.name
+                   FROM exp_employees t
+                  WHERE t.employee_id = ccai.employee_id) employee_name,
+                ccai.description memo,
+                '' partner_name
+          FROM (SELECT decode(r.date_limit,
+                               NULL,
+                               0,
+                               decode(sign(r.date_limit - SYSDATE), -1, 1, 0)) AS is_late,
+                        (SELECT wwn.name
+                           FROM wfl_workflow_node_vl wwn
+                          WHERE wwn.node_id = r.node_id) AS node_name,
+                        (SELECT wdr.document_desc
+                           FROM wfl_document_reference_vl wdr
+                          WHERE ww.workflow_category = wdr.workflow_category) AS order_type,
+                        to_char(t1.creation_date, 'yyyy-mm-dd') AS creation_date_view,
+                        to_char(r.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+                        to_char(r.date_limit, 'yyyy-mm-dd hh24:mi') AS date_limit_view,
+                        t1.instance_desc,
+                        t1.instance_amount,
+                        t1.instance_id,
+                        t1.workflow_id,
+                        t1.status,
+                        t1.current_node,
+                        t1.instance_param,
+                        t1.date_from,
+                        t1.date_to,
+                        t1.object_version_number,
+                        t1.reason,
+                        t1.current_handler,
+                        t1.status_desc,
+                        t1.approve_count,
+                        t1.node_result,
+                        t1.attachment_id,
+                        t1.document_number,
+                        t1.attribute_n_1,
+                        t1.attribute_n_2,
+                        t1.attribute_n_3,
+                        t1.attribute_n_4,
+                        t1.attribute_n_5,
+                        t1.attribute_n_6,
+                        t1.attribute_n_7,
+                        t1.attribute_n_8,
+                        t1.attribute_n_9,
+                        t1.attribute_n_10,
+                        t1.attribute_c_1,
+                        t1.attribute_c_2,
+                        t1.attribute_c_3,
+                        t1.attribute_c_4,
+                        t1.attribute_c_5,
+                        t1.attribute_c_6,
+                        t1.attribute_c_7,
+                        t1.attribute_c_8,
+                        t1.attribute_c_9,
+                        t1.attribute_c_10,
+                        t1.attribute_d_1,
+                        t1.attribute_d_2,
+                        t1.attribute_d_3,
+                        t1.attribute_d_4,
+                        t1.attribute_d_5,
+                        t1.attribute_d_6,
+                        t1.attribute_d_7,
+                        t1.attribute_d_8,
+                        t1.attribute_d_9,
+                        t1.attribute_d_10,
+                        r.record_id,
+                        r.date_limit,
+                        r.creation_date AS apply_date,
+                        r.node_id,
+                        workflow_category
+                   FROM wfl_workflow_instance t1
+                  INNER JOIN wfl_instance_node_recipient r
+                     ON t1.instance_id = r.instance_id
+                  INNER JOIN wfl_workflow ww
+                     ON t1.workflow_id = ww.workflow_id
+                  WHERE r.user_id = ${/session/@user_id}
+                  ORDER BY is_late DESC, creation_date_view DESC) temp,
+                ca_capital_adjust_info ccai,
+                cp_capital_adjust_types aht
+         WHERE ccai.adjust_number = temp.document_number
+           AND ccai.cp_capital_adjust_types_id =
+               aht.cp_capital_adjust_types_id
+          ------------资产业务-----------
+         UNION ALL
+           SELECT temp.*,
+                ert.ast_requisition_type_name,
+                1 partner_id,
+                -- '' partner_category,
+                '' partner_category_desc,
+                erh.company_id,
+                erh.unit_id,
+                erh.created_by,
+                (SELECT description
+                   FROM exp_org_unit_vl ev
+                  WHERE ev.unit_id = erh.unit_id) unit_name,
+                (SELECT f.company_short_name
+                   FROM fnd_companies_vl f
+                  WHERE f.company_id = erh.company_id) company_name,
+                '' partner_name,
+                (SELECT t.name
+                   FROM exp_employees t
+                  WHERE t.employee_id = erh.employee_id) employee_name,
+                erh.description memo,
+                '' partner_name1
+          FROM (SELECT decode(r.date_limit,
+                               NULL,
+                               0,
+                               decode(sign(r.date_limit - SYSDATE), -1, 1, 0)) AS is_late,
+                        (SELECT wwn.name
+                           FROM wfl_workflow_node_vl wwn
+                          WHERE wwn.node_id = r.node_id) AS node_name,
+                        (SELECT wdr.document_desc
+                           FROM wfl_document_reference_vl wdr
+                          WHERE ww.workflow_category = wdr.workflow_category) AS order_type,
+                        to_char(t1.creation_date, 'yyyy-mm-dd') AS creation_date_view,
+                        to_char(r.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+                        to_char(r.date_limit, 'yyyy-mm-dd hh24:mi') AS date_limit_view,
+                        t1.instance_desc,
+                        t1.instance_amount,
+                        t1.instance_id,
+                        t1.workflow_id,
+                        t1.status,
+                        t1.current_node,
+                        t1.instance_param,
+                        t1.date_from,
+                        t1.date_to,
+                        t1.object_version_number,
+                        t1.reason,
+                        t1.current_handler,
+                        t1.status_desc,
+                        t1.approve_count,
+                        t1.node_result,
+                        t1.attachment_id,
+                        t1.document_number,
+                        t1.attribute_n_1,
+                        t1.attribute_n_2,
+                        t1.attribute_n_3,
+                        t1.attribute_n_4,
+                        t1.attribute_n_5,
+                        t1.attribute_n_6,
+                        t1.attribute_n_7,
+                        t1.attribute_n_8,
+                        t1.attribute_n_9,
+                        t1.attribute_n_10,
+                        t1.attribute_c_1,
+                        t1.attribute_c_2,
+                        t1.attribute_c_3,
+                        t1.attribute_c_4,
+                        t1.attribute_c_5,
+                        t1.attribute_c_6,
+                        t1.attribute_c_7,
+                        t1.attribute_c_8,
+                        t1.attribute_c_9,
+                        t1.attribute_c_10,
+                        t1.attribute_d_1,
+                        t1.attribute_d_2,
+                        t1.attribute_d_3,
+                        t1.attribute_d_4,
+                        t1.attribute_d_5,
+                        t1.attribute_d_6,
+                        t1.attribute_d_7,
+                        t1.attribute_d_8,
+                        t1.attribute_d_9,
+                        t1.attribute_d_10,
+                        r.record_id,
+                        r.date_limit,
+                        r.creation_date AS apply_date,
+                        r.node_id,
+                        ww.workflow_category
+                   FROM wfl_workflow_instance t1
+                  INNER JOIN wfl_instance_node_recipient r
+                     ON t1.instance_id = r.instance_id
+                  INNER JOIN wfl_workflow ww
+                     ON t1.workflow_id = ww.workflow_id
+                  WHERE r.user_id = ${/session/@user_id}
+                  ORDER BY is_late DESC, creation_date_view DESC) temp,
+                eam_requisition_headers erh,
+                eam_requisition_types_vl ert
+         WHERE erh.requisition_number = temp.document_number
+           AND erh.ast_requisition_type_id = ert.ast_requisition_type_id 
+           ) t3
+
+	 #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="workflow_category" queryExpression="t3.workflow_category=${@workflow_category}"/>
+        <bm:query-field name="document_number" queryExpression="t3.document_number=${@document_number}"/>
+        <bm:query-field name="create_by_name" queryExpression="wfl_common_pkg.get_wfl_user_name(t3.created_by) like ${@create_by_name}"/>
+        <bm:query-field name="creation_date_from" queryExpression="t3.creation_date_view&gt;=${@creation_date_from}"/>
+        <bm:query-field name="creation_date_to" queryExpression="t3.creation_date_view&lt;=${@creation_date_to}"/>
+        <bm:query-field name="company_id" queryExpression="t3.company_id = ${@company_id}"/>
+        <bm:query-field name="unit_id" queryExpression="t3.unit_id = ${@unit_id}"/>
+        <bm:query-field name="partner_name" queryExpression="t3.partner_name like &apos;%&apos;||${@partner_name}||&apos;%&apos;"/>
+        <!-- <bm:query-field name="partner_category" queryExpression="t3.partner_category =${@partner_category}"/> -->
+        <bm:query-field name="document_number" queryExpression="t3.document_number like ${@document_number}"/>
+        <bm:query-field name="description" queryExpression="t3.description = ${@description}"/>
+    </bm:query-fields>
+</bm:model>

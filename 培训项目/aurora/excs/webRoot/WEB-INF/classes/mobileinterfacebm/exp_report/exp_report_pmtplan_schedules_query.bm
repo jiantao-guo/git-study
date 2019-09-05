@@ -1,0 +1,297 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lixi  
+    $Date: 2011-6-30 上午10:44:26  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<!--20130225 添加 cash_flow_item_description 现金流量项-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    vv.*,
+                    (SELECT
+                        (vv.need_payment_amount - vv.payed_amount) -
+                        (SELECT
+                            DECODE(SUM(l.amount), NULL, 0, SUM(l.amount))
+                        FROM
+                            acp_acp_requisition_lns l,
+                            acp_acp_requisition_hds h
+                        WHERE
+                            l.ref_document_id           = vv.exp_report_header_id AND
+                            l.ref_document_line_id      = vv.payment_schedule_line_id AND
+                            l.payment_status            = 'NEVER' AND
+                            l.acp_requisition_header_id = h.acp_requisition_header_id AND
+                            h.status                   IN ('SUBMITED','APPROVED')
+                        )
+                    FROM
+                        dual
+                    ) can_req_amount,
+                    (SELECT vv.need_payment_amount - vv.payed_amount FROM dual
+                    ) unpayment_amount
+                FROM
+                    (SELECT
+                        *
+                    FROM
+                        (SELECT
+                            b.code_value_name payee_type,
+                            ss.frozen_flag,
+                            ss.company_id,
+                            fv.company_short_name company_name,
+                            b.code_value payee_type_value,
+                            ss.description,
+                            ss.payment_schedule_line_id,
+                            gl.currency_name,
+                            ss.due_amount,
+                            ss.due_amount -
+                            (SELECT
+                                NVL(SUM(cwo.csh_write_off_amount), 0)
+                            FROM
+                                csh_write_off cwo,
+                                exp_report_pmt_schedules es,
+                                exp_report_headers s
+                            WHERE
+                                cwo.document_line_id        = es.payment_schedule_line_id AND
+                                cwo.document_header_id      = es.exp_report_header_id AND
+                                cwo.document_source         = 'EXPENSE_REPORT' AND
+                                es.exp_report_header_id     = s.exp_report_header_id AND
+                                es.payment_schedule_line_id = ss.payment_schedule_line_id
+                            ) due_amount1,
+                            TO_CHAR(ss.schedule_start_date, 'YYYY-MM-DD') schedule_start_date,
+                            TO_CHAR(ss.schedule_due_date, 'YYYY-MM-DD') schedule_due_date,
+                            ss.exp_report_header_id,
+                            ss.currency,
+                            ss.bank_code,
+                            ss.bank_name,
+                            ss.bank_location_code,
+                            ss.bank_location_name,
+                            ss.province_code,
+                            ss.province_name,
+                            ss.city_code,
+                            ss.city_name,
+                            ss.usedes,
+                            (SELECT
+                                usedes_id
+                            FROM
+                                csh_payment_usedes_vl vvv
+                            WHERE
+                                vvv.usedes_code = ss.usedes
+                            ) usedes_id,
+                            (SELECT
+                                v.description
+                            FROM
+                                csh_payment_usedes_vl v
+                            WHERE
+                                v.usedes_code = ss.usedes
+                            ) usedes_name,
+                            ss.gather_flag,
+                            (SELECT
+                                b.code_value_name
+                            FROM
+                                sys_codes a,
+                                sys_code_values_vl b
+                            WHERE
+                                a.code_id    = b.code_id AND
+                                a.code       ='GATHER_FLAG' AND
+                                b.code_value = ss.gather_flag
+                            )gather_flag_desc,
+                            (SELECT
+                                ccf.description
+                            FROM
+                                csh_cash_flow_items_vl ccf
+                            WHERE
+                                ccf.cash_flow_item_id = ss.cash_flow_code
+                            ) cash_flow_item_description,
+                            ss.cash_flow_code,
+                            ss.payee_id,
+                            b.code_value_name
+                            ||'-'
+                            || DECODE(b.code_value, 'EMPLOYEE',
+                            (SELECT ees.name FROM exp_employees ees WHERE ees.employee_id = ss.payee_id
+                            ), 'VENDER',
+                            (SELECT
+                                pv.description
+                            FROM
+                                pur_system_venders_vl pv
+                            WHERE
+                                pv.vender_id = ss.payee_id
+                            ), 'CUSTOMER',
+                            (SELECT
+                                ov.description
+                            FROM
+                                ord_system_customers_vl ov
+                            WHERE
+                                ov.customer_id = ss.payee_id
+                            )) payee_partner_name,
+                            (SELECT
+                                fcv.company_short_name
+                            FROM
+                                csh_doc_payment_company cc,
+                                fnd_companies_vl fcv
+                            WHERE
+                                cc.document_line_id   = ss.payment_schedule_line_id AND
+                                cc.document_id        = ss.exp_report_header_id AND
+                                cc.document_type      = 'EXP_REPORT' AND
+                                cc.payment_company_id = fcv.company_id
+                            ) company_short_name,
+                            (SELECT
+                                NVL(SUM(w.csh_write_off_amount), 0)
+                            FROM
+                                csh_write_off w
+                            WHERE
+                                w.document_source    = 'EXPENSE_REPORT' AND
+                                w.document_header_id = ss.exp_report_header_id AND
+                                w.document_line_id   = ss.payment_schedule_line_id AND
+                                w.write_off_type     = 'PAYMENT_EXPENSE_REPORT'
+                            ) payed_amount,
+                            ss.due_amount need_payment_amount,
+                            (SELECT
+                                cch.contract_number
+                            FROM
+                                con_contract_headers cch
+                            WHERE
+                                cch.contract_header_id = cdf.document_id
+                            ) contract_number,
+                            cdf.document_id contract_header_id,
+                            (SELECT
+                                cps.payment_schedule_line_number
+                            FROM
+                                con_payment_schedules cps
+                            WHERE
+                                cps.payment_schedule_line_id = cdf.document_line_id
+                            ) line_number,
+                            (SELECT
+                                cps.payment_schedule_line_id
+                            FROM
+                                con_payment_schedules cps
+                            WHERE
+                                cps.payment_schedule_line_id = cdf.document_line_id
+                            ) payment_sch_line_id,
+                            ss.account_number,
+                            ss.account_name,
+                            (SELECT
+                                c.description
+                            FROM
+                                csh_payment_methods_vl c
+                            WHERE
+                                c.payment_method_id = ss.payment_type_id
+                            ) payment_method,
+                            (SELECT
+                                c.payment_method_code
+                            FROM
+                                csh_payment_methods_vl c
+                            WHERE
+                                c.payment_method_id = ss.payment_type_id
+                            ) payment_method_code,
+                            ss.payment_type_id,
+                            (SELECT
+                                NVL(SUM(cwo.csh_write_off_amount), 0)
+                            FROM
+                                csh_write_off cwo
+                            WHERE
+                                cwo.document_line_id   = ss.payment_schedule_line_id AND
+                                cwo.document_header_id = ss.exp_report_header_id AND
+                                cwo.document_source    = 'EXPENSE_REPORT' AND
+                                cwo.write_off_type     = 'PREPAYMENT_EXPENSE_REPORT'
+                            ) AS write_off_amount,
+                            ss.collection_account_id,
+                            (SELECT
+                                b.bank_account_name
+                                ||'-'
+                                ||b.bank_account_num
+                            FROM
+                                csh_bank_accounts_vl b
+                            WHERE
+                                b.bank_account_id = ss.collection_account_id
+                            )AS collection_account_desc,
+                            nvl((SELECT
+                                hs.contract_number
+                                ||'-'
+                                || hs.document_desc 
+                            FROM
+                                CON_DOCUMENT_FLOWS fs,
+                                con_contract_headers hs
+                            WHERE
+                                fs.source_document_line_id = ss.payment_schedule_line_id AND
+                                fs.document_id             = hs.contract_header_id AND
+                                fs.document_type           = 'CON_CONTRACT' AND
+                                fs.source_document_type    ='EXP_REPORT_PMT_SCHEDULES'),'null'
+                            ) contract_name
+                        FROM
+                            exp_report_pmt_schedules ss,
+                            sys_code_values_vl b,
+                            sys_codes a,
+                            gld_currency_vl gl,
+                            fnd_companies_vl fv,
+                            con_document_flows cdf #WHERE_CLAUSE#
+                        )
+                    ) vv
+                ORDER BY
+                    payee_type_value,
+                    payee_partner_name
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="payee_type" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CODE_VALUE_NAME"/>
+        <bm:field name="company_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="COMPANY_NAME"/>
+        <bm:field name="payee_type_value" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="description" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DESCRIPTION"/>
+        <bm:field name="payment_schedule_line_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="PAYMENT_SCHEDULE_LINE_ID"/>
+        <bm:field name="currency_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CURRENCY_NAME"/>
+        <bm:field name="due_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="DUE_AMOUNT"/>
+        <bm:field name="schedule_start_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="SCHEDULE_START_DATE"/>
+        <bm:field name="schedule_due_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="SCHEDULE_DUE_DATE"/>
+        <bm:field name="exp_report_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="EXP_REPORT_HEADER_ID"/>
+        <bm:field name="payee_partner_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DESCRIPTION_NAME"/>
+        <bm:field name="company_short_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="COMPANY_SHORT_NAME"/>
+        <bm:field name="contract_number" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CONTRACT_NUMBER"/>
+        <bm:field name="contract_header_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="line_number" databaseType="NUMBER" datatype="java.lang.Long" physicalName="LINE_NUMBER"/>
+        <bm:field name="currency"/>
+        <bm:field name="payee_id" datatype="java.lang.Long"/>
+        <bm:field name="company_id"/>
+        <bm:field name="payment_method"/>
+        <bm:field name="payment_type_id" datatype="java.lang.Long"/>
+        <bm:field name="payment_method_code"/>
+        <bm:field name="account_number"/>
+        <bm:field name="account_name"/>
+        <bm:field name="bank_code"/>
+        <bm:field name="bank_name"/>
+        <bm:field name="bank_location_code"/>
+        <bm:field name="bank_location_name"/>
+        <bm:field name="payment_sch_line_id"/>
+        <bm:field name="city_code"/>
+        <bm:field name="city_name"/>
+        <bm:field name="province_code"/>
+        <bm:field name="province_name"/>
+        <bm:field name="usedes"/>
+        <bm:field name="usedes_name"/>
+        <bm:field name="frozen_flag"/>
+        <bm:field name="usedes_id"/>
+        <bm:field name="payed_amount"/>
+        <bm:field name="write_off_amount"/>
+        <bm:field name="unpayment_amount"/>
+        <bm:field name="can_req_amount"/>
+        <bm:field name="cash_flow_item_description"/>
+        <bm:field name="cash_flow_code"/>
+        <bm:field name="collection_account_id"/>
+        <bm:field name="collection_account_desc"/>
+        <bm:field name="gather_flag"/>
+        <bm:field name="gather_flag_desc"/>
+        <bm:field name="due_amount1"/>
+        <bm:field name="contract_name"/>
+    </bm:fields>
+    <!--<bm:query-fields>
+        <bm:query-field field="exp_report_header_id" queryOperator="="/>
+    </bm:query-fields>-->
+    <!-- <bm:query-fields>
+        <bm:query-field name="frozen_flag" queryExpression=" ss.frozen_flag=${@frozen_flag}"/>
+        <bm:query-field name="can_req_flag" queryExpression=" (ss.due_amount - (select nvl(sum(w.csh_write_off_amount), 0) from csh_write_off w where w.document_source = &apos;EXPENSE_REPORT&apos; and w.document_header_id = ss.exp_report_header_id and w.document_line_id = ss.payment_schedule_line_id) - (select decode(sum(l.amount), null, 0, sum(l.amount)) from acp_acp_requisition_lns l,acp_acp_requisition_hds h where  l.ref_document_id = ss.exp_report_header_id and l.ref_document_line_id =  ss.payment_schedule_line_id and l.payment_status = &apos;NEVER&apos; and l.acp_requisition_header_id = h.acp_requisition_header_id and h.status in (&apos;SUBMITED&apos;,&apos;APPROVED&apos;))) &gt; 0"/>
+    </bm:query-fields> -->
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="b.code_id = a.code_id and cdf.source_document_id(+) = ss.exp_report_header_id and cdf.source_document_line_id(+) = ss.payment_schedule_line_id and a.code = &apos;PAYMENT_OBJECT&apos; and ss.payee_category = b.code_value and ss.currency = gl.currency_code and ss.company_id = fv.company_id and ss.exp_report_header_id = nvl(${@exp_report_header_id},(select erh.exp_report_header_id from exp_report_headers erh where erh.exp_report_number = ${@document_number}))"/>
+    </bm:data-filters>
+</bm:model>

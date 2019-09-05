@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Mouse Chow  
+    $Date: 2012-3-13 下午01:19:19  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" defaultWhereClause="work_order_header_id = ${/parameter/@work_order_header_id}" fetchAll="true" model="gld.GLD5010.gld_work_order_attachment_number" rootPath="attachment"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_report_employeelist" rootPath="employee_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="gld.GLD5010.gld_work_order_types" rootPath="gld_work_order_type_list"/>
+        <a:model-query autoCount="false" defaultwhereclause="code=&apos;GLD_STATUS&apos; and code_value = &apos;APPROVED&apos; and  language=${/session/@lang}" fetchAll="true" model="sys.sys_service_lookup_v" rootPath="gld_work_order_status_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="util.get_current_date_and_period_name" rootPath="date"/>
+        <a:model-query autocount="false" fetchall="true" model="gld.GLD5010.gld_work_order_line_object" rootpath="line_object"/>
+        <a:model-query autocount="false" fetchall="true" model="gld.GLD5010.gld_work_order_line_ref_fields" rootpath="line_ref_fields"/>
+        <a:model-query autocount="false" fetchall="true" model="gld.GLD5010.gld_work_order_line_dimension" rootpath="line_dimension"/>
+        <a:model-query autoCount="false" fetchAll="true" model="gld.GLD5010.gld_work_order_headers" rootPath="head_data"/>
+        <a:model-query autoCount="false" fetchAll="true" model="util.get_current_date_and_period_name" rootPath="date"/>
+        <a:model-query autoCount="false" defaultWhereClause=" user_id=${/session/@user_id}" fetchAll="true" model="sys.sys_user" rootPath="employee"/>
+        <a:model-query autocount="false" defaultwhereclause="exists (select 1 from exp_employee_assigns eea         where eea.position_id=op.position_id    and eea.enabled_flag = &apos;Y&apos;   and   eea.employee_id= nvl(${/parameter/@employee_id},${/model/head_data/record/@employee_id}))  and company_id = ${/session/@company_id}" fetchall="true" model="exp.exp_org_position" rootpath="position_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="gld_attachment_number_link" model="gld.GLD5010.gld_work_order_attachment_number" modelaction="query"/>
+        <a:link id="uploadFile_link" url="${/request/@context_path}/check_uploadFile.screen"/>
+        <a:link id="gld_work_order_query_history_link" url="${/request/@context_path}/modules/gld/GLD5010/gld_work_order_query_history.screen"/>
+        <a:link id="gld_work_order_maintain_window_link" url="${/request/@context_path}/modules/gld/GLD5010/gld_work_order_maintain_query.screen"/>
+        <script><![CDATA[
+        var attach_number = '${/model/attachment/record/@atm_count}';
+       
+        function initStyle(){
+            if (attach_number!=0){
+            var el = Ext.query('#attachmentButton button div');
+             Ext.get(el[0]).setStyle('color','red');
+            }
+        }
+        //日期校验
+            function dateValidator(record,name,value){
+            	if(name == "created_date_from" || name == "created_date_to" ){
+            		var start_date = record.get('created_date_from');
+            		var end_date = record.get('created_date_to');
+            		if(typeof(end_date) != 'undefined' && !Ext.isEmpty(end_date)){
+            			if(!compareDate(start_date,end_date)){
+            				return '“创建日期从”大于“创建日期到”';
+            			}
+            		}
+            		return true;
+            	}
+            	if(name == "work_order_date_from" || name == "work_order_date_to" ){
+            		var start_date = record.get('work_order_date_from');
+            		var end_date = record.get('work_order_date_to');
+            		if(typeof(end_date) != 'undefined' && !Ext.isEmpty(end_date)){
+            			if(!compareDate(start_date,end_date)){
+            				return '“工单日期从”大于“工单日期到”';
+            			}
+            		}
+            		return true;
+            	}
+            }
+            function compareDate(start, end){
+			    if(start > end){
+			        return false;
+			    }
+			    return true;
+			}
+			//查询金额校验
+			function currencyValidator(record,name,value){
+			    if(name == "amount_from" || name=="amount_to"){
+			        var from_value = record.get('amount_from');
+			        var to_value = record.get('amount_to');
+			        if(typeof(from_value) != 'undefined' && !Ext.isEmpty(from_value) && typeof(to_value) != 'undefined' && !Ext.isEmpty(to_value)){
+			            if(from_value > to_value){
+			             	return '“金额从”大于“金额到”' ; 
+			            }
+			        }
+			    }
+			    return true;
+			}
+        	function selectChange(grid, rowNum, record) {
+        	    
+                $('gld_work_order_accounts').setQueryParameter('work_order_header_id', record.get('work_order_header_id'));
+                $('gld_work_order_accounts').query();
+            }
+            
+            //跟踪单据
+            function seeHistory() {
+                var lrecord = $('gld_work_order_result_ds').getSelected();
+                if (lrecord.length != 1){
+                    Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:GLD_WORK_ORDER.LENGTH_ERROR}');
+                }
+				 var work_order_header_id = lrecord[0].get('work_order_header_id');
+                var url = $('gld_work_order_query_history_link').getUrl() + '?head_id=' + work_order_header_id;
+                new Aurora.Window({
+                    id: 'gld_work_order_history_window',
+                    url: url,
+                    title: '${l:REC_REQUISITION_HISTORY}',
+                    fullScreen: true
+                });
+            }
+            //附件查看
+            function uploadFile() {
+                var lrecord = $('gld_work_order_result_ds').getSelected();
+                if (lrecord.length != 1){
+                    Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:GLD_WORK_ORDER.LENGTH_ERROR}');
+                }
+				 var work_order_header_id = lrecord[0].get('work_order_header_id');
+                var url = /*${/request/@context_path}/uploadFile.screen*/
+                $('uploadFile_link').getUrl() + '?table_name=GLD_WORK_ORDER_HEADERS' + '&header_id=' + work_order_header_id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'check_upload_file_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            //复核
+            function reAuditFunc() {
+             
+                var lrecord = $('gld_work_order_result_ds').getSelected();
+                if (lrecord.length != 1){
+                    Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:GLD_WORK_ORDER.LENGTH_ERROR}');
+                }
+				 var work_order_header_id = lrecord[0].get('work_order_header_id');
+				Aurora.request({
+                            url:"${/request/@context_path}/autocrud/db.gld_work_order_pkg.audit_gld_work_order_recheck/execute",
+                            scope: this,
+                            para:{
+                            work_order_header_id: work_order_header_id},
+                            success: function(ret) {
+                                    Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:SUCCESSFUL_OPERATION}');
+                                    $('gld_work_order_result_ds').query();
+                                    $('gld_work_order_accounts').query();
+                            }
+                        });
+            }
+             //拒绝
+            function rejectFunc() {
+              
+                var lrecord = $('gld_work_order_result_ds').getSelected();
+                if (lrecord.length != 1){
+                    Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:GLD_WORK_ORDER.LENGTH_ERROR}');
+                }
+				 var work_order_header_id = lrecord[0].get('work_order_header_id');
+				Aurora.request({
+                            url:"${/request/@context_path}/autocrud/db.gld_work_order_pkg.audit_reject_work_order/execute",
+                            scope: this,
+                            para:{
+                            work_order_header_id: work_order_header_id},
+                            success: function(ret) {
+                                    Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:SUCCESSFUL_OPERATION}');
+                                    $('gld_work_order_result_ds').query();
+                                    $('gld_work_order_accounts').query();
+                            }
+                        });
+            }
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="maintain_employee_ds">
+                <a:datas dataSource="/model/employee_list"/>
+            </a:dataSet>
+            <a:dataSet id="maintain_gld_work_order_type_ds">
+                <a:datas dataSource="/model/gld_work_order_type_list"/>
+            </a:dataSet>
+            <a:dataSet id="maintain_gld_work_order_status">
+                <a:datas dataSource="/model/gld_work_order_status_list"/>
+            </a:dataSet>
+            <a:dataSet id="maintain_currencylist" loadData="true" model="gld.gld_currency_vl"/>
+            <a:dataSet id="exp_exchange_rate_ds" fetchAll="true" model="gld.gld_exchange_rates"/>
+            <a:dataSet id="positionlist_ds">
+                <a:datas datasource="/model/position_list"/>
+            </a:dataSet>
+            <a:dataSet id="gld_work_order_maintain_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="employee_name" displayField="employeename" options="maintain_employee_ds" returnField="employee_id" valueField="employee_id"/>
+                    <a:field name="work_order_type_desc" autoComplete="true" autoCompleteField="work_order_type_desc" lovGridHeight="320" lovHeight="450" lovService="gld.GLD5010.gld_work_order_types" lovWidth="500" prompt="GLD.WORK_ORDER_TYPE" title="GLD_WORK_ORDER_TYPE">
+                        <a:mapping>
+                            <a:map from="work_order_type_id" to="work_order_type_id"/>
+                            <a:map from="work_order_type_desc" to="work_order_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="work_order_type_id"/>
+                    <a:field name="status_name" displayField="code_value_name" options="maintain_gld_work_order_status" returnField="status" valueField="code_value"/>
+                    <a:field name="currency_name" displayField="currency_name" options="maintain_currencylist" returnField="currency" valueField="currency_code"/>
+                    <a:field name="currency"/>
+                    <a:field name="description" prompt="EXP_REPORT_HEADERS.DESCRIPTION"/>
+                    <a:field name="created_date_from" datatype="date" validator="dateValidator"/>
+                    <a:field name="created_date_to" datatype="date" validator="dateValidator"/>
+                    <a:field name="work_order_date_from" datatype="date" validator="dateValidator"/>
+                    <a:field name="work_order_date_to" datatype="date" validator="dateValidator"/>
+                    <a:field name="amount_from" validator="currencyValidator"/>
+                    <a:field name="amount_to" validator="currencyValidator"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="gld_work_order_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="gld.GLD5010.gld_work_order_headers" pageSize="20" queryDataSet="gld_work_order_maintain_query_ds" queryUrl="${/request/@context_path}/autocrud/gld.GLD5010.gld_work_order_headers/query?audit_flag_2=1&amp;status=APPROVED" selectable="true"/>
+            <a:dataSet id="gld_work_order_accounts" model="gld.GLD5010.gld_work_order_accounts" queryUrl="${/request/@context_path}/autocrud/gld.GLD5010.gld_work_order_accounts/query?work_order_header_id=${/parameter/@work_order_header_id}"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="exp_rep_mt_standard_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="reAuditFunc" text="PROMPT.REAUDIT" width="80"/>
+                <a:toolbarButton click="rejectFunc" text="PROMPT.REJECT" width="80"/>
+                <a:toolbarButton click="uploadFile" text="PROMPT.VIEW_ATTACHMENT" width="80"/>
+                <a:toolbarButton click="seeHistory" text="PROMPT.HISTORY" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="gld_work_order_maintain_query_ds" resultTarget="gld_work_order_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="work_order_number" bindTarget="gld_work_order_maintain_query_ds" prompt="GLD_WORK_ORDER_HEADERS.WORK_ORDER_NUMBER"/>
+                    <a:lov name="work_order_type_desc" bindTarget="gld_work_order_maintain_query_ds"/>
+                    <a:textField name="description" bindtarget="gld_work_order_maintain_query_ds"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:datePicker name="work_order_date_from" bindTarget="gld_work_order_maintain_query_ds" prompt="GLD_WORK_ORDER_HEADERS.WORK_ORDER_DATE_FROM"/>
+                    <a:datePicker name="work_order_date_to" bindTarget="gld_work_order_maintain_query_ds" prompt="GLD_WORK_ORDER_HEADERS.WORK_ORDER_DATE_FROM"/>
+                    <a:comboBox name="employee_name" bindTarget="gld_work_order_maintain_query_ds" prompt="EXP_REPORT_HEADERS.EMPLOYEE_NAME"/>
+                    <a:comboBox name="currency_name" bindTarget="gld_work_order_maintain_query_ds" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE"/>
+                    <a:numberField name="amount_from" bindTarget="gld_work_order_maintain_query_ds" prompt="GLD_WORK_ORDER_HEADERS.AMOUNT_FROM"/>
+                    <a:numberField name="amount_to" bindTarget="gld_work_order_maintain_query_ds" prompt="GLD_WORK_ORDER_HEADERS.AMOUNT_TO"/>
+                    <a:datePicker name="created_date_from" bindTarget="gld_work_order_maintain_query_ds" prompt="EXP_REQUISITION_HEADERS.CREATE_DATE_FROM"/>
+                    <a:datePicker name="created_date_to" bindTarget="gld_work_order_maintain_query_ds" prompt="EXP_REQUISITION_HEADERS.CREATE_DATE_TO"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="gld_work_order_result_grid" Height="200" bindTarget="gld_work_order_result_ds" marginWidth="37" navBar="true">
+                <a:columns>
+                    <a:column name="work_order_number" align="center" width="200"/>
+                    <a:column name="work_order_type_desc" align="center" prompt="GLD.WORK_ORDER_TYPE" width="100"/>
+                    <a:column name="work_order_date" align="center" prompt="GLD_WORK_ORDER_HEADERS.WORK_ORDER_DATE" width="80"/>
+                    <a:column name="currency_name" align="center" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE" width="60"/>
+                    <a:column name="amount" align="right" prompt="GLD_WORK_ORDER_HEADERS.AMOUNT" width="100"/>
+                    <a:column name="employee_name" align="center" prompt="GLD_WORK_ORDER_HEADERS.EMPLOYEE_NAME" width="80"/>
+                    <a:column name="status_name" align="center" prompt="EXP_REPORT_HEADERS.REPORT_STATUS" width="60"/>
+                    <a:column name="description" align="left" prompt="EXP_REPORT_HEADERS.DESCRIPTION" width="200"/>
+                    <a:column name="creation_date_1" align="center" prompt="EXP_REPORT_HEADERS.CREATION_DATE" width="80"/>
+                </a:columns>
+                <a:events>
+                    <a:event name="rowclick" handler="selectChange"/>
+                </a:events>
+            </a:grid>
+            <a:grid id="gld_work_order_accounts_grid" Height="300" bindTarget="gld_work_order_accounts" marginWidth="35" navBar="true">
+                <a:columns>
+                    <a:column name="description" align="center" width="120"/>
+                    <a:column name="company_name" align="center" prompt="EXP_REQUISITION_LINES.COMPANY_ID" width="120"/>
+                    <a:column name="period_name" align="center" prompt="BGT_PERIODS.PERIOD_NAME" width="80"/>
+                    <a:column name="responsibility_center_name" align="center" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME" width="120"/>
+                    <a:column name="account_name" align="center" prompt="GLD_ACCOUNTS.ACCOUNT_DESCRIPTION" width="140"/>
+                    <a:column name="entered_amount_dr" align="right" renderer="Aurora.formatMoney" width="90"/>
+                    <a:column name="entered_amount_cr" align="right" renderer="Aurora.formatMoney" width="90"/>
+                    <a:column name="functional_amount_dr" align="right" renderer="Aurora.formatMoney" width="90"/>
+                    <a:column name="functional_amount_cr" align="right" renderer="Aurora.formatMoney" width="90"/>
+                    <a:column name="account_segment1" align="center" prompt="ACCOUNT_SEGMENT1" width="80"/>
+                    <a:column name="account_segment2" align="center" prompt="ACCOUNT_SEGMENT2" width="80"/>
+                    <a:column name="account_segment3" align="center" prompt="ACCOUNT_SEGMENT3" width="80"/>
+                    <a:column name="account_segment4" align="center" prompt="ACCOUNT_SEGMENT4" width="80"/>
+                    <a:column name="account_segment5" align="center" prompt="ACCOUNT_SEGMENT5" width="80"/>
+                    <a:column name="account_segment6" align="center" prompt="ACCOUNT_SEGMENT6" width="80"/>
+                    <a:column name="account_segment7" align="center" prompt="ACCOUNT_SEGMENT7" width="80"/>
+                    <a:column name="account_segment8" align="center" prompt="ACCOUNT_SEGMENT8" width="80"/>
+                    <a:column name="account_segment9" align="center" prompt="ACCOUNT_SEGMENT9" width="80"/>
+                    <a:column name="account_segment10" align="center" prompt="ACCOUNT_SEGMENT10" width="80"/>
+                    <a:column name="account_segment11" align="center" prompt="ACCOUNT_SEGMENT11" width="80"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <!-- <a:column name="account_code" align="center" prompt="GLD_ACCOUNTS.ACCOUNT_CODE" width="120"/> -->
+        <!-- <a:column name="responsibility_center_code" align="center" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_CODE" width="120"/> -->
+    </a:view>
+    <script><![CDATA[
+        //初始化默认信息
+            // init();
+            initStyle();
+        ]]></script>
+    <a:view-config>
+        <c:create-config targetId="uploadFilePlace">
+            <c:process-config>
+                <a:toolbarButton id="uploadBtn" click="uploadFile" text="PROMPT.VIEW_ATTACHMENT" width="80"/>
+            </c:process-config>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

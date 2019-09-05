@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: dingzhichao  
+    $Date: 2013-2-27 上午10:54:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+		SELECT h.transaction_num,
+               h.transaction_header_id,
+               h.employee_id,
+               (SELECT u.user_name FROM sys_user u WHERE u.user_id = h.employee_id) employee_name,
+               h.transaction_date,
+               gld_common_pkg.get_period_name(h.company_id,h.transaction_date) transaction_period,
+               l.transaction_line_id,
+               l.bank_account_id,
+               bv.bank_account_num,
+               bv.currency_code currency_code,
+               (SELECT gc.currency_name
+                  FROM gld_currency_vl gc
+                 WHERE gc.currency_code = bv.currency_code) currency_name,
+               bv.bank_account_name,
+               bv.bank_name,
+               bv.branch_name,
+               bv.address,
+               h.ebanking_flag,
+               (SELECT b.code_value_name
+                  FROM sys_codes a, sys_code_values_vl b
+                 WHERE a.code_id = b.code_id
+                   AND b.code_value = h.ebanking_flag
+                   AND a.code = 'CSH_EBANKING_FLAG') ebanking_flag_disp,
+               decode(l.trans_in_out_type,'IN',l.handling_charge,-1 * l.handling_charge) as handling_charge,
+               l.description,
+               h.posted_flag,
+               (SELECT b.code_value_name
+                  FROM sys_codes a, sys_code_values_vl b
+                 WHERE a.code_id = b.code_id
+                   AND b.code_value = h.ebanking_flag
+                   AND a.code = 'CSH_POST_FLAG') posted_flag_disp,
+                   decode(l.trans_in_out_type,'IN',l.transaction_amount,-1 * l.transaction_amount) as transaction_amount,
+                   l.interest,
+                   l.company_id,
+                   (select fcv.company_short_name from fnd_companies_vl fcv where fcv.company_id = l.company_id) as company_name,
+                   l.exchange_rate_type,
+                   (select etv.type_name from gld_exchangerate_types_vl etv where etv.type_code = l.exchange_rate_type) as exchange_rate_type_name,
+                   (select etv.rate_method_code from gld_exchangerate_types_vl etv where etv.type_code = l.exchange_rate_type) as rate_method_code,
+                   l.exchange_rate_quotation,
+                   (select vv.code_value_name
+					  from sys_codes sc, sys_code_values_vl vv
+					 where sc.code_id = vv.code_id
+					   and sc.code = 'EXCHANGE_RATE_QUOTATION'
+					   and vv.code_value = l.exchange_rate_quotation) as exchange_rate_quotation_name,
+                   l.exchange_rate,
+                   l.trans_in_out_type,
+                   decode(l.trans_in_out_type,'IN',1,-1) * csh_exchange_trans_pkg.get_function_amount(nvl(l.transaction_amount,0) + nvl(l.handling_charge,0),l.exchange_rate_quotation,l.exchange_rate) as trans_function_amount
+          FROM csh_transaction_headers       h,
+               csh_transaction_lines         l,
+               csh_exchange_trans_bank_acc_v bv
+			#WHERE_CLAUSE#
+			#ORDER_BY_CLAUSE#
+]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="transaction_header_id" queryExpression="h.transaction_header_id = ${@transaction_header_id}"/>
+        <bm:query-field name="trans_in_out_type" queryExpression="l.trans_in_out_type = ${@trans_in_out_type}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="h.transaction_header_id = l.transaction_header_id              
+           AND bv.bank_account_id(+) = l.bank_account_id              
+           AND h.transaction_type = &apos;EXCHANGE&apos; "/>
+    </bm:data-filters>
+</bm:model>

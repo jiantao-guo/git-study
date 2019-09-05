@@ -1,0 +1,556 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:t="http://www.aurora-framework.org/touch">
+    <a:init-procedure><![CDATA[
+    ]]></a:init-procedure>
+    <a:view template="touch">
+        <script src="${/request/@context_path}/resource/aurora.ui.touch/default/base/iscroll.js" type="text/javascript"/>
+        <script type="text/javascript"><![CDATA[
+            var myScroll, pullDownEl, pullDownOffset, pullUpEl, pullUpOffset, generatedCount = 0,
+                type = 0;
+            
+            function pullDownAction() {
+                pullQuery();
+            }
+            
+            function pullUpAction() {
+                doApproveQuery(getPageIndex() + 1, 10);
+            }
+            
+            function loaded() {
+                var ptype = '${/parameter/@type}';
+                if (ptype == '1') {
+                    type = 1;
+                    $('#pullUp').css('display', 'block');
+                    $('#tab1').removeClass('active');
+                    $('#tab2').addClass('active');
+                    doApproveQuery(1, 10);
+                } else {
+                    doQuery();
+                }
+                pullDownEl = document.getElementById('pullDown');
+                pullDownOffset = pullDownEl.offsetHeight;
+                pullUpEl = document.getElementById('pullUp');
+                pullUpOffset = pullUpEl.offsetHeight;
+            
+                myScroll = new iScroll('wrapper', {
+                    useTransition: true,
+                    topOffset: pullDownOffset,
+                    onRefresh: function() {
+                        if (pullDownEl.className.match('loading')) {
+                            pullDownEl.className = '';
+                            pullDownEl.querySelector('.pullDownLabel').innerHTML = 'Pull down to refresh...';
+                        } else if (pullUpEl.className.match('loading')) {
+                            pullUpEl.className = '';
+                            pullUpEl.querySelector('.pullUpLabel').innerHTML = 'Pull up to load more...';
+                        }
+                    },
+                    onScrollMove: function() {
+                        if (this.y > 5 && !pullDownEl.className.match('flip')) {
+                            pullDownEl.className = 'flip';
+                            pullDownEl.querySelector('.pullDownLabel').innerHTML = 'Release to refresh...';
+                            this.minScrollY = 0;
+                        } else if (this.y < 5 && pullDownEl.className.match('flip')) {
+                            pullDownEl.className = '';
+                            pullDownEl.querySelector('.pullDownLabel').innerHTML = 'Pull down to refresh...';
+                            this.minScrollY = -pullDownOffset;
+                        } else if (this.y < (this.maxScrollY - 5) && !pullUpEl.className.match('flip')) {
+                            pullUpEl.className = 'flip';
+                            pullUpEl.querySelector('.pullUpLabel').innerHTML = 'Release to refresh...';
+                            this.maxScrollY = this.maxScrollY;
+                        } else if (this.y > (this.maxScrollY + 5) && pullUpEl.className.match('flip')) {
+                            pullUpEl.className = '';
+                            pullUpEl.querySelector('.pullUpLabel').innerHTML = 'Pull up to load more...';
+                            this.maxScrollY = pullUpOffset;
+                        }
+                    },
+                    onScrollEnd: function() {
+                        if (pullDownEl.className.match('flip')) {
+                            pullDownEl.className = 'loading';
+                            pullDownEl.querySelector('.pullDownLabel').innerHTML = 'Loading...';
+                            pullDownAction(); // Execute custom function (ajax call?)
+                        } else if (pullUpEl.className.match('flip')) {
+                            pullUpEl.className = 'loading';
+                            pullUpEl.querySelector('.pullUpLabel').innerHTML = 'Loading...';
+                            pullUpAction(); // Execute custom function (ajax call?)
+                        }
+                    }
+                });
+            
+                setTimeout(function() {
+                    document.getElementById('wrapper').style.left = '0';
+                }, 800);
+            }
+            
+            document.addEventListener('touchmove', function(e) {
+                e.preventDefault();
+            }, false);
+            
+            document.addEventListener('DOMContentLoaded', function() {
+                loaded();
+                $('#footer li').click(function(event) {
+                    var el;
+                    if (event.target instanceof HTMLLIElement) {
+                        el = event.target;
+                    } else {
+                        el = event.target.parentNode;
+                    }
+                    if ($(el).hasClass('active')) {
+                        return;
+                    }
+                    $('.active').removeClass('active');
+                    $(el).addClass('active');
+                    if (el.id == 'tab1') {
+                        if (xhr) xhr.abort();
+                        type = 0;
+                    } else if (el.id == 'tab2') {
+                        if (xhr) xhr.abort();
+                        type = 1;
+                        $('#pullUp').css('display', 'block');
+                    }
+                    query();
+                });
+            }, false);
+            
+            function query() {
+                clear();
+                if (type == 0) {
+                    doQuery();
+                } else {
+                    doApproveQuery(1, 10);
+                }
+            }
+            
+            var xhr;
+            
+            function doQuery() {
+                if (xhr) xhr.abort();
+                xhr = $.ajax({
+                    type: 'POST',
+                    url: 'workflow_list.svc',
+                    dataType: 'json',
+                    success: append,
+                    error: function(xhr, type) {
+            
+                       }
+                });
+            }
+            
+            function doApproveQuery(index, length) {
+                if (type == 0) return;
+                if (xhr) xhr.abort();
+                xhr = $.ajax({
+                    type: 'POST',
+                    url: 'workflow_approve_list.svc',
+                    data: {
+                        _request_data: JSON.stringify({
+                            "parameter": {
+                                "index": index,
+                                "length": length
+                            }
+                        })
+                    },
+                    dataType: 'json',
+                    success: append,
+                    error: function(xhr, type) {
+            
+                       }
+                });
+            }
+            
+            function pullQuery() {
+                var paraUrl = 'workflow_list.svc';
+                if (type == 1) {
+                    paraUrl = 'workflow_approve_list.svc';
+                }
+                if (xhr) xhr.abort();
+                xhr = $.ajax({
+                    type: 'POST',
+                    url: paraUrl,
+                    data: {
+                        _request_data: JSON.stringify({
+                            "parameter": {
+                                'date': getApplyDate()
+                            }
+                        })
+                    },
+                    dataType: 'json',
+                    success: insert,
+                    error: function(xhr, type) {
+            
+                       }
+                });
+            }
+            
+            function append(data) {
+                var el_pull = document.getElementById('pullUp');
+                if (!data.result) {
+                    return;
+                }
+                var el = document.getElementById('thelist');
+                var li;
+                if (data.result.record) {
+                    var i, records, length;
+                    records = [].concat(data.result.record);
+                    length = records.length;
+                    for (i = 0;i < length;i++) {
+                        var record = records[i];
+                        li = createContent(record);
+                        el.appendChild(li, el.childNodes[0]);
+                    }
+                    myScroll.refresh();
+                    el_pull.querySelector('.pullUpLabel').innerHTML = 'Pull up to load more...';
+                } else {
+                    if (type == 0) {
+                        li = document.createElement('li');
+                        li.class = 'norecord';
+                        li.innerHTML = '<div style="line-height:40px;height:40px;"><span class="icon"/></span><span class="minfo">没有更多记录了...</span></div>';
+                        el.appendChild(li, el.childNodes[0]);
+                    } else {
+                        el_pull.querySelector('.pullUpLabel').innerHTML = '没有更多记录了...';
+                        el_pull.className = '';
+                    }
+                }
+                if (type == 0) {
+                    $('#pullUp').css('display', 'none');
+                }
+            }
+            
+            function insert(data) {
+                if (!data.result) {
+                    return;
+                }
+                if (data.result.record) {
+                    $('.norecord').css('display', 'none');
+                    var el, li, i, records, length;
+                    el = document.getElementById('thelist');
+                    records = [].concat(data.result.record);
+                    length = records.length;
+                    for (i = length - 1;i >= 0;i--) {
+                        var record = records[i];
+                        li = createContent(record);
+                        el.insertBefore(li, el.childNodes[0]);
+                    }
+                }
+                myScroll.refresh();
+            }
+            
+            function createContent(record) {
+                var a = document.createElement('a');
+                var li = document.createElement('li');
+                if (type == 0) {
+                    a.href = "javascript:locationTo(\'" + record.instance_id + "\',0,\'" + record.record_id + "\')";
+                    li.id = record.instance_id;
+                    li.innerHTML = '<div class="nt"><span>' + record.order_type + ':' + record.employee_name + '</span></div><div>单据编号：' + record.document_number + '</div><div class="desc"><span>' + handleInstanceDesc(record.instance_desc) + '</sapn><div class="exp_date" style="float:right;color:blue;font-size:8pt;">' + record.apply_date_view + '</div></div>';
+                } else {
+                    a.href = "javascript:locationTo(\'" + record.instance_id + "\',1)";
+                    li.id = record.instance_id;
+                    li.innerHTML = '<div class="nt"><span>' + record.order_type + '</span></div><div>' + record.workflow_name + '</div><div class="desc"><span>' + handleDesc(record) + '</span><div class="exp_date" style="float:right;color:blue;font-size:8pt;visibility:hidden;">' + record.last_update_date_desc + '</div></div>';
+                }
+                a.appendChild(li, a.childNodes[0]);
+                return a;
+            }
+            
+            function locationTo(instance_id, ptype, record_id) {
+                var li = $('#' + instance_id);
+                li.addClass('active');
+                var url = '${/request/@context_path}/modules/touch/doc_view_for_mobile.screen?type=' + ptype + '&instance_id=' + instance_id;
+                if (record_id) {
+                    url = url + '&record_id=' + record_id;
+                }
+                setTimeout(function() {
+                    location.href = url;
+                }, 100);
+            }
+            
+            function handleInstanceDesc(instance_desc) {
+                if (instance_desc) {
+                    return instance_desc;
+                } else {
+                    return '没有相关描述';
+                }
+            }
+            
+            function handleDesc(record) {
+                if (record.instance_desc) {
+                    return record.status_name + ' ' + record.instance_desc;
+                } else {
+                    return record.status_name;
+                }
+            }
+            
+            function clear() {
+                var el = document.getElementById('thelist');
+                el.innerHTML = '';
+                myScroll.refresh();
+                pullUpEl = document.getElementById('pullUp');
+                pullUpEl.className = 'loading';
+                pullUpEl.querySelector('.pullUpLabel').innerHTML = 'Loading...';
+            }
+            
+            function getApplyDate() {
+                var el = $('.exp_date');
+                if (el[0]) {
+                    return el[0].innerText;
+                }
+                return '';
+            }
+            
+            function getPageIndex() {
+                var el = document.getElementById('thelist');
+                return el.childNodes.length;
+            }
+            
+            function success(data) {
+                if (data.success == true) {
+                    window.location.href = '${/request/@context_path}/modules/touch/login.screen';
+                }
+            }
+            
+            function logout() {
+                $.ajax({
+                    type: 'POST',
+                    url: '${/request/@context_path}/modules/touch/logout.svc',
+                    dataType: 'json',
+                    success: success,
+                    error: function(xhr, type) {
+            
+                       }
+                });
+            }
+        ]]></script>
+        <style media="all" type="text/css"><![CDATA[
+            body,ul,li {
+                padding:0;
+                margin:0;
+                border:0;
+            }
+            
+            body {
+                font-size:12px;
+                -webkit-user-select:none;
+                -webkit-text-size-adjust:none;
+                font-family:helvetica;
+            }
+            a:link,a:visited{
+                text-decoration:none;
+                color:black;                    
+            } 
+            #header {
+                position:absolute; z-index:2;
+                top:0; left:0;
+                width:100%;
+                height:40px;
+                background-color:#d51875;
+                background: -webkit-gradient(linear,left top,left bottom,from(#F04343),to(#B40E0E));
+                background-image: -moz-linear-gradient(center top,#F04343,#B40E0E);
+                padding:0;
+                color:#eee;
+                font-size:20px;
+                text-align:center;
+            }
+            #thelist div{
+                padding:3px;
+            }
+            
+            #thelist li.active {
+                background-color:#b40e0e;
+                color:#fff;
+            }
+            .active span{
+                color:#fff;
+            }
+
+            #thelist div.nt{
+                font-size:18px;
+                font-weight:bold;
+                color:#CC0033;
+            }
+            #thelist div.desc{
+                color:#696969
+            }
+            #footer {
+                position:absolute; z-index:2;
+                bottom:0; left:0;
+                width:100%;
+                height:40px;
+                background-color:#222;
+                background-image:-webkit-gradient(linear, 0 0, 0 100%, color-stop(0, #999), color-stop(0.02, #666), color-stop(1, #222));
+                background-image:-moz-linear-gradient(top, #999, #666 2%, #222);
+                background-image:-o-linear-gradient(top, #999, #666 2%, #222);
+                padding:0;
+                border-top:1px solid #444;
+            }
+            
+            #wrapper {
+                position:absolute; z-index:1;
+                top:40px; 
+                bottom:40px; 
+                left:-9999px;
+                width:100%;
+                background:#aaa;
+                overflow:auto;
+            }
+            #scroller {
+                position:absolute; z-index:1;
+            /*  -webkit-touch-callout:none;*/
+                -webkit-tap-highlight-color:rgba(0,0,0,0);
+                width:100%;
+                padding:0;
+            }
+            
+            #scroller ul {
+                list-style:none;
+                padding:0;
+                margin:0;
+                width:100%;
+                text-align:left;
+            }
+            
+            #scroller li {
+                padding:5px 0;
+                border-bottom:1px solid #ccc;
+                border-top:1px solid #fff;
+                background-color:#fff;
+                font-size:14px;             
+            }
+            
+            #myFrame {
+                position:absolute;
+                top:0; left:0;
+            }
+            #footer ul, li {
+                list-style: none;
+            }
+            
+            #footer ul li {
+                float: left;
+                position: relative;
+                width: 50%;
+                height: 40px;
+                line-height: 40px;
+                text-align: center;
+                cursor: pointer;
+                border-left: 1px solid #FAF8EF;
+                border-right: 1px solid #DACEA8;
+            }
+            #footer ul li.first {
+                border-right: none;
+                border-left: none;
+                width: 49.2%;
+            }
+            #footer span {
+                font-size:16px;
+                font-weight:bold;
+                color:#fff;
+            }
+            #footer .active {
+                background: -webkit-gradient(linear,left top,left bottom,from(#B40E0E),to(#F04343));
+                background-image: -moz-linear-gradient(center top,#B40E0E,#F04343);
+            }
+            /**
+             *
+             * Pull down styles
+             *
+             */
+            
+            .minfo{
+               font-weight:bold;
+               font-size:14px;
+               color:#888; 
+               margin-left:10px;
+               float:left;
+            } 
+            .icon{
+                display:block;
+                float:left;
+                width:40px; height:40px;
+                background:url(${/request/@context_path}/resource/aurora.ui.touch/default/base/pull-icon@2x.png) 0 0 no-repeat;
+                -webkit-background-size:40px 80px; background-size:40px 80px;
+                -webkit-transition-property:-webkit-transform;
+                -webkit-transition-duration:250ms;  
+            }
+            #pullDown, #pullUp {
+                background:#fff;
+                height:40px;
+                line-height:40px;
+                padding:5px 10px;
+                border-bottom:1px solid #ccc;
+                font-weight:bold;
+                font-size:14px;
+                color:#888;
+            }
+            #pullDown .pullDownIcon, #pullUp .pullUpIcon  {
+                display:block; float:left;
+                width:40px; height:40px;
+                background:url(${/request/@context_path}/resource/aurora.ui.touch/default/base/pull-icon@2x.png) 0 0 no-repeat;
+                -webkit-background-size:40px 80px; background-size:40px 80px;
+                -webkit-transition-property:-webkit-transform;
+                -webkit-transition-duration:250ms;  
+            }
+            #pullDown .pullDownIcon {
+                -webkit-transform:rotate(0deg) translateZ(0);
+            }
+            #pullUp .pullUpIcon  {
+                -webkit-transform:rotate(-180deg) translateZ(0);
+            }
+            
+            #pullDown.flip .pullDownIcon {
+                -webkit-transform:rotate(-180deg) translateZ(0);
+            }
+            
+            #pullUp.flip .pullUpIcon {
+                -webkit-transform:rotate(0deg) translateZ(0);
+            }
+            
+            #pullDown.loading .pullDownIcon, #pullUp.loading .pullUpIcon {
+                background-position:0 100%;
+                -webkit-transform:rotate(0deg) translateZ(0);
+                -webkit-transition-duration:0ms;
+            
+                -webkit-animation-name:loading;
+                -webkit-animation-duration:2s;
+                -webkit-animation-iteration-count:infinite;
+                -webkit-animation-timing-function:linear;
+            }
+            
+            @-webkit-keyframes loading {
+                from { -webkit-transform:rotate(0deg) translateZ(0); }
+                to { -webkit-transform:rotate(360deg) translateZ(0); }
+            }
+
+        ]]></style>
+        <center>
+            <div id="header">
+                <t:button className="red" style="margin-top:2px;float:right;margin-top:5px;font-size:16px;height:30px;width:70px;margin-right:5px;" text="注销">
+                    <t:events>
+                        <t:event name="click" handler="logout"/>
+                    </t:events>
+                </t:button>
+            </div>
+        </center>
+        <div id="wrapper">
+            <div id="scroller">
+                <div id="pullDown">
+                    <span class="pullDownIcon"/>
+                    <span class="pullDownLabel"><![CDATA[Pull down to refresh...]]></span>
+                </div>
+                <ul id="thelist"><![CDATA[                    
+                ]]></ul>
+                <div id="pullUp" style="display:none;">
+                    <span class="pullUpIcon"/>
+                    <span class="pullUpLabel"><![CDATA[Pull up to refresh...]]></span>
+                </div>
+            </div>
+        </div>
+        <div id="footer">
+            <ul class="clear" style="font-size:13px;">
+                <li id="tab1" class="first active">
+                    <span><![CDATA[待审批]]></span>
+                </li>
+                <li id="tab2">
+                    <span><![CDATA[已审批]]></span>
+                </li>
+            </ul>
+        </div>
+    </a:view>
+</a:screen>

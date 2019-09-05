@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Mouse Chow  
+    $Date: 2011-11-25 下午01:04:27  
+    $Revision: 1.0  
+    $Purpose: 
+        修改：StephenWang4010
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure><![CDATA[
+	
+	]]></a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+            function queryFunction() {
+                $('business_type_assign_result_ds').query();
+            }
+            
+            function resetFunction() {
+                $('business_type_assign_query_ds').reset();
+            }
+            
+            /** dataset的load事件执行方法  */
+            function loadFunction(dataSet) {
+                var length = dataSet.getAll().length;
+                
+                for (var i=0; i<length; i++) {
+                    var record = dataSet.getAt(i);
+                    var value = record.get('business_type_code');
+                    var docTypeField = record.getMeta().getField('document_type_display');
+                    // 设置document_type_id的lovservice
+                    setDocTidService(value, docTypeField);
+                    // 将帐套ID作为参数传入LovService
+                    var books_id = record.get('set_of_books_id');
+                    docTypeField.setLovPara('set_of_books_id', books_id);
+                    
+                    var companyId = record.get('company_id');
+                    if(companyId && companyId != ''){
+                    	record.getMeta().getField('document_type_display').setReadOnly(false);
+                    }else{
+                        record.getMeta().getField('document_type_display').setReadOnly(true);
+                    }
+                }
+            }
+            
+            /** dataset的update事件执行方法  */
+            function updateFunction(dataSet, record, name, value, oldValue) {
+                var docTypeField = record.getMeta().getField('document_type_display');
+                var comField = record.getMeta().getField('company_short_name');
+                if (name == 'business_type_code') { 
+                    // 设置document_type_id的lovservice
+                    setDocTidService(value, docTypeField);
+	                // 当业务类型转变时，就将单据类型代码，单据类型和公司名清空  
+	                record.set('document_type_id', '');
+	                record.set('document_type_display', '');
+	                record.set('company_short_name', '');
+                }else if (name == 'set_of_books_id') {
+                    comField.setLovPara('set_of_books_id', value);
+                    docTypeField.setLovPara('set_of_books_id', value);
+                    record.set('document_type_id', '');
+	                record.set('document_type_display', '');
+	                record.set('company_short_name', '');
+                	//当帐套变时，就将单据类型代码，单据类型和公司名清空  
+                }else if(name == 'company_id'){
+                    record.set('document_type_id', '');
+	                record.set('document_type_display', '');
+	                if(value && value != ''){
+	                    record.getMeta().getField('document_type_display').setReadOnly(false);
+	                }else{
+	                    record.getMeta().getField('document_type_display').setReadOnly(true);
+	                }
+                }
+            }
+            
+            /** 设置document_type_id的lovservice */ 
+            function setDocTidService(value, docTypeField) {
+                switch (value) {
+                    // 费用申请单
+                case 'EXP_REQ':
+                    docTypeField.setLovService('expm.WBC1010.exp_requisition_types_lov');
+                    docTypeField.setMapping([{
+                        from: 'expense_requisition_type_id',
+                        to: 'document_type_id'
+                    }, {
+                        from: 'description',
+                        to: 'document_type_display'
+                    }]);
+                    break;
+                    // 费用报销单
+                case 'EXP_RPT':
+                    docTypeField.setLovService('expm.exp_expense_report_types_vl');
+                    docTypeField.setMapping([{
+                        from: 'expense_report_type_id',
+                        to: 'document_type_id'
+                    }, {
+                        from: 'description',
+                        to: 'document_type_display'
+                    }]);
+                    break;
+                    // 预算日记账
+                case 'BUDGET_JOURNAL':
+            		docTypeField.setLovService('');
+                    break;
+                    // 付款申请单
+                case 'PAY_REQ':
+                    docTypeField.setLovService('csh.WBC1010.csh_payment_requisition_types_lov');
+                    docTypeField.setMapping([{
+                        from: 'type_id',
+                        to: 'document_type_id'
+                    }, {
+                        from: 'description',
+                        to: 'document_type_display'
+                    }]);
+                    break;
+                    // 借款申请单
+                case 'ACP_REQUISITION':
+            		docTypeField.setLovService('');
+                    break;
+                    // 合同
+                case 'CON_CONTRACT':
+            		docTypeField.setLovService('');
+                    break;
+                    // 财务核算工单
+                case 'VCO':
+            		docTypeField.setLovService('');
+                    break;
+                default:
+                    docTypeField.setLovService('');
+                    break;
+                }
+            }
+            
+            /** 获取单据类型描述信息  */
+            
+            function add_node_link(value, record, name) {
+                var assign_id = record.get('assign_id');
+                var document_type_display = record.get('document_type_display');
+            
+                var return_link;
+                if (assign_id) {
+                    return_link = '<a href="${/request/@context_path}/modules/wbc/WBC1010/wbc_business_nodes.screen?assign_id=' + assign_id + '">${l:WBC_BUSINESS_TYPE_ASSIGN_NODE}</a>';
+                }
+                return return_link;
+            }
+            
+            function onCellClick(grid,rowNum,name,record){
+                if(name == 'company_short_name'){
+                    record.getMeta().getField('company_short_name').setLovPara('set_of_books_id',record.get('set_of_books_id'));
+                }else if(name == 'document_type_display'){
+                    record.getMeta().getField('document_type_display').setLovPara('company_id',record.get('company_id'));
+                }
+            }
+            
+            
+            function docTypeEditFun(record,name){
+                var companyId = record.get('company_id')
+                if(companyId && companyId != ''){
+                	return 'lov_editor';
+                }else{
+                    return '';
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="business_type_ds" lookupCode="EXP_DOCUMENT_CATEGORY"/>
+            <a:dataSet id="set_of_books_ds" loadData="true" model="gld.gld_set_of_books_vl"/>
+            <!-- 查询分享业务类型，将结果返回到business_type_assign_result_ds中 -->
+            <a:dataSet id="business_type_assign_query_ds" model="wbc.WBC1010.wbc_business_type_assign">
+                <a:fields>
+                    <a:field name="business_type_name" displayField="code_value_name" options="business_type_ds" prompt="WBC_BUSINESS_TYPE_ASSIGN.BUSINESS_TYPE" returnField="business_type_code" valueField="code_value"/>
+                    <a:field name="business_type_code"/>
+                    <a:field name="document_type_id" lovGridHeight="320" lovHeight="466" lovWidth="535"/>
+                    <a:field name="document_type_display" prompt="WBC_BUSINESS_TYPE_ASSIGN.DOCUMENT_TYPE_DISPLAY"/>
+                    <a:field name="company_short_name" prompt="COMPANY_SHORT_NAME"/>
+                    <a:field name="dispatching_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="standard_coefficient" defaultValue="1"/>
+                    <a:field name="assign_id"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 首先自动查询出所有的分享业务类型 -->
+            <a:dataSet id="business_type_assign_result_ds" autoPageSize="true" autoQuery="true" model="wbc.WBC1010.wbc_business_type_assign" queryDataSet="business_type_assign_query_ds" queryUrl="${/request/@context_path}/autocrud/wbc.WBC1010.wbc_business_type_assign_query/query" selectable="true">
+                <a:fields>
+                    <a:field name="business_type_name" displayField="code_value_name" options="business_type_ds" prompt="WBC_BUSINESS_TYPE_ASSIGN.BUSINESS_TYPE" required="true" returnField="business_type_code" valueField="code_value"/>
+                    <a:field name="set_of_books_display" displayField="set_of_books_combox_display" options="set_of_books_ds" prompt="GLD_SET_OF_BOOKS.SET_OF_BOOKS_CODE" required="true" returnField="set_of_books_id" valueField="set_of_books_id"/>
+                    <a:field name="set_of_books_id"/>
+                    <a:field name="document_type_display" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovWidth="500" prompt="WBC_BUSINESS_TYPE_ASSIGN.DOCUMENT_TYPE_DISPLAY" readOnly="true" title="WBC_BUSINESS_TYPE_ASSIGN.DOC_TYPE_INFO"/>
+                    <a:field name="document_type_id" lovGridHeight="320" lovHeight="450" lovWidth="500" title="WBC_BUSINESS_TYPE_ASSIGN.DOC_TYPE_INFO"/>
+                    <a:field name="company_short_name" autoComplete="true" autoCompleteField="company_code_name" lovGridHeight="320" lovHeight="450" lovService="fnd.fnd_companies_vl_current_set_of_books" lovWidth="500" prompt="COMPANY_SHORT_NAME">
+                        <a:mapping>
+                            <a:map from="company_short_name" to="company_short_name"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="dispatching_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="standard_coefficient" defaultValue="1"/>
+                    <a:field name="assign_id"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateFunction"/>
+                    <a:event name="load" handler="loadFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="resetFunction" text="HAP_RESET" width="80"/>
+                <a:gridButton bind="WBC1010_grid" type="add" width="80"/>
+                <a:gridButton bind="WBC1010_grid" type="clear" width="80"/>
+                <a:gridButton bind="WBC1010_grid" type="save" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="business_type_assign_query_ds" resultTarget="business_type_assign_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:comboBox name="business_type_name" bindTarget="business_type_assign_query_ds"/>
+                    <a:textField name="document_type_display" bindTarget="business_type_assign_query_ds"/>
+                </a:formToolBar>
+            </a:queryForm>
+            <a:grid id="WBC1010_grid" bindTarget="business_type_assign_result_ds" marginHeight="121" navBar="true">
+                <a:columns>
+                    <a:column name="business_type_name" align="left" editor="combobox_editor" width="100"/>
+                    <a:column name="set_of_books_display" align="center" editor="combobox_editor" width="200"/>
+                    <a:column name="company_short_name" align="left" editor="lov_editor" width="103"/>
+                    <a:column name="document_type_display" align="left" editorFunction="docTypeEditFun" width="150"/>
+                    <a:column name="dispatching_flag" align="center" editor="checkbox_editor" width="50"/>
+                    <a:column name="standard_coefficient" align="right" editor="numberfield_editor" width="100"/>
+                    <a:column name="enabled_flag" align="center" editor="checkbox_editor" width="50"/>
+                    <a:column name="node_operation" align="center" prompt="WBC_BUSINESS_TYPE_ASSIGN_NODE" renderer="add_node_link" width="100"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="textfield_editor"/>
+                    <a:numberField id="numberfield_editor"/>
+                    <a:comboBox id="combobox_editor"/>
+                    <a:lov id="lov_editor"/>
+                    <a:checkBox id="checkbox_editor"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="onCellClick"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function WBC1010_InitSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                var vh = $A.getViewportHeight();
+                //留白宽度
+                var marginWidth = 35 ;
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = autoWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置组件的自适应宽度
+                $('WBC1010_grid').setWidth(autoWidth);
+                //设置TextArea的自适应宽度,别问我最后那个6是哪里来的，试出来的
+            }
+            //Ext.fly(window).on('resize', WBC1010_InitSize);
+            WBC1010_InitSize();]]></script>
+    </a:view>
+</a:screen>

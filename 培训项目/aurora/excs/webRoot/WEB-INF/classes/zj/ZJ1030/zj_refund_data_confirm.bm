@@ -1,0 +1,406 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (WITH
+                    comp_temp AS
+                    (SELECT
+                        fc.company_id
+                    FROM
+                        fnd_companies fc
+                    WHERE
+                        fc.company_id = ${/session/@company_id}
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id  = ${/session/@company_id} AND
+                        ${@include_child_flag} = 'Y'
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id IN
+                        (SELECT
+                            fc3.company_id
+                        FROM
+                            fnd_companies fc3
+                        WHERE
+                            fc3.parent_company_id = ${/session/@company_id}
+                        ) AND
+                        ${@include_child_flag} = 'Y'
+                    )
+                    SELECT
+                    temp.*
+                FROM
+                    (
+                    SELECT
+                        di.info_id,
+                        di.datastatus,
+                        sys_code_pkg.get_sys_code_value_name('ZJ_DATASTATUS',di.datastatus) AS datastatus_desc,
+                        di.interface_id,
+                        di.billcode,
+                        pi.batchno,
+                        di.document_id,
+                        di.document_line_id,
+                        sys_code_pkg.get_sys_code_value_name(p_code => 'WFL_WORKFLOW_CATEGORY', p_code_value => di.document_category) AS document_category_desc,
+                        di.document_category,
+                        (SELECT
+                            h.exp_report_number
+                        FROM
+                            exp_report_headers h
+                        WHERE
+                            h.exp_report_header_id = di.document_id
+                        ) AS document_number,
+                        pi.recaccountno AS account_number,
+                        pi.recaccountname AS account_name,
+                        (SELECT
+                            DECODE(s.payee_category, 'EMPLOYEE', '员工', 'VENDER', '供应商', 'CUSTOMER', '客户')
+                        FROM
+                            exp_report_pmt_schedules s
+                        WHERE
+                            s.payment_schedule_line_id = di.document_line_id
+                        ) AS payee_category_desc,
+                        (SELECT
+                            CASE s.payee_category
+                                WHEN 'EMPLOYEE'
+                                THEN
+                                    (SELECT name FROM exp_employees ee WHERE ee.employee_id = s.payee_id
+                                    )
+                                WHEN 'VENDER'
+                                THEN
+                                    (SELECT
+                                        description
+                                    FROM
+                                        pur_system_venders_vl vv
+                                    WHERE
+                                        vv.vender_id = s.payee_id
+                                    )
+                                WHEN 'CUSTOMER'
+                                THEN
+                                    (SELECT
+                                        description
+                                    FROM
+                                        ord_system_customers_vl cv
+                                    WHERE
+                                        cv.customer_id = s.payee_id
+                                    )
+                            END
+                        FROM
+                            exp_report_pmt_schedules s
+                        WHERE
+                            s.payment_schedule_line_id = di.document_line_id
+                        ) AS payee_name,
+                        pi.amount,
+                        pi.free1 AS bank_code,
+                        (SELECT v.bank_name FROM csh_banks_vl v WHERE v.bank_code = pi.free1
+                        ) AS bank_name,
+                        pi.cnapsofrec AS bank_location_code,
+                        pi.recbankname AS bank_location_name,
+                        pi.recprovince AS province_name,
+                        pi.recareanameofcity AS city_name,
+                        (SELECT
+                            s.payee_category
+                        FROM
+                            exp_report_pmt_schedules s
+                        WHERE
+                            s.payment_schedule_line_id = di.document_line_id
+                        ) AS payee_category,
+                        (SELECT
+                            s.payee_id
+                        FROM
+                            exp_report_pmt_schedules s
+                        WHERE
+                            s.payment_schedule_line_id = di.document_line_id
+                        ) AS payee_id,
+                        di.zj_error_msg,
+                        (SELECT
+                            pv.description
+                        FROM
+                            csh_payment_methods_vl pv
+                        WHERE
+                            pv.payment_method_id = s.payment_type_id
+                        ) AS payment_method_desc,
+                        to_number(s.payment_type_id) as payment_method_id,
+                        sys_code_pkg.get_sys_code_value_name(p_code => 'GATHER_FLAG', p_code_value => s.gather_flag) AS gather_flag_desc,
+                        s.gather_flag,
+                        (SELECT
+                            th.transaction_num
+                        FROM
+                            csh_transaction_lines tl,
+                            csh_transaction_headers th
+                        WHERE
+                            th.transaction_header_id = tl.transaction_header_id AND
+                            tl.transaction_line_id   = di.pay_transaction_line_id
+                        ) AS pay_transaction_num,
+                        di.creation_date,
+                        di.document_company_id
+                    FROM
+                        cux_payment_doc_info di,
+                        cux_payment_interface pi,
+                        exp_report_headers h,
+                        exp_report_pmt_schedules s
+                    WHERE
+                        di.interface_id      = pi.id AND
+                        di.datastatus       IN ('6') AND
+                        di.document_category = 'EXP_REPORT' AND
+                        di.document_id       = h.exp_report_header_id(+) AND
+                        di.document_line_id  = s.payment_schedule_line_id(+)
+                    UNION ALL
+                    SELECT
+                        di.info_id,
+                        di.datastatus,
+                        sys_code_pkg.get_sys_code_value_name('ZJ_DATASTATUS',di.datastatus) AS datastatus_desc,
+                        di.interface_id,
+                        di.billcode,
+                        pi.batchno,
+                        di.document_id,
+                        di.document_line_id,
+                        sys_code_pkg.get_sys_code_value_name(p_code => 'WFL_WORKFLOW_CATEGORY', p_code_value => di.document_category) AS document_category_desc,
+                        di.document_category,
+                        (SELECT
+                            h.requisition_number
+                        FROM
+                            csh_payment_requisition_hds h
+                        WHERE
+                            h.payment_requisition_header_id = di.document_id
+                        ) AS document_number,
+                        pi.recaccountno AS account_number,
+                        pi.recaccountname AS account_name,
+                        (SELECT
+                            DECODE(l.partner_category, 'EMPLOYEE', '员工', 'VENDER', '供应商', 'CUSTOMER', '客户')
+                        FROM
+                            csh_payment_requisition_lns l
+                        WHERE
+                            l.payment_requisition_line_id = di.document_line_id
+                        ) AS payee_category_desc,
+                        (SELECT
+                            CASE l.partner_category
+                                WHEN 'EMPLOYEE'
+                                THEN
+                                    (SELECT name FROM exp_employees ee WHERE ee.employee_id = l.partner_id
+                                    )
+                                WHEN 'VENDER'
+                                THEN
+                                    (SELECT
+                                        description
+                                    FROM
+                                        pur_system_venders_vl vv
+                                    WHERE
+                                        vv.vender_id = l.partner_id
+                                    )
+                                WHEN 'CUSTOMER'
+                                THEN
+                                    (SELECT
+                                        description
+                                    FROM
+                                        ord_system_customers_vl cv
+                                    WHERE
+                                        cv.customer_id = l.partner_id
+                                    )
+                            END
+                        FROM
+                            csh_payment_requisition_lns l
+                        WHERE
+                            l.payment_requisition_line_id = di.document_line_id
+                        ) AS payee_name,
+                        pi.amount,
+                        pi.free1 AS bank_code,
+                        (SELECT v.bank_name FROM csh_banks_vl v WHERE v.bank_code = pi.free1
+                        ) AS bank_name,
+                        pi.cnapsofrec AS bank_location_code,
+                        pi.recbankname AS bank_location_name,
+                        pi.recprovince AS province_name,
+                        pi.recareanameofcity AS city_name,
+                        (SELECT
+                            l.partner_category
+                        FROM
+                            csh_payment_requisition_lns l
+                        WHERE
+                            l.payment_requisition_line_id = di.document_line_id
+                        ) AS payee_category,
+                        (SELECT
+                            l.partner_id
+                        FROM
+                            csh_payment_requisition_lns l
+                        WHERE
+                            l.payment_requisition_line_id = di.document_line_id
+                        ) AS payee_id,
+                        di.zj_error_msg,
+                        (SELECT
+                            pv.description
+                        FROM
+                            csh_payment_methods_vl pv
+                        WHERE
+                            pv.payment_method_id = l.payment_method
+                        ) AS payment_method_desc,
+                        to_number(l.payment_method) as payment_method_id,
+                        sys_code_pkg.get_sys_code_value_name(p_code => 'GATHER_FLAG', p_code_value => l.gather_flag) AS gather_flag_desc,
+                        l.gather_flag,
+                        (SELECT
+                            th.transaction_num
+                        FROM
+                            csh_transaction_lines tl,
+                            csh_transaction_headers th
+                        WHERE
+                            th.transaction_header_id = tl.transaction_header_id AND
+                            tl.transaction_line_id   = di.pay_transaction_line_id
+                        ) AS pay_transaction_num,
+                        di.creation_date,
+                        di.document_company_id
+                    FROM
+                        cux_payment_doc_info di,
+                        cux_payment_interface pi,
+                        csh_payment_requisition_hds h,
+                        csh_payment_requisition_lns l
+                    WHERE
+                        di.interface_id      = pi.id AND
+                        di.datastatus       IN ('6') AND
+                        di.document_category = 'PAYMENT_REQUISITION' AND
+                        di.document_id       = h.payment_requisition_header_id(+) AND
+                        di.document_line_id  = l.payment_requisition_line_id(+)
+                    UNION ALL
+                    SELECT
+                        di.info_id,
+                        di.datastatus,
+                        sys_code_pkg.get_sys_code_value_name('ZJ_DATASTATUS',di.datastatus) AS datastatus_desc,
+                        di.interface_id,
+                        di.billcode,
+                        pi.batchno,
+                        di.document_id,
+                        di.document_line_id,
+                        sys_code_pkg.get_sys_code_value_name(p_code => 'WFL_WORKFLOW_CATEGORY', p_code_value => di.document_category) AS document_category_desc,
+                        di.document_category,
+                        (SELECT
+                            h.requisition_number
+                        FROM
+                            acp_acp_requisition_hds h
+                        WHERE
+                            h.acp_requisition_header_id = di.document_id
+                        ) AS document_number,
+                        pi.recaccountno AS account_number,
+                        pi.recaccountname AS account_name,
+                        (SELECT
+                            DECODE(l.partner_category, 'EMPLOYEE', '员工', 'VENDER', '供应商', 'CUSTOMER', '客户')
+                        FROM
+                            acp_acp_requisition_lns l
+                        WHERE
+                            l.acp_requisition_line_id = di.document_line_id
+                        ) AS payee_category_desc,
+                        (SELECT
+                            CASE l.partner_category
+                                WHEN 'EMPLOYEE'
+                                THEN
+                                    (SELECT name FROM exp_employees ee WHERE ee.employee_id = l.partner_id
+                                    )
+                                WHEN 'VENDER'
+                                THEN
+                                    (SELECT
+                                        description
+                                    FROM
+                                        pur_system_venders_vl vv
+                                    WHERE
+                                        vv.vender_id = l.partner_id
+                                    )
+                                WHEN 'CUSTOMER'
+                                THEN
+                                    (SELECT
+                                        description
+                                    FROM
+                                        ord_system_customers_vl cv
+                                    WHERE
+                                        cv.customer_id = l.partner_id
+                                    )
+                            END
+                        FROM
+                            acp_acp_requisition_lns l
+                        WHERE
+                            l.acp_requisition_line_id = di.document_line_id
+                        ) AS payee_name,
+                        pi.amount,
+                        pi.free1 AS bank_code,
+                        (SELECT v.bank_name FROM csh_banks_vl v WHERE v.bank_code = pi.free1
+                        ) AS bank_name,
+                        pi.cnapsofrec AS bank_location_code,
+                        pi.recbankname AS bank_location_name,
+                        pi.recprovince AS province_name,
+                        pi.recareanameofcity AS city_name,
+                        (SELECT
+                            l.partner_category
+                        FROM
+                            acp_acp_requisition_lns l
+                        WHERE
+                            l.acp_requisition_line_id = di.document_line_id
+                        ) AS payee_category,
+                        (SELECT
+                            l.partner_id
+                        FROM
+                            acp_acp_requisition_lns l
+                        WHERE
+                            l.acp_requisition_line_id = di.document_line_id
+                        ) AS payee_id,
+                        di.zj_error_msg,
+                        (SELECT
+                            pv.description
+                        FROM
+                            csh_payment_methods_vl pv
+                        WHERE
+                            pv.payment_method_id = l.payment_method_id
+                        ) AS payment_method_desc,
+                        l.payment_method_id,
+                        sys_code_pkg.get_sys_code_value_name(p_code => 'GATHER_FLAG', p_code_value => l.gather_flag) AS gather_flag_desc,
+                        l.gather_flag,
+                        (SELECT
+                            th.transaction_num
+                        FROM
+                            csh_transaction_lines tl,
+                            csh_transaction_headers th
+                        WHERE
+                            th.transaction_header_id = tl.transaction_header_id AND
+                            tl.transaction_line_id   = di.pay_transaction_line_id
+                        ) AS pay_transaction_num,
+                        di.creation_date,
+                        di.document_company_id
+                    FROM
+                        cux_payment_doc_info di,
+                        cux_payment_interface pi,
+                        acp_acp_requisition_hds h,
+                        acp_acp_requisition_lns l
+                    WHERE
+                        di.interface_id      = pi.id AND
+                        di.datastatus       IN ('6') AND
+                        di.document_category = 'ACP_REQUISITION' AND
+                        di.document_id       = h.acp_requisition_header_id(+) AND
+                        di.document_line_id  = l.acp_requisition_line_id(+)
+                        )temp
+                WHERE
+                    temp.document_company_id IN
+                    (SELECT * FROM comp_temp
+                    )
+                    ) fv #WHERE_CLAUSE#
+                ORDER BY
+                    billcode DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="document_type" queryExpression="fv.document_type = ${@document_type}"/>
+        <bm:query-field name="document_number" queryExpression="fv.document_number like ${@document_number}"/>
+        <bm:query-field name="account_number" queryExpression="fv.account_number like ${@account_number}"/>
+        <bm:query-field name="account_name" queryExpression="fv.document_number like ${@account_name}"/>
+        <bm:query-field name="payee_category" queryExpression="fv.payee_category = ${@payee_category}"/>
+        <bm:query-field name="payee_id" queryExpression="fv.payee_id = ${@payee_id}"/>
+        <bm:query-field name="amount_from" queryExpression="fv.amount &gt;= ${@amount_from}"/>
+        <bm:query-field name="amount_to" queryExpression="fv.amount &lt;= ${@amount_to}"/>
+        <bm:query-field name="billcode" queryExpression="fv.billcode = ${@billcode}"/>
+        <bm:query-field name="pay_transaction_num" queryExpression="fv.pay_transaction_num like ${@pay_transaction_num}"/>
+    </bm:query-fields>
+</bm:model>

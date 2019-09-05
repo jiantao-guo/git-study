@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="repair_transaction_number_link" model="gl.GL2010.gl_account_entry" modelaction="update"/>
+        <a:link id="exp_report_readonly_wfl_link" url="${/request/@context_path}/modules/gl/GL2020/exp_report_readonly_wfl_finance_query_readonly.screen"/>
+        <script><![CDATA[
+        	
+        	 function expRepNumRenderer(value, record, name) {
+                var header_id = record.get('exp_report_header_id');
+                return '<a href="javascript:detailNewWindow(' + header_id + ',\'' + record.get('page_name') + '\');">' + value + '</a>';
+            }
+            
+            function detailNewWindow(header_id, pageName) {
+                new Aurora.Window({
+                    title: '报销单',
+                    id: 'exp_report_maintain_screen',
+                    fullScreen: true,
+                    url: $('exp_report_readonly_wfl_link').getUrl() + '?exp_report_header_id=' + header_id,
+                    fullScreen: true
+                });
+            
+            }
+            
+            function ds_query() {
+                $('gl_account_entry_ds').query();
+            }
+            
+            function ds_reset() {
+                $('gl_account_entry_query_ds').reset();
+            }
+            
+            function queryDsUpdate(dataSet, record, name, value, oldvalue) {
+                if(name == 'period_set_code'){
+                    //点击查询之前先修复现金事务核销事务编码 modify by zhaofan 20160819 Start
+                	Aurora.request({
+						url		: $('repair_transaction_number_link').getUrl(),
+						success	: function(){
+						    record.getMeta().getField('period_name_from').setLovPara('period_set_code', record.get('period_set_code'));
+                    		record.getMeta().getField('period_name_to').setLovPara('period_set_code', record.get('period_set_code'));
+                    		record.set('period_name_from', '');
+                    		record.set('period_name_to', '');
+						},
+						scope	: this
+					}); 
+					//点击查询之前先修复现金事务核销事务编码 modify by zhaofan 20160819 End
+                } else if(name == 'set_of_books_code'){
+                    record.getMeta().getField('company_code').setLovPara('set_of_books_code', record.get('set_of_books_code'));
+                    record.set('company_code', '');
+                } else if(name == 'account_set_id'){
+                    record.getMeta().getField('account_description_from').setLovPara('account_set_id',record.get('account_set_id'));
+                    record.getMeta().getField('account_description_to').setLovPara('account_set_id',record.get('account_set_id'));
+                } else if (name == 'period_name_from' || name == 'period_name_to') {
+                    var start_date = record.get('period_name_from');
+                    var end_date = record.get('period_name_to');
+                    if ( !! end_date) { //由于结束日期非必填，只有在结束日期填了才进行比较
+                        if (start_date > end_date) {
+                            Aurora.showInfoMessage('${l:PROMPT}', '${l:START_GREATER_THAN_END}');
+                            record.set('period_name_to', '');
+                            return false;
+                        }
+                    }
+                    return true; //校验通过返回true
+                } else if (name == 'transaction_date_from' || name == 'transaction_date_to') {
+                    var start_date = record.get('transaction_date_from');
+                    var end_date = record.get('transaction_date_to');
+                    if ( !! end_date) { //由于结束日期非必填，只有在结束日期填了才进行比较
+                        if (start_date > end_date) {
+                            Aurora.showInfoMessage('${l:PROMPT}', '${l:START_GREATER_THAN_END}');
+                            record.set('transaction_date_to', '');
+                            return false;
+                        }
+                    }
+                    return true; //校验通过返回true
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="imported_flag_ds">
+                <a:datas>
+                    <a:record name="不传送" value="N"/>
+                    <a:record name="待传送" value="P"/>
+                    <a:record name="EBS已过账" value="Y"/>
+                    <a:record name="暂挂" value="G"/>
+                    <a:record name="已导入EBS" value="U"/>
+                    <a:record name="EBS过账失败" value="E"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="je_category_ds">
+                <a:datas>
+                    <a:record value="费用报销"/>
+                    <a:record value="借款申请"/>
+                    <a:record value="核算工单"/>
+                    <a:record value="收入凭证"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="transaction_type_ds" lookupCode="GL_DOCUMENT_CATEGORY"/>
+            <a:dataSet id="hec_sob_code_list_ds" autoQuery="true" fetchAll="true" model="gl.GL2010.gld_set_of_books_vl"><![CDATA[
+        
+        ]]></a:dataSet>
+            <a:dataSet id="gld_currency_code_list_ds" autoQuery="true" fetchAll="true" model="gld.gld_currency_vl"/>
+            <a:dataSet id="gl_account_entry_query_ds">
+                <a:fields>
+                    <a:field name="company_code" lovGridHeight="300" lovHeight="430" lovService="gl.GL2010.fnd_companies_vl" lovWidth="450" title="FND_COMPANIES_VL.COMPANY_CODE">
+                        <a:mapping>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id"/>
+                    <a:field name="hec_sob_code" displayField="set_of_books_name" options="hec_sob_code_list_ds" required="true">
+                        <a:mapping>
+                            <a:map from="account_set_id" to="account_set_id"/>
+                            <a:map from="period_set_code" to="period_set_code"/>
+                            <a:map from="set_of_books_code" to="set_of_books_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_set_id"/>
+                    <a:field name="period_set_code"/>
+                    <a:field name="set_of_books_code"/>
+                    <a:field name="transaction_type_desc" displayField="code_value_name" options="transaction_type_ds" returnField="transaction_type" valueField="code_value"/>
+                    <a:field name="transaction_type"/>
+                    <a:field name="transaction_number"/>
+                    <a:field name="period_name_from" lovGridHeight="300" lovHeight="500" lovService="vat.VAT6110.vat_period_lov" lovWidth="400" title="PROMPT.PERIOD_NAME_FROM">
+                        <a:mapping>
+                            <a:map from="period_name" to="period_name_from"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="period_name_to" lovGridHeight="300" lovHeight="500" lovService="vat.VAT6110.vat_period_lov" lovWidth="400" title="PROMPT.PERIOD_NAME_TO">
+                        <a:mapping>
+                            <a:map from="period_name" to="period_name_to"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="transaction_date_from"/>
+                    <a:field name="transaction_date_to"/>
+                    <a:field name="accounting_date"/>
+                    <a:field name="account_description_from" lovGridHeight="300" lovHeight="440" lovService="gl.GL2010.gld_account_lov" lovWidth="500" title="GL_ACCOUNT_ENTRY.ACCOUNT_CODE_FROM">
+                        <a:mapping>
+                            <a:map from="account_code" to="account_code_from"/>
+                            <a:map from="account_description" to="account_description_from"/>
+                            <a:map from="account_id" to="account_id_from"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_id_from"/>
+                    <a:field name="account_description_to" lovGridHeight="300" lovHeight="440" lovService="gl.GL2010.gld_account_lov" lovWidth="500" title="GL_ACCOUNT_ENTRY.ACCOUNT_CODE_TO">
+                        <a:mapping>
+                            <a:map from="account_code" to="account_code_to"/>
+                            <a:map from="account_description" to="account_description_to"/>
+                            <a:map from="account_id" to="account_id_to"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_id_to"/>
+                    <a:field name="account_code_from"/>
+                    <a:field name="account_code_to"/>
+                    <a:field name="currency_name" displayField="currency_name" options="gld_currency_code_list_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="batch_code"/>
+                    <a:field name="imported_flag"/>
+                    <a:field name="imported_flag_desc" displayField="name" options="imported_flag_ds" returnField="imported_flag" valueField="value"/>
+                    <a:field name="include_child_flag" checkedValue="Y" defaultValue="Y" prompt="包含下属公司" uncheckedValue="N"/>
+                    <a:field name="je_category" displayField="value" options="je_category_ds" returnField="value" valueField="transaction_type_name"/>
+                    <a:field name="segment5" autoComplete="true" autoCompleteField="dimension_value_code" lovGridHeight="350" lovHeight="500" lovService="gl.GL2020.dim_value_lov?dimension_code=INTERCOMPANY" lovWidth="500" title="往来段值">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="segment5"/>
+                            <a:map from="description" to="segment5_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="queryDsUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="gl_account_entry_ds" autoPageSize="true" model="gl.GL2020.gl_account_entry" queryDataSet="gl_account_entry_query_ds">
+                <a:fields><![CDATA[
+           
+            ]]></a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="ds_reset" text="HAP_RESET" width="80"/>
+                <a:gridButton bind="gl_account_entry_grid" type="excel"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="gl_account_entry_query_ds" resultTarget="gl_account_entry_ds" style="width:100%;border:none">
+                <a:formToolBar labelWidth="100">
+                    <a:comboBox name="hec_sob_code" bindTarget="gl_account_entry_query_ds" prompt="FND_COMPANIES.SET_OF_BOOKS"/>
+                    <a:lov name="company_code" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.COMPANY_CODE"/>
+                    <a:textField name="attribute12" bindTarget="gl_account_entry_query_ds" prompt="来源单据编号"/>
+                    <a:lov name="segment5" bindTarget="gl_account_entry_query_ds" prompt="往来段"/>
+                    <!-- <a:comboBox name="transaction_type_desc" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.TRANSACTION_TYPE"/> -->
+                    <!-- <a:checkBox name="include_child_flag" bindTarget="gl_account_entry_query_ds"/> -->
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:comboBox name="je_category" bindTarget="gl_account_entry_query_ds" prompt="凭证类别"/>
+                    <a:textField name="transaction_number" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.TRANSACTION_NUMBER"/>
+                    <a:lov name="period_name_from" bindTarget="gl_account_entry_query_ds" prompt="PROMPT.PERIOD_NAME_FROM"/>
+                    <a:lov name="period_name_to" bindTarget="gl_account_entry_query_ds" prompt="PROMPT.PERIOD_NAME_TO"/>
+                    <a:datePicker name="transaction_date_from" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.TRANSACTION_DATE_F"/>
+                    <a:datePicker name="transaction_date_to" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.TRANSACTION_DATE_T"/>
+                    <a:datePicker name="accounting_date" bindTarget="gl_account_entry_query_ds" prompt="凭证日期"/>
+                    <a:lov name="account_description_from" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.ACCOUNT_CODE_FROM"/>
+                    <a:lov name="account_description_to" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.ACCOUNT_CODE_TO"/>
+                    <a:comboBox name="currency_name" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.CURRENCY_CODE"/>
+                    <a:textField name="batch_code" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.BATCH_CODE"/>
+                    <a:comboBox name="imported_flag_desc" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.IMPORTED_FLAG"/>
+                    <a:datePicker name="import_date" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.IMPORT_DATE"/>
+                    <a:textField name="journal_number" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.JOURNAL_NUMBER"/>
+                    <a:textField name="error_code" bindTarget="gl_account_entry_query_ds" prompt="GL_ACCOUNT_ENTRY.ERROR_CODE"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="gl_account_entry_grid" bindTarget="gl_account_entry_ds" marginHeight="122" navBar="true">
+                <a:columns>
+                    <a:column name="hec_sob_code" align="center" autoAdjust="true" sortable="true" width="80"/>
+                    <a:column name="company_code" align="center" sortable="true" width="100"/>
+                    <a:column name="transaction_type" align="center" sortable="true" width="100"/>
+                    <a:column name="transaction_type_desc" align="center" sortable="true" width="80"/>
+                    <a:column name="je_category" align="center" prompt="凭证类别" sortable="true" width="80"/>
+                    <a:column name="attribute12" align="center" prompt="来源单据编号" renderer="expRepNumRenderer" sortable="true" width="100"/>
+                    <a:column name="transaction_number" align="center" sortable="true" width="180"/>
+                    <a:column name="period_name" align="center" sortable="true" width="80"/>
+                    <a:column name="transaction_date" align="center" renderer="Aurora.formatDate" sortable="true" width="100"/>
+                    <a:column name="accounting_date" align="center" renderer="Aurora.formatDate" sortable="true" width="100"/>
+                    <a:column name="account_code" align="center" sortable="true" width="100"/>
+                    <a:column name="currency_name" align="center" sortable="true" width="100"/>
+                    <a:column name="entered_amount_dr" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="entered_amount_cr" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="functional_amount_dr" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="functional_amount_cr" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="segment1_de" align="center" prompt="ACCOUNT_SEGMENT1" sortable="true" width="150"/>
+                    <a:column name="segment2_de" align="center" prompt="ACCOUNT_SEGMENT2" sortable="true" width="100"/>
+                    <a:column name="segment3_de" align="center" prompt="ACCOUNT_SEGMENT3" sortable="true" width="150"/>
+                    <a:column name="segment4" align="center" prompt="ACCOUNT_SEGMENT4" sortable="true" width="100"/>
+                    <a:column name="segment5" align="center" prompt="ACCOUNT_SEGMENT5" sortable="true" width="100"/>
+                    <a:column name="segment6" align="center" prompt="ACCOUNT_SEGMENT6" sortable="true" width="100"/>
+                    <a:column name="segment7" align="center" prompt="ACCOUNT_SEGMENT7" sortable="true" width="100"/>
+                    <a:column name="segment8" align="center" prompt="ACCOUNT_SEGMENT8" sortable="true" width="100"/>
+                    <a:column name="segment9" align="center" prompt="ACCOUNT_SEGMENT9" sortable="true" width="100"/>
+                    <a:column name="attribute14" align="center" prompt="银行回单号" sortable="true" width="100"/>
+                    <a:column name="attribute11" align="center" prompt="对账码" sortable="true" width="100"/>
+                    <a:column name="attribute13" align="center" prompt="凭证单据编号" sortable="true" width="100"/>
+                    <a:column name="line_description" align="left" prompt="摘要" sortable="true" width="200"/>
+                    <!-- <a:column name="segment10" align="center" prompt="ACCOUNT_SEGMENT10" sortable="true" width="100"/>
+                    <a:column name="segment11" align="center" prompt="ACCOUNT_SEGMENT11" sortable="true" width="100"/> -->
+                    <a:column name="batch_code" align="center" sortable="true" width="100"/>
+                    <!-- <a:column name="imported_flag" align="center" sortable="true" width="100"/> -->
+                    <a:column name="imported_flag_desc" align="center" prompt="导入标志" sortable="true" width="100"/>
+                    <a:column name="import_date" align="center" renderer="Aurora.formatDate" sortable="true" width="100"/>
+                    <a:column name="journal_number" align="center" sortable="true" width="100"/>
+                    <a:column name="error_code" align="center" sortable="true" width="100"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+
+            function gldAccountEntryInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            	   $('gl_account_entry_grid').setWidth(autoWidth);
+            }
+            //Ext.fly(window).on('resize', gldAccountEntryInitSize);
+            gldAccountEntryInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

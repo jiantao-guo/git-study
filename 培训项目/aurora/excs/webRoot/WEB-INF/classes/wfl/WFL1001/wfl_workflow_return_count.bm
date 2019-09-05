@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+        select (select count(1)
+          from (select max(i.instance_id) instance_id
+                  from wfl_workflow_instance i, wfl_workflow w1
+                 where i.status = -1
+                   and i.workflow_id = w1.workflow_id
+                   and not exists
+                 (select 1
+                          from wfl_workflow_instance a, wfl_workflow w2
+                         where a.instance_id > i.instance_id
+                           and a.workflow_id = w2.workflow_id
+                           and w1.workflow_category = w2.workflow_category
+                           and a.instance_param = i.instance_param)
+                 group by w1.workflow_category, i.instance_param) t,
+               wfl_workflow_instance i,
+               wfl_workflow_vl wf
+         where i.instance_id = t.instance_id
+           and i.workflow_id = wf.workflow_id
+           and i.created_by = ${/session/@user_id}) +
+       (select count(1)
+          from wbc_dispatch_pool_headers h,
+               (select scv.code_Value      doc_category,
+                       scv.code_value_name as doc_category_name
+                  from sys_codes sc, sys_code_values_vl scv
+                 where sc.code_id = scv.code_id
+                   and sc.code = 'EXP_DOCUMENT_CATEGORY') dt,
+               (select scv.code_Value      state,
+                       scv.code_value_name as state_name
+                  from sys_codes sc, sys_code_values_vl scv
+                 where sc.code_id = scv.code_id
+                   and sc.code = 'NODE_STATE') ws,
+               wbc_business_nodes bn
+         where h.doc_category = dt.doc_category
+           and h.business_node_id = bn.business_node_id
+           and h.state = ws.state
+           and h.state = 'REJECT'
+           and decode(h.doc_category,
+              'EXP_RPT',
+              (select erh.created_by
+                 from exp_report_headers erh
+                where erh.exp_report_header_id = h.document_id),
+              'ACP_REQUISITION',
+              (select aarh.created_by
+                 from acp_acp_requisition_hds aarh
+                where aarh.acp_requisition_header_id = h.document_id),
+              'PAY_REQ',
+              (select cprh.created_by
+                 from csh_payment_requisition_hds cprh
+                where cprh.payment_requisition_header_id = h.document_id),
+              /*'CSH_REPAYMENT',
+              (select crr.created_by
+                 from csh_repayment_requisition crr
+                where crr.csh_repayment_requisition_id = h.document_id),*/
+              'GLD_JOUR',
+              (select gwoh.created_by
+				 from gld_work_order_headers gwoh
+				where gwoh.work_order_header_id = h.document_id),
+              'CON_CONTRACT',
+              (select cch.created_by
+                 from con_contract_headers cch
+                where cch.contract_header_id = h.document_id)) = ${/session/@user_id}) num
+  from dual
+]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

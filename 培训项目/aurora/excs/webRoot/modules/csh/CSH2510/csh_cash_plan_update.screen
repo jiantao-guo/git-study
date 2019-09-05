@@ -1,0 +1,370 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: HBJ  
+    $Date: 2012-7-24 下午05:42:45  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_plan_get_sid" rootPath="sid"/>
+        <!--  <a:model-query fetchAll="true" model="csh.CSH2510.csh_get_cash_plan_version" rootPath="plan_version"/>-->
+        <a:model-query model="csh.CSH2510.csh_get_cash_plan_structure" rootPath="plan_structure"/>
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_get_cash_plan_type" rootPath="plan_type"/>
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_get_cash_plan_status" rootPath="STATUS"/>
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_currency_lists" rootPath="currency_lists"/>
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_exchange_rate_type_list" rootPath="exchange_rate_type_list"/>
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_exchange_rate_quotation" rootPath="exchange_rate_quotation"/>
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_plan_orientation_list" rootPath="orientation_list"/>
+        <!--<a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_pln_default_exchange_rate_tp" rootPath="default_exchange_rate_tp"/>-->
+        <!-- <a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_plan_default_exchange_rate_type_desc" rootPath="exchange_rate_type_desc"/>
+        
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_plan_get_precision" rootPath="precision"/>
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_plan_get_date" rootPath="date"/>-->
+        <a:model-query fetchAll="true" model="csh.CSH2510.csh_cash_plan_functional_currency_code" rootPath="functional_currency_code"/>
+        <model-query defaultWhereClause="enabled_flag = &apos;Y&apos; order by type_code" model="gld.gld_exchangerate_types_vl" rootpath="exchange_rate_type_list"/>
+        <model-query model="csh.csh_pay_req_payment_pay_init_exchange_rate_quotation" rootpath="default_exchange_rate_type"/>
+        <model-query model="gld.csh_pay_req_payment_pay_init_fun_cur" rootpath="functional_currency"/>
+        <model-query autocount="false" fetchall="true" model="expm.exp_report_head_dimension" rootpath="head_dimension"/>
+        <model-query autocount="false" fetchall="true" model="expm.exp_report_head_object" rootpath="head_object"/>
+        <model-query autocount="false" fetchall="true" model="expm.exp_report_line_dimension" rootpath="line_dimension"/>
+        <model-query autocount="false" fetchall="true" model="expm.exp_report_line_object" rootpath="line_object"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="csh_cash_plan_maintain_link" url="${/request/@context_path}/modules/csh/CSH2510/csh_cash_plan_maintain.screen"/>
+        <script><![CDATA[
+
+            function csh_pln_save() {
+                var headerDataSet = $('csh_pln_header_ds');
+                var lineDataSet = $('csh_pln_lines_ds');
+                headerDataSet.getCurrentRecord().set('exist_status', 'exist');
+                if (headerDataSet.validate() && lineDataSet.validate()) {
+                    var param = [];
+                    param = headerDataSet.getJsonData(false)[0] || [];
+                    param['lines'] = lineDataSet.getJsonData(false);
+                    Aurora.request({
+                        url: '${/request/@context_path}/modules/csh/CSH2510/csh_cash_plan_update_control.svc',
+                        para: param,
+                        success: function(res) {
+                            window.location.href = '${/request/@context_path}/modules/csh/CSH2510/csh_cash_plan_update.screen?cash_plan_header_id=' + '${/parameter/@cash_plan_header_id}';
+                        }
+                    });
+                }
+            }
+            
+            function closewindow() {
+                if ('${/parameter/@new_flag}' == 'Y') {
+                    window.location.href = $('csh_cash_plan_maintain_link').getUrl();
+                } else {
+                    $('csh_cash_plan_update_window').close();
+                }
+            }
+            
+            function lineupdate(dataSet, record, name, value, oldvalue) {
+                if (name == 'date_from'||name == 'date_to'){
+						var date_from = record.get('date_from');
+						var date_to = record.get('date_to');
+						
+						if(date_from&&date_to){
+								if(date_from>date_to){
+									alert('日期从不能大于日期到，请重新选择！');
+									record.set('date_to','');
+								}
+						}
+					}
+					
+					if (name == 'increment_amount'){
+						if(Number(value)==0||Number(value)<0){
+							alert('计划金额不能小于或等于0!');
+							record.set('increment_amount','');
+						}
+					}
+			           
+				    if (name=='currency'){
+						if (record.get('currency') =='CNY'){
+							record.set('exchange_rate_type','');
+							record.set('exchange_rate_quotation','');
+							record.set('exchange_rate','1');
+						}else{
+							if ('${/model/default_exchange_rate_type/@value_code}'){
+								record.set('exchange_rate_type','${/model/default_exchange_rate_type/@value_code}');
+								getexchangeratequotation(record.get('exchange_rate_type'),record);
+							}
+						}
+					}
+          						 
+		            if (name=='exchange_rate_type'){
+						getexchangeratequotation(record.get('exchange_rate_type'),record);
+					}
+            }
+            
+            function getexchangeratequotation(exchange_rate_type, record) {
+                if (exchange_rate_type == 'MANUAL') {
+                    record.set('exchange_rate_type', '');
+                    record.set('exchange_rate_quotation', '');
+                } else {
+                    var functionCurrencyCode = '${/model/functional_currency_code/@functional_currency_code}';
+                    var currencyCode = record.get('currency');
+                    var exchangeRateTypeCode = record.get('exchange_rate_type');
+                    getQuotationExchangerate(functionCurrencyCode, currencyCode, exchangeRateTypeCode, '', ',record');
+                }
+            }
+            
+            function getQuotationExchangerate(FROM_CURRENCY, TO_CURRENCY, EXCHANGE_RATE_TYPE, EXCHANGE_DATE, EXCHANGE_PERIOD_NAME, record) {
+                AjaxPost("csh_get_exchange_rate.service", {
+                    "FROM_CURRENCY": FROM_CURRENCY,
+                    "TO_CURRENCY": TO_CURRENCY,
+                    "EXCHANGE_RATE_TYPE": EXCHANGE_RATE_TYPE,
+                    "EXCHANGE_DATE": EXCHANGE_DATE,
+                    "EXCHANGE_PERIOD_NAME": EXCHANGE_PERIOD_NAME
+                }, this, getQE, false);
+            }
+            
+            function getQE(res) {
+                record = window.currentRecord;
+                var methodCode1 = res.result.list.record;
+                if (methodCode1[0].EXCHANGE_RATE) {
+                    record.set('exchange_rate_quotation', methodCode1[0].EXCHANGE_RATE_QUOTATION);
+                    record.set('exchange_rate', methodCode1[0].EXCHANGE_RATE);
+                } else {
+                    alert('当前类型的汇率没有维护,请先维护汇率！');
+                    record.set('exchange_rate_quotation', '');
+                    record.set('exchange_rate', '');
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="currency_list_ds">
+                <a:datas dataSource="/model/currency_lists"/>
+            </a:dataSet>
+            <a:dataSet id="orientation_list_ds">
+                <a:datas dataSource="/model/orientation_list"/>
+            </a:dataSet>
+            <a:dataSet id="exchange_rate_quotation_ds">
+                <a:datas dataSource="/model/exchange_rate_quotation"/>
+            </a:dataSet>
+            <a:dataSet id="exchange_rate_type_list_ds">
+                <a:datas dataSource="/model/exchange_rate_type_list"/>
+            </a:dataSet>
+            <a:dataSet id="csh_pln_header_ds" loadData="true" model="csh.CSH2510.csh_cash_plan_headers_info">
+                <a:fields>
+                    <a:field name="cash_plan_header_id"/>
+                    <a:field name="cash_plan_number" readOnly="true"/>
+                    <a:field name="cash_plan_description" readOnly="true"/>
+                    <a:field name="cash_plan_structure_id"/>
+                    <a:field name="cash_plan_structure_desc" readOnly="true"/>
+                    <a:field name="cash_plan_type_id"/>
+                    <a:field name="cash_plan_type_desc" readOnly="true"/>
+                    <a:field name="status"/>
+                    <a:field name="status_desc" readOnly="true"/>
+                    <a:field name="period_year" readOnly="true"/>
+                    <a:field name="period_name" readOnly="true"/>
+                    <a:field name="notes"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="csh_pln_lines_ds" loadData="true" model="csh.CSH2510.csh_cash_plan_lines_query" pageSize="20" selectable="true">
+                <a:fields>
+                    <a:field name="cash_plan_item_code" lovGridHeight="300" lovHeight="460" lovService="csh.CSH2510.csh_cash_plan_create_items_lov" lovWidth="500" prompt="资金计划项" required="true" title="资金计划项">
+                        <a:mapping>
+                            <a:map from="cash_plan_item_id" to="cash_plan_item_id"/>
+                            <a:map from="description" to="cash_plan_item_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency_desc" displayField="currency_name" options="currency_list_ds" required="true" returnField="currency" valueField="currency_code"/>
+                    <a:field name="exchange_rate_type_desc" displayField="type_name" options="exchange_rate_type_list_ds" returnField="exchange_rate_type" valueField="type_code"/>
+                    <a:field name="exchange_rate_quotation_desc" displayField="name" options="exchange_rate_quotation_ds" returnField="exchange_rate_quotation" valueField="value"/>
+                    <a:field name="orientation_desc" displayField="code_value_name" options="orientation_list_ds" required="true" returnField="orientation" valueField="code_value"/>
+                    <a:field name="cash_plan_header_id" defaultValue="${/model/sid/record/@CASH_PLAN_HEADER_ID}"/>
+                    <a:field name="cash_plan_line_id" defaultValue="}"/>
+                    <a:field name="old_cash_plan_line_id" defaultValue=""/>
+                    <a:field name="cash_plan_item_id" defaultValue=""/>
+                    <a:field name="cash_plan_header_id" defaultValue="${/parameter/@cash_plan_header_id}"/>
+                    <a:field name="line_number" required="true"/>
+                    <a:field name="date_from" datatype="java.util.Date" required="true"/>
+                    <a:field name="date_to" datatype="java.util.Date" required="true"/>
+                    <a:field name="exchange_rate" required="true"/>
+                    <a:field name="increment_amount" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="lineupdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:fieldSet height="200" style="margin-left:10px;margin-top:10px;" title="资金计划头信息" width="800">
+            <a:vBox>
+                <a:hBox labelWidth="90">
+                    <a:textField name="cash_plan_number" bindTarget="csh_pln_header_ds" prompt="资金计划编号"/>
+                    <a:textField name="cash_plan_description" bindTarget="csh_pln_header_ds" prompt="资金计划描述" width="400"/>
+                </a:hBox>
+                <a:hBox labelWidth="90">
+                    <a:textField name="cash_plan_structure_desc" bindTarget="csh_pln_header_ds" prompt="资金计划模版"/>
+                    <a:textField name="cash_plan_type_desc" bindTarget="csh_pln_header_ds" prompt="资金计划类型"/>
+                    <a:textField name="status_desc" bindTarget="csh_pln_header_ds" prompt="状态"/>
+                </a:hBox>
+                <a:hBox labelWidth="90">
+                    <a:textField name="period_year" bindTarget="csh_pln_header_ds" prompt="年度"/>
+                    <a:textField name="period_name" bindTarget="csh_pln_header_ds" prompt="期间"/>
+                </a:hBox>
+                <a:hBox labelWidth="90">
+                    <a:textArea name="notes" bindTarget="csh_pln_header_ds" height="50" prompt="CON_CONTRACT_HEADERS.NOTE" width="642"/>
+                </a:hBox>
+            </a:vBox>
+        </a:fieldSet>
+        <a:vBox className="accordion-box" style="margin-left:10px;">
+            <a:accordionPanel id="accordion_dim" height="150" singleMode="false" width="800">
+                <a:accordions>
+                    <a:accordion prompt="维度设置" selected="false">
+                        <a:box column="2">
+                            <a:placeHolder id="dynamicHeadColumn"/>
+                        </a:box>
+                    </a:accordion>
+                </a:accordions>
+            </a:accordionPanel>
+            <a:accordionPanel id="accordion_obj" height="150" singleMode="false" width="800">
+                <a:accordions>
+                    <a:accordion prompt="管理精细度" selected="false">
+                        <a:box column="2">
+                            <a:placeHolder id="dynamicHeadObject"/>
+                        </a:box>
+                    </a:accordion>
+                </a:accordions>
+            </a:accordionPanel>
+        </a:vBox>
+        <a:hBox style="margin-left:10px;">
+            <a:button click="csh_pln_save" text="PROMPT.SAVE"/>
+            <a:button click="" text="PROMPT.SUBMIT"/>
+            <a:button click="" text="行参考"/>
+            <a:button click="closewindow" text="HAP_CLOSE" width="90"/>
+        </a:hBox>
+        <a:grid bindTarget="csh_pln_lines_ds" height="280" navBar="true" style="margin-left:10px;margin-top:10px;" width="1000">
+            <a:toolBar>
+                <a:button type="add"/>
+                <a:button type="delete"/>
+                <a:button type="clear"/>
+            </a:toolBar>
+            <a:columns>
+                <a:column name="line_number" editor="text_fd" prompt="CSH_CASH_PLAN_LINES.LINE_NUMBER" width="60"/>
+                <a:column name="cash_plan_item_code" editor="lov_lv" prompt="资金计划项" width="70"/>
+                <a:column name="date_from" editor="date_pk" prompt="CSH_CASH_PLAN_LINES.DATE_FROM" renderer="Aurora.formatDate" width="80"/>
+                <a:column name="date_to" editor="date_pk" prompt="CSH_CASH_PLAN_LINES.DATE_TO" renderer="Aurora.formatDate" width="80"/>
+                <a:column name="currency_desc" editor="combo_bx" prompt="CSH_CASH_PLAN_LINES.CURRENCY" width="80"/>
+                <a:column name="exchange_rate_type_desc" editor="combo_bx" prompt="汇率类型" width="80"/>
+                <a:column name="exchange_rate_quotation_desc" editor="combo_bx" prompt="汇率标价方法" width="80"/>
+                <a:column name="exchange_rate" editor="text_fd" prompt="CSH_CASH_PLAN_LINES.EXCHANGE_RATE" width="80"/>
+                <a:column name="orientation_desc" editor="combo_bx" prompt="流向" width="80"/>
+                <a:column name="increment_amount" editor="number_fd" prompt="计划资金" width="80"/>
+                <a:column name="increment_functional_amount" prompt="本位币金额" width="80"/>
+                <a:column name="line_notes" editor="text_fd" prompt="CSH_CASH_PLAN_LINES.LINE_NOTES" width="120"/>
+            </a:columns>
+            <a:editors>
+                <a:datePicker id="date_pk"/>
+                <a:numberField id="number_fd"/>
+                <a:textField id="text_fd"/>
+                <a:lov id="lov_lv"/>
+                <a:comboBox id="combo_bx"/>
+            </a:editors>
+        </a:grid>
+    </a:view>
+    <a:view-config>
+        <c:batch-config source="/model/head_dimension" targetId="dynamicHeadColumn">
+            <a:lov name="${@dimension_code}" bindTarget="exp_report_head_dimension" lovGridHeight="320" lovHeight="440" lovWidth="500"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicHeadFields">
+            <p:loop source="/model/head_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" defaultValue="${@value_description}" lovService="fnd.fnd_dimension_values?dimension_id=${@dimension_id}&amp;enabled_flag=Y" prompt="${@description}" required="true" title="${@description}">
+                        <a:mapping>
+                            <a:map from="dimension_value_id" to="${@dimension_code1}"/>
+                            <a:map from="description" to="${@dimension_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@dimension_code1}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dynamicHeadObject">
+            <p:loop source="/model/head_object">
+                <p:switch test="@expense_object_method">
+                    <p:case value="VALUE_LIST">
+                        <c:process-config>
+                            <a:lov name="${@expense_object_type_code}" bindTarget="exp_report_head_object"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="SQL_TEXT">
+                        <c:process-config>
+                            <a:lov name="${@expense_object_type_code}" bindTarget="exp_report_head_object"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="*">
+                        <c:process-config>
+                            <a:textField name="${@expense_object_type_code}" bindTarget="exp_report_head_object"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dynamicHeadObjects">
+            <p:loop source="/model/head_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovGridHeight="320" lovHeight="440" lovUrl="${/request/@context_path}/modules/expm/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" lovWidth="500" prompt="${@description}" required="${@required_flag}" title="${@description}">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/line_dimension" targetId="dynamicLineColumn">
+            <a:column name="${@dimension_code}" align="center" editor="company_combox" prompt="${@description}"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicLineFields">
+            <p:loop source="/model/line_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" defaultValue="${@value_description}" lovService="fnd.fnd_dimension_values?dimension_id=${@dimension_id}&amp;enabled_flag=Y" prompt="${@description}" required="true" title="${@description}">
+                        <a:mapping>
+                            <a:map from="dimension_value_id" to="${@dimension_code1}"/>
+                            <a:map from="description" to="${@dimension_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@dimension_code1}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dynamicLineColumnObj">
+            <p:loop source="/model/line_object">
+                <p:switch test="@expense_object_method">
+                    <p:case value="VALUE_LIST">
+                        <c:process-config>
+                            <a:column name="${@expense_object_type_code}" align="center" editor="company_combox"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="SQL_TEXT">
+                        <c:process-config>
+                            <a:column name="${@expense_object_type_code}" align="center" editor="company_combox"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="*">
+                        <c:process-config>
+                            <a:column name="${@expense_object_type_code}" align="center" editor="description_grid_tf"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dynamicLineFieldsObj">
+            <p:loop source="/model/line_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovGridHeight="320" lovHeight="440" lovUrl="${/request/@context_path}/modules/expm/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" lovWidth="460" prompt="${@description}" required="${@required_flag}" title="${@description}">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

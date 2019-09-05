@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        t.*,
+                        t.amount - t.paid_amount payment_amount,
+                        t.amount - t.paid_amount unpaid_amount
+                    FROM
+                        (SELECT
+                            h.acp_requisition_header_id,
+                            l.acp_requisition_line_id,
+                            h.requisition_number ,
+                            h.company_id ,
+                            (SELECT
+                                fc.COMPANY_SHORT_NAME
+                            FROM
+                                fnd_companies_vl fc
+                            WHERE
+                                fc.COMPANY_ID = h.company_id
+                            ) ACP_COMPANY,
+                            (SELECT
+                                fc.company_code
+                            FROM
+                                fnd_companies_vl fc
+                            WHERE
+                                fc.COMPANY_ID = h.company_id
+                            ) acp_company_code,
+                            TO_CHAR(h.requisition_date, 'YYYY-MM-DD') requisition_date,
+                            (SELECT
+                                typ.description
+                            FROM
+                                acp_sys_acp_req_types_vl typ
+                            WHERE
+                                typ.acp_req_type_id = h.acp_req_type_id
+                            ) acp_type_desc,
+                            (SELECT
+                                asa.acp_req_type_code
+                            FROM
+                                acp_sys_acp_req_types_vl asa
+                            WHERE
+                                asa.acp_req_type_id = h.acp_req_type_id
+                            ) acp_type_code,
+                            l.partner_category,
+                            (SELECT
+                                a.code_value_name
+                            FROM
+                                sys_code_values_v a
+                            WHERE
+                                a.code       = 'PAYMENT_OBJECT' AND
+                                a.code_value = l.partner_category
+                            ) p_partner_category,
+                            l.partner_id,
+                            DECODE(l.partner_category, 'EMPLOYEE',
+                            (SELECT
+                                ee.employee_code
+                                || '-'
+                                || ee.name
+                            FROM
+                                exp_employees ee
+                            WHERE
+                                ee.employee_id = l.partner_id
+                            ), 'VENDER',
+                            (SELECT
+                                svv.vender_code
+                                || '-'
+                                || svv.description
+                            FROM
+                                pur_system_venders_vl svv
+                            WHERE
+                                svv.vender_id = l.partner_id
+                            ), 'CUSTOMER',
+                            (SELECT
+                                scv.customer_code
+                                || '-'
+                                || scv.description
+                            FROM
+                                ord_system_customers_vl scv
+                            WHERE
+                                scv.customer_id = l.partner_id
+                            )) partner_name,
+                            h.currency_code,
+                            (SELECT
+                                description
+                            FROM
+                                csh_payment_usedes_vl cp
+                            WHERE
+                                cp.usedes_id=l.usedes_id
+                            ) transaction_class_desc,
+                            (SELECT
+                                a.code_value_name
+                            FROM
+                                sys_code_values_v a
+                            WHERE
+                                a.code       = 'ACP_REQ_DOC_CATEGORY' AND
+                                a.code_value = l.acp_requisition_line_type
+                            ) payment_requisition_line_type,
+                            DECODE(L.ACP_REQUISITION_LINE_TYPE, 'ACP_INVOICE',
+                            (SELECT
+                                ACP.INVOICE_NUMBER
+                            FROM
+                                ACP_REQ_ACP_INFO_VL ACP
+                            WHERE
+                                L.REF_DOCUMENT_ID = ACP.INVOICE_ID
+                            ), 'ACR_INVOICE',
+                            (SELECT
+                                ACR.INVOICE_NUMBER
+                            FROM
+                                ACP_REQ_ACR_INFO_VL ACR
+                            WHERE
+                                L.REF_DOCUMENT_ID = ACR.INVOICE_ID
+                            ), NULL) ref_document_number,
+                            l.amount,
+                            (SELECT
+                                NVL(SUM(r.amount), 0)
+                            FROM
+                                acp_acp_requisition_refs r
+                            WHERE
+                                r.acp_requisition_line_id = l.acp_requisition_line_id
+                            ) paid_amount,
+                            h.employee_id,
+                            (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id =h.employee_id
+                            ) EMPLOYEE_NAME,
+                            h.company_id RPT_COMP_ID,
+                            (SELECT
+                                fv.COMPANY_CODE
+                                ||'-'
+                                ||fv.COMPANY_SHORT_NAME
+                            FROM
+                                fnd_companies_vl fv
+                            WHERE
+                                fv.COMPANY_ID=h.company_id
+                            ) report_company,
+                            (SELECT
+                                fd.description_text
+                            FROM
+                                csh_payment_methods cpm,
+                                fnd_descriptions fd
+                            WHERE
+                                cpm.description_id  = fd.description_id AND
+                                l.payment_method_id = cpm.payment_method_id AND
+                                language            = ${/session/@lang} AND
+                                cpm.enabled_flag    = 'Y'
+                            ) payment_method,
+                            (SELECT
+                                cpm.payment_method_code
+                            FROM
+                                csh_payment_methods cpm,
+                                fnd_descriptions fd
+                            WHERE
+                                cpm.description_id  = fd.description_id AND
+                                l.payment_method_id = cpm.payment_method_id AND
+                                language            = ${/session/@lang} AND
+                                cpm.enabled_flag    = 'Y'
+                            ) payment_method_code,
+                            l.account_name,
+                            l.account_number,
+                            l.bank_code,
+                            l.bank_name,
+                            TO_CHAR(l.requisition_payment_date,'YYYY-MM-DD') requisition_payment_date,
+                            l.bank_location_code,
+                            l.bank_location_name,
+                            l.province_code,
+                            l.province_name,
+                            (SELECT
+                                s.exp_report_header_id
+                            FROM
+                                exp_report_pmt_schedules s
+                            WHERE
+                                s.payment_schedule_line_id = l.ref_document_line_id
+                            ) exp_report_header_id,
+                            l.city_code,
+                            l.city_name,
+                            l.ref_document_line_id,
+                            (SELECT
+                                e.exp_report_number
+                            FROM
+                                exp_report_headers e
+                            WHERE
+                                e.exp_report_header_id =
+                                (SELECT
+                                    s.exp_report_header_id
+                                FROM
+                                    exp_report_pmt_schedules s
+                                WHERE
+                                    s.payment_schedule_line_id = l.ref_document_line_id
+                                )
+                            ) document_number,
+                            l.cash_flow_item_id
+                        FROM
+                            acp_acp_requisition_hds h,
+                            acp_acp_requisition_lns l,
+                            csh_doc_payment_company c
+                        WHERE
+                            h.acp_requisition_header_id = l.acp_requisition_header_id AND
+                            c.document_id               = h.acp_requisition_header_id AND
+                            c.document_line_id          = l.acp_requisition_line_id AND
+                            c.document_type             = 'ACP_REQUISITION' AND
+                            c.payment_status           IN ('ALLOWED', 'PAID') AND
+                            h.status                    ='APPROVED' AND
+                            l.payment_status           != 'COMPLETELY' AND
+                            c.payment_company_id        = ${/session/@company_id}
+                        ) t
+                    WHERE
+                        (
+                            t.amount - t.paid_amount
+                        )
+                        > 0
+                    ) x #WHERE_CLAUSE#
+                ORDER BY
+                    x.requisition_number DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="employee_id" queryExpression="employee_id = ${@employee_id}"/>
+        <bm:query-field name="acp_type_code" queryExpression="acp_type_code = ${@acp_type_code}"/>
+        <bm:query-field name="company_code" queryExpression="acp_company_code = ${@company_code}"/>
+        <bm:query-field name="currency_code" queryExpression="currency_code = ${@currency_code}"/>
+        <bm:query-field name="payment_method_code" queryExpression="payment_method_code = ${@payment_method_code}"/>
+        <bm:query-field name="requisition_date_from" queryExpression="requisition_date &gt;= ${@requisition_date_from}"/>
+        <bm:query-field name="requisition_date_to" queryExpression="requisition_date &lt;= ${@requisition_date_to}"/>
+        <bm:query-field name="plan_pay_date_f" queryExpression="requisition_payment_date &gt;= ${@plan_pay_date_f}"/>
+        <bm:query-field name="plan_pay_date_t" queryExpression="requisition_payment_date &lt;= ${@plan_pay_date_t}"/>
+        <bm:query-field name="partner_category" queryExpression="partner_category = ${@partner_category}"/>
+        <bm:query-field name="partner_id" queryExpression="partner_id = ${@partner_id}"/>
+        <bm:query-field name="requisition_number" queryExpression="requisition_number like &apos;%&apos;||${@requisition_number}||&apos;%&apos;"/>
+        <bm:query-field name="rpt_comp_id" queryExpression="rpt_comp_id = ${@rpt_comp_id}"/>
+    </bm:query-fields>
+</bm:model>

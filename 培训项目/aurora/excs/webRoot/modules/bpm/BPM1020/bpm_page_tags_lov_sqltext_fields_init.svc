@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: mouse  
+    $Date: 2014-5-12 下午8:02:30  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <s:server-script><![CDATA[
+            function getConnection() {
+                var context = $ctx.getData();
+                var sqlServiceContext = Packages.aurora.database.service.SqlServiceContext.createSqlServiceContext(context);
+                var conn = sqlServiceContext.getNamedConnection(null);
+                return conn;
+            }
+            
+            (function() {
+                var sqlText = $ctx.parameter.sqltext.replace(/\$\{\/*\w*\/*@\w+\}/g, ' null ');
+                var tagId = $ctx.parameter.tag_id;
+                if (!tagId) {
+                    throw java.lang.Exception('传入的TagId为空');
+                }
+                var fieldsMap = $bm('bpm.ENGINE.bpm_page_tags_lov_fields_query').queryAsMap();
+                var fieldsArr = fieldsMap.getChildren();
+                var conn = getConnection();
+                println(sqlText);
+                var pstmt = conn.prepareStatement(sqlText);
+                var rs = pstmt.executeQuery();
+                var rsmd = rs.getMetaData();
+                var colNums = rsmd.getColumnCount();
+                var existsFlag = false;
+                for (var colIdx = 1;colIdx <= colNums;colIdx++) {
+                    var colName = new String(rsmd.getColumnName(colIdx)).toLowerCase();
+                    if (fieldsArr && fieldsArr.length && fieldsArr.length != 0) {
+                        existsFlag = false;
+                        for (var fieldIdx = 0;fieldIdx < fieldsArr.length;fieldIdx++) {
+                            if (colName == fieldsArr[fieldIdx].lov_field) {
+                                existsFlag = true;
+                                break;
+                            }
+                        }
+                        if (existsFlag) {
+                            continue;
+                        }
+                    }
+                    $ctx.parameter.lov_field = colName;
+                    if (colName.indexOf('_id') != -1 || colName == 'id') {
+                        $ctx.parameter.lov_field_prompt = 'ID';
+                        $ctx.parameter.display_flag = 'N';
+                        $ctx.parameter.query_flag = 'N';
+                    } else if (colName.indexOf('_code') != -1 || colName == 'code') {
+                        $ctx.parameter.lov_field_prompt = '代码';
+                        $ctx.parameter.display_flag = 'Y';
+                        $ctx.parameter.query_flag = 'Y';
+                    } else if (colName.indexOf('_desc') != -1 || colName == 'description') {
+                        $ctx.parameter.lov_field_prompt = '描述';
+                        $ctx.parameter.display_flag = 'Y';
+                        $ctx.parameter.query_flag = 'Y';
+                    } else if (colName.indexOf('_name') != -1 || colName == 'name') {
+                        $ctx.parameter.lov_field_prompt = '名称';
+                        $ctx.parameter.display_flag = 'Y';
+                        $ctx.parameter.query_flag = 'Y';
+                    }
+                    $bm('bpm.BPM1020.bpm_page_tags_lov_fields').insert();
+                }
+            
+                for (var fieldIdx = 0;fieldIdx < fieldsArr.length;fieldIdx++) {
+                    existsFlag = false;
+                    for (var colIdx = 1;colIdx <= colNums;colIdx++) {
+                        var colName = new String(rsmd.getColumnName(colIdx)).toLowerCase();
+                        if (colName == fieldsArr[fieldIdx].lov_field) {
+                            existsFlag = true;
+                            break;
+                        }
+                    }
+                    if (!existsFlag) {
+                        $ctx.parameter.lov_field_id = fieldsArr[fieldIdx].lov_field_id;
+                        $bm('bpm.BPM1020.bpm_page_tags_lov_fields').delete();
+                    }
+                }
+            
+                try {
+                    rs.close();
+                } finally {
+                    pstmt.close();
+                }
+            })();
+        ]]></s:server-script>
+    </a:init-procedure>
+</a:service>

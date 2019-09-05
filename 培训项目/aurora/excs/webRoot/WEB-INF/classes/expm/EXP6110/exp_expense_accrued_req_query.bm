@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.exp_requisition_header_id,
+                        h.period_name,
+                        v.company_code,
+                        v.company_code
+                        || '-'
+                        || v.company_short_name company,
+                        h.exp_requisition_number,
+                        h.exp_requisition_type_id,
+                        h.employee_id,
+                        h.company_id,
+                        (SELECT
+                            erpv.expense_requisition_type_code
+                        FROM
+                            exp_expense_req_types_vl erpv
+                        WHERE
+                            erpv.expense_requisition_type_id = h.exp_requisition_type_id
+                        ) type_code,
+                        (SELECT
+                            erpv.description
+                        FROM
+                            exp_expense_req_types_vl erpv
+                        WHERE
+                            erpv.expense_requisition_type_id = h.exp_requisition_type_id
+                        ) type_description,
+                        (SELECT
+                            ee.name
+                            || '-'
+                            || ee.employee_code
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id = h.employee_id
+                        ) employee_name,
+                        h.currency_code,
+                        (SELECT
+                            SUM(l.requisition_amount)
+                        FROM
+                            exp_requisition_lines l
+                        WHERE
+                            l.exp_requisition_header_id = h.exp_requisition_header_id
+                        ) requisition_amount,
+                        TO_CHAR(h.requisition_date, 'YYYY-MM-DD') requisition_date,
+                        h.requisition_status,
+                        (SELECT
+                            scvv.code_value_name
+                        FROM
+                            sys_code_values_v scvv
+                        WHERE
+                            scvv.code       = 'EXP_EXPENSE_REPORT_STATUS' AND
+                            scvv.code_value = h.requisition_status
+                        ) requisition_status_desc,
+                        h.description
+                    FROM
+                        exp_requisition_headers h,
+                        fnd_companies_vl v,
+                        exp_requisition_dists erd,
+                        exp_requisition_lines erl
+                    WHERE
+                        h.company_id                = v.company_id AND
+                        h.requisition_status       IN (${@req_generate}, ${@req_submit}, ${@req_approved}) AND
+                        h.exp_requisition_header_id = erl.exp_requisition_header_id AND
+                        erd.exp_requisition_line_id = erl.exp_requisition_line_id AND
+                        erd.period_name            <= ${@period_name}
+                    ) a
+                WHERE
+                    (
+                        ${@company_code_from} IS NULL OR
+                        a.company_code >= SUBSTR(${@company_code_from},0,instr(${@company_code_from},' ') - 1)
+                    )
+                    AND
+                    (
+                        ${@company_code_to} IS NULL OR
+                        a.company_code <= SUBSTR(${@company_code_to},0,instr(${@company_code_to},' ') - 1)
+                    )
+                    AND
+                    (
+                        ${@document_type1} IS NULL OR
+                        a.type_code         = ${@document_type1}
+                    )
+                    AND
+                    (
+                        ${@document_number1} IS NULL OR
+                        a.exp_requisition_number   = ${@document_number1}
+                    )
+                ORDER BY
+                    a.exp_requisition_number DESC
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="req_generate"/>
+                <bm:parameter name="req_submit"/>
+                <bm:parameter name="req_approved"/>
+                <bm:parameter name="period_name"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <!-- <bm:query-fields> -->
+    <!-- <bm:query-field name="company_code_from" queryExpression="a.company_code &gt;= ${@company_code_from}"/>
+        <bm:query-field name="company_code_to" queryExpression="a.company_code &lt;= ${@company_code_to}"/> -->
+    <!-- <bm:query-field name="document_type1" queryExpression="a.type_code = ${@document_type1}"/>
+        <bm:query-field name="document_number1" queryExpression="a.exp_requisition_number = ${@document_number1}"/> -->
+    <!-- </bm:query-fields> -->
+</bm:model>

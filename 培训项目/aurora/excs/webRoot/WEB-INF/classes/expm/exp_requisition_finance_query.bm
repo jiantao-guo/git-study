@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+        	SELECT * FROM (
+			   select s.exp_requisition_header_id,
+			    (select cch.contract_number
+			  from con_contract_headers cch,con_document_flows s
+			 where contract_header_id =s.document_id
+			 and s.document_type='CON_CONTRACT'
+			 and s.source_document_type ='EXP_REQUISITION_HEADERS'
+			 and  s.source_document_id =s.exp_requisition_header_id) contact_number,
+			       s.exp_requisition_number,
+			       s.exp_requisition_barcode,
+			       s.employee_id,
+			       (select employee_code
+			          from exp_employees es
+			         where es.employee_id = s.employee_id) employee_code,
+			       (select name
+			          from exp_employees es
+			         where es.employee_id = s.employee_id) employee_name,
+			       s.payee_category,
+			       (  select code_value_name
+			    from sys_code_values_vl b, sys_codes a
+			   where b.code_id = a.code_id
+			     and a.code = 'PAYMENT_OBJECT'
+			     and code_value=s.payee_category) payee_category_name,
+			       s.payee_id,
+			       decode (s.PAYEE_CATEGORY,'EMPLOYEE' ,
+			       (select employee_code||'-'||name  from  exp_employees ee where ee.employee_id=s.payee_id),
+			       'CUSTOMER',
+			       (select vc.CUSTOMER_CODE||'-'||vc.DESCRIPTION from ord_system_customers_vl vc where vc.CUSTOMER_ID=s.payee_id ),
+			       ( select vv.VENDER_CODE||'-'||vv.DESCRIPTION from pur_system_venders_vl vv where vv.VENDER_ID=s.payee_id ))  payee_name,
+			       s.currency_code,
+			       (select  currency_name from gld_currency_vl gcv where gcv.currency_code = s.currency_code ) currency_name,
+			       s.exchange_rate_type,
+			       s.exchange_rate_quotation,
+			       (select sum(t.requisition_amount)
+			          from exp_requisition_lines t
+			         where t.exp_requisition_header_id = s.exp_requisition_header_id) QUARTER_NUM,
+			       (select sum(t.requisition_functional_amount)
+			          from exp_requisition_lines t
+			         where t.exp_requisition_header_id = s.exp_requisition_header_id) QUARTER_NUM_FUN,
+			       s.period_name,
+			       s.released_status,
+			       s.je_creation_status,
+			       s.gld_interface_flag,
+			       s.created_by,
+			       s.creation_date,
+			       to_char(s.creation_date,'yyyy-mm-dd') creation_date1,
+			       s.last_updated_by,
+			       s.last_update_date,
+			       to_char(s.requisition_date, 'yyyy-mm-dd')  REQUISITION_DATE,
+			       s.exp_requisition_type_id,
+			       (select erpv.DESCRIPTION
+			          from exp_expense_req_types_vl erpv
+			         where erpv.EXPENSE_REQUISITION_TYPE_ID = s.exp_requisition_type_id) type_description,
+			       (select erpv.EXPENSE_REQUISITION_TYPE_CODE
+			          from exp_expense_req_types_vl erpv
+			         where erpv.EXPENSE_REQUISITION_TYPE_ID = s.exp_requisition_type_id) TYPE_CODE,
+			       s.description,
+			       s.requisition_status requisition_status_value,
+			       (select b.code_value_name
+			          from sys_codes_vl a, sys_code_values_vl b
+			         where a.code_id = b.code_id
+			           and a.code = 'EXP_EXPENSE_REPORT_STATUS'
+			           and b.code_value = s.requisition_status) REQUISITION_STATUS,
+			      (select sum(a.req_release_amount) from exp_requisition_release a where a.exp_requisition_header_id = s.exp_requisition_header_id) USEDAMOUNT,
+			      (select sum(a.req_release_quantity) from exp_requisition_release a where a.exp_requisition_header_id = s.exp_requisition_header_id) USEDQUANLITY ,
+			           (select b.code_value_name
+			    from sys_code_values_vl b, sys_codes a
+			   where b.code_id = a.code_id
+			     and a.code = 'EXP_REQUISITION_CLOSE_STATUS'
+			     and b.code_value = exp_report_util_pkg.get_exp_req_closed_status(s.exp_requisition_header_id)) ISCLOSE
+			  from exp_requisition_headers s
+			  where s.company_id=${/session/@company_id}
+			  and sys_user_secure_exit_pkg.exp_requsition_query(s.exp_requisition_header_id,${/session/@session_id})='Y'  )
+			#WHERE_CLAUSE# 
+			ORDER BY exp_requisition_header_id desc
+		]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="payee_category" dataType="java.lang.String" queryExpression="payee_category=${@payee_category}"/>
+        <bm:query-field name="requisition_status" dataType="java.lang.String" queryExpression="requisition_status_value=${@requisition_status}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="currency_code=${@currency_code}"/>
+        <bm:query-field name="requisition_amount_from" dataType="java.lang.Long" queryExpression="quarter_num&gt;=${@requisition_amount_from}"/>
+        <bm:query-field name="requisition_amount_to" dataType="java.lang.Long" queryExpression="quarter_num&lt;=${@requisition_amount_to}"/>
+        <bm:query-field name="requisition_date_from" dataType="java.lang.String" queryExpression="requisition_date &gt;= ${@requisition_date_from}"/>
+        <bm:query-field name="requisition_date_to" dataType="java.lang.String" queryExpression="requisition_date &lt;= ${@requisition_date_to}"/>
+        <bm:query-field name="requisition_number" dataType="java.lang.String" queryExpression="exp_requisition_number like ${@requisition_number}"/>
+        <bm:query-field name="type_item" dataType="java.lang.Long" queryExpression="exp_requisition_type_id = ${@type_item}"/>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="employee_id = ${@employee_id}"/>
+        <bm:query-field name="isclosed" dataType="java.lang.String" queryExpression="exp_report_util_pkg.get_exp_req_closed_status(exp_requisition_header_id) = ${@isclosed}"/>
+        <bm:query-field name="payee_id" dataType="java.lang.Long" queryExpression="payee_id = ${@payee_id}"/>
+    </bm:query-fields>
+</bm:model>

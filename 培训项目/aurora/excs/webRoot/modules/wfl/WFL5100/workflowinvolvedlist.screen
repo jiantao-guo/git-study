@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="wfl.wfl_document_reference" queryOrderBy="workflow_category" rootPath="wflType_md"/>
+        <a:model-query autoCount="false" fetchAll="true" model="wfl.wfl_instance_query_dual" rootPath="defaultValue_md"/>
+        <a:model-query model="wfl.wfl_reception_info" rootpath="reception"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="workflowreturn_link_1" url="${/request/@context_path}/modules/wfl/public/workflowreturn.screen"/>
+        <a:link id="wfl_check_uploadFile_link" url="${/request/@context_path}/check_uploadFile.screen"/>
+        <a:link id="wfl_workflow_preview_approve" url="${/request/@context_path}/modules/wfl/public/wfl_workflow_preview_approve.screen"/>
+        <a:link id="wfl_back_to_pre_node_link" url="${/request/@context_path}/modules/wfl/WFL5100/wfl_back_to_pre_node.screen"/>
+        <a:link id="instance_query_link" model="wfl.WFL5100.wfl_instance_query" modelaction="query"/>
+        <script><![CDATA[
+            function result_ds_query() {
+                $('result_ds').query();
+            }
+            
+            function query_ds_reset() {
+                $('query_ds').reset();
+            }
+            
+            function gridcellclick(grid, row, name, record) {
+                $('approve_result_ds').setQueryParameter('instance_id', record.get('instance_id'));
+                $('approve_result_ds').query();
+            }
+            
+            function returnrecord(value, record, name) {
+                return '<a href="javascript:openreturn(' + record.get('instance_id') + ')">' + record.get("order_no") + '</a>';
+            }
+            
+            function openreturn(id) {
+                // var vheigth=document.body.clientHeight;
+            
+                //var vwidth=document.body.clientWidth;
+                //new Aurora.Window({id:'apprecord', url:'${/request/@context_path}/modules/wfl/workflowreturn.screen?instance_id='+ id, title:'', height:vheigth,width:vwidth});
+                var url = /*${/request/@context_path}/modules/wfl/workflowreturn.screen*/
+                $('workflowreturn_link_1').getUrl() + '?canUploadFlag=false&instance_id=' + id;
+                //window.open(url);
+                new Aurora.Window({
+                    url: url,
+                    fullScreen: true
+                }).on('close', function() {
+                    $('document_number_instance').focus();
+                    $('query_ds').getAll()[0].set('order_no','');
+                });
+            }
+            
+             function document_num_enterdown_instance() {
+                var order_no = $('query_ds').getAll()[0].get('order_no');
+                if (order_no) {
+                    Aurora.request({
+                        url: $('instance_query_link').getUrl(),
+                        para: {
+                            order_no: order_no
+                        },
+                        success: function(args) {
+                            var record = args.result.record;
+                            if(!record){
+                                return;
+                            }
+                            if(record instanceof Array){
+                                return;
+                            }
+                            var instance_id = record.instance_id; 
+                            openreturn(instance_id);
+                        },
+                        scope: this
+                    });
+                }
+            
+            }
+            
+            function wflInvokeListUploadFile(value, record, name) {
+                var att_num = record.get("att_num");
+                if (att_num == 0) {
+                    return;
+                }
+                return '<a href="javascript:wflInvokeListUploadFileRendererWindow(' + record.get('rcpt_record_id') + ')"> ${l:PROMPT.VIEW_ATTACHMENT} </a>';
+            }
+            
+            function wflInvokeListUploadFileRendererWindow(id) {
+                var url = $('wfl_check_uploadFile_link').getUrl() + '?table_name=WFL_APPROVE_RECORD&header_id=' + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'check_upload_file_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            
+            function previewApprove(value, record, name) {
+                return '<a href="javascript:wflPreview(' + record.get('instance_id') + ')">${l:WFL.PREVIEW}</a>';
+            
+            }
+            
+            function wflPreview(id) {
+                if($A.CmpManager.get('preview_window')){
+                    $('preview_window').close();
+                }
+                new Aurora.Window({
+                    id: 'preview_window',
+                    url: $('wfl_workflow_preview_approve').getUrl() + '?instance_id=' + id,
+                    title: '${l:WFL.WFL_APPROVE_PREVIEW}',
+                    height: 2000,
+                    width: 1020
+                });
+            }
+            
+            function backToPreNodeRenderer(value, record, name) {
+                if (record.get('can_back_to_pre_node_flag') == 'Y') {
+                    return '<a href="javascript:openBackToPreNode(' + record.get('instance_id') + ')">${l:WFL.BACK_TO_PRE_NODE}</a>';
+                }
+            }
+            
+            function openBackToPreNode(instanceId) {
+                new Aurora.Window({
+                    url: $('wfl_back_to_pre_node_link').getUrl() + '?instance_id=' + instanceId,
+                    id: 'wfl_back_to_pre_node_window',
+                    width: 380,
+                    height: 140
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="wflStatus_ds" lookupCode="WFL_WORKFLOW_INSTANCE_STATUS"/>
+            <a:dataSet id="wflType_ds">
+                <a:datas dataSource="/model/wflType_md"/>
+            </a:dataSet>
+            <!-- <a:dataSet id="doc_info_ds" model="wfl.wfl_doc_info_query"/> -->
+            <a:dataSet id="query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="workflow_status_display" displayField="code_value_name" options="wflStatus_ds" returnField="workflow_status" valueField="code_value"/>
+                    <a:field name="order_type_display" displayField="document_desc" options="wflType_ds" returnField="order_type" valueField="workflow_category"/>
+                    <a:field name="workflow_status"/>
+                    <!-- <a:field name="creation_date_from" defaultValue="${/model/defaultValue_md/record/@default_s_date}" required="true"/>
+                    <a:field name="creation_date_to" defaultValue="${/model/defaultValue_md/record/@default_e_date}" required="true"/> -->
+                    <a:field name="creation_date_from"/>
+                    <a:field name="creation_date_to"/>
+                    <a:field name="instance_amount_from"/>
+                    <a:field name="instance_amount_to"/>
+                    <a:field name="company_name" fetchRemote="false" lovHeight="450" lovService="fnd.fnd_companies" lovWidth="500" lovgridheight="320" title="报销人机构">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_short_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="result_ds" autoPageSize="true" autoQuery="true" fetchAll="false" model="wfl.WFL5100.wfl_instance_query" pageSize="10" queryDataSet="query_ds"/>
+            <a:dataSet id="approve_result_ds" fetchAll="true" model="wfl.approve_record_list"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="wfl_invoke_list_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="result_ds_query" text="HAP_QUERY" width="80"/>
+                <a:toolbarButton click="query_ds_reset" text="HAP_RESET" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="query_ds" resultTarget="result_ds" style="width:100%;border:none">
+                <a:formToolBar labelWidth="90">
+                    <a:textField name="order_no" id="document_number_instance" bindTarget="query_ds" prompt="WFL_INSTANCE_QUERY.ORDER_NO" width="200">
+                        <a:events>
+                            <a:event name="enterdown" handler="document_num_enterdown_instance"/>
+                        </a:events>
+                    </a:textField>
+                    <a:comboBox name="order_type_display" bindTarget="query_ds" prompt="FND_CODING_RULE_OBJECTS.DOCUMENT_TYPE"/>
+                    <a:comboBox name="workflow_status_display" bindTarget="query_ds" prompt="WFL_WORKFLOW.STATUS"/>
+                    <a:datePicker name="cur_approve_date" bindTarget="query_ds" prompt="审批日期"/>
+                </a:formToolBar>
+                <a:formBody column="4" labelWidth="90">
+                    <a:datePicker name="creation_date_from" bindTarget="query_ds" prompt="WFL_INSTANCE_QUERY.CREATION_DATE_FROM"/>
+                    <a:datePicker name="creation_date_to" bindTarget="query_ds" prompt="WFL_INSTANCE_QUERY.CREATION_DATE_TO"/>
+                    <a:textField name="create_by_name" bindTarget="query_ds" prompt="WFL_INSTANCE_QUERY.CREATE_BY_NAME"/>
+                    <a:textField name="approver" bindTarget="query_ds" prompt="WFL_INSTANCE_QUERY.APPROVER"/>
+                    <a:textField name="workflow_name" bindTarget="query_ds" prompt="WFL_WORKFLOW.NAME"/>
+                    <a:numberField name="instance_amount_from" bindTarget="query_ds" prompt="AMOUNT.FROM"/>
+                    <a:numberField name="instance_amount_to" bindTarget="query_ds" prompt="AMOUNT.TO"/>
+                    <a:lov name="company_name" bindTarget="query_ds" prompt="报销人机构"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="wfl_involved_list_grid" bindTarget="result_ds" height="320" navBar="true" width="1000">
+                <a:columns>
+                    <a:column name="order_no" align="left" lock="false" prompt="WFL_INSTANCE_QUERY.ORDER_NO" renderer="returnrecord" sortable="true" width="120"/>
+                    <a:column name="order_type" align="left" prompt="FND_CODING_RULE_OBJECTS.DOCUMENT_TYPE" sortable="true" width="70"/>
+                    <a:column name="create_by_name" align="left" prompt="WFL_INSTANCE_QUERY.CREATE_BY_NAME" sortable="true" width="70"/>
+                    <a:column name="company_name" align="center" prompt="报销人机构" sortable="true" width="110"/>
+                    <a:column name="instance_amount" align="right" prompt="WFL_INSTANCE.AMOUNT" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="creation_date_desc" align="center" prompt="WFL_INSTANCE_QUERY.CREATION_DATE" sortable="true" width="120"/>
+                    <a:column name="cur_approve_date" align="center" prompt="审批日期" sortable="true" width="120"/>
+                    <a:column name="status_name" align="left" prompt="WFL_WORKFLOW.STATUS" sortable="true" width="70"/>
+                    <a:column name="workflow_name" align="left" prompt="WFL_WORKFLOW.NAME" sortable="true" width="170"/>
+                    <a:column name="curr_approve_name" align="left" prompt="WFL_INSTANCE_QUERY.APPROVER" sortable="true" width="180"/>
+                    <a:column name="last_update_date_desc" align="center" prompt="WFL_INSTANCE_QUERY.LAST_UPDATE_DATE" sortable="true" width="120"/>
+                    <a:column name="last_approve_name" align="left" prompt="WFL_INSTANCE_QUERY.LAST_APPROVE_NAME" sortable="true" width="70"/>
+                    <a:column name="preview" align="center" prompt="WFL.WFL_APPROVE_PREVIEW" renderer="previewApprove" width="70"/>
+                    <!-- <a:column name="back_to_pre_node" align="center" prompt="WFL.BACK_TO_PRE_NODE" renderer="backToPreNodeRenderer" width="70"/> -->
+                </a:columns>
+                <a:events>
+                    <a:event name="cellclick" handler="gridcellclick"/>
+                </a:events>
+            </a:grid>
+            <br/>
+            <a:table id="wfl_involved_list_table" bindTarget="approve_result_ds" height="300">
+                <a:columns>
+                    <a:column name="creation_date" align="center" prompt="WFL_WORKFLOW_APPROVE_RECORD.APPROVE_DATE" width="120"/>
+                    <a:column name="node_name" align="left" prompt="WFL_WORKFLOW_APPROVE_RECORD.APPROVE_NODE" width="120"/>
+                    <a:column name="user_name" align="left" prompt="WFL_WORKFLOW_APPROVE_RECORD.APPROVER_NAME" width="120"/>
+                    <a:column name="action_title" align="left" prompt="WFL_WORKFLOW_APPROVAL.ACTION" width="120"/>
+                    <a:column name="comment_text" align="left" prompt="WFL_WORKFLOW_APPROVE_RECORD.APPROVER_MEMO" width="150"/>
+                    <a:column name="upload_file" align="center" prompt="PROMPT.VIEW_ATTACHMENT" renderer="wflInvokeListUploadFile" width="50"/>
+                </a:columns>
+            </a:table>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+
+            function wflInvolvedListInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            	   $('wfl_involved_list_grid').setWidth(autoWidth);
+            	   $('wfl_involved_list_table').setWidth(autoWidth);
+            	   $('document_number_instance').focus();
+            }
+            //Ext.fly(window).on('resize', wflInvolvedListInitSize);
+            wflInvolvedListInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

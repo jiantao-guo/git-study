@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    temp.ins_id,
+                    temp.ins_node_id,
+                    temp.pay_req_hd_id,
+                    temp.doc_id,
+                    (SELECT
+                        tv.description
+                    FROM
+                        csh_pay_req_types_vl tv
+                    WHERE
+                        tv.type_id = erh.payment_req_type_id
+                    ) ins_doc_hd_type_name,
+                    sys_mobile_pkg.get_ins_doc_hd_title(erh.payment_requisition_header_id,'PAYMENT_REQUISITION') AS ins_doc_hd_title,
+                    temp.status AS ins_doc_status,
+                    temp.pay_req_num,
+                    temp.ins_doc_category_desc AS ins_doc_category_desc,
+                    temp.ins_doc_category,
+                    temp.pay_req_date,
+                    sys_mobile_pkg.get_emp_company(erh.employee_id,${/session/@company_id}) AS pay_req_com_name,
+                    erh.created_by AS pay_req_created_by,
+                    (SELECT
+                        ee.employee_code
+                        || '-'
+                        ||ee.name
+                    FROM
+                        exp_employees ee,
+                        sys_user su
+                    WHERE
+                        su.user_id     = erh.created_by AND
+                        su.employee_id = ee.employee_id
+                    ) pay_req_created_by_name,
+                    (SELECT
+                        t.employee_code
+                        || '-'
+                        ||t.name
+                    FROM
+                        exp_employees t
+                    WHERE
+                        t.employee_id = erh.employee_id
+                    ) pay_req_emp_name,
+                    sys_mobile_pkg.get_emp_position(erh.employee_id,${/session/@company_id}) AS pay_req_pos_name,
+                    (SELECT
+                        fd.description_text
+                    FROM
+                        fnd_descriptions fd,
+                        gld_currency cc
+                    WHERE
+                        fd.description_id = cc.currency_name_id AND
+                        fd.language       = 'ZHS' AND
+                        cc.currency_code  = 'CNY'
+                    ) pay_req_currency_name,
+                    temp.pay_req_total_amount,
+                    erh.description AS pay_req_desc,
+                    temp.can_cancel,
+                    (SELECT
+                        COUNT(*)
+                    FROM
+                        (SELECT
+                            1
+                        FROM
+                            fnd_atm_attachment_multi fam
+                        WHERE
+                            fam.table_name     = 'CSH_PAYMENT_REQUISITION_HDS' AND
+                            fam.table_pk_value = ${@doc_id}
+                        UNION ALL
+                        SELECT
+                            1
+                        FROM
+                            fnd_atm_attachment faa,
+                            fnd_atm_attachment_multi faam
+                        WHERE
+                            faa.attachment_id    = faam.attachment_id AND
+                            faam.table_name      = 'CON_CONTRACT_HEADERS' AND
+                            faam.table_pk_value IN
+                            (SELECT
+                                f.document_id
+                            FROM
+                                con_document_flows f
+                            WHERE
+                                f.source_document_id    = ${@doc_id} AND
+                                f.source_document_type IN ('CSH_PAYMENT_REQUISITION_LNS')
+                            GROUP BY
+                                f.document_id
+                            )
+                        )
+                    ) attchment_flag
+                FROM
+                    (SELECT
+                        t1.instance_id AS ins_id,
+                        (SELECT
+                            node_id
+                        FROM
+                            wfl_workflow_node wnv
+                        WHERE
+                            wnv.SEQUENCE_NUM = t1.current_node AND
+                            wnv.workflow_id  = t1.workflow_id
+                        ) AS ins_node_id,
+                        t1.instance_param AS pay_req_hd_id,
+                        t1.instance_param as doc_id,
+                        t1.document_number AS pay_req_num,
+                        t1.status,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_codes sc,
+                            sys_code_values_vl v
+                        WHERE
+                            sc.code_id   = v.code_id AND
+                            sc.code      = 'WFL_WORKFLOW_CATEGORY' AND
+                            v.code_value = ww.workflow_category
+                        ) AS ins_doc_category_desc,
+                        ww.workflow_category as ins_doc_category,
+                        t1.creation_date AS pay_req_date,
+                        t1.instance_amount AS pay_req_total_amount,
+                        wfl_common_pkg.can_cancel_instance(${/session/@user_id},t1.instance_id) AS can_cancel
+                    FROM
+                        wfl_workflow_instance t1
+                    INNER JOIN wfl_workflow ww
+                    ON
+                        t1.workflow_id = ww.workflow_id
+                    ORDER BY
+                        t1.creation_date DESC
+                    ) temp,
+                    csh_payment_requisition_hds erh
+                WHERE
+                    erh.requisition_number            = temp.pay_req_num AND
+                    erh.payment_requisition_header_id = ${@doc_id}
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@company_id"/>
+                <bm:parameter inputPath="/session/@user_id"/>
+                <bm:parameter name="doc_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="ins_id"/>
+        <bm:field name="ins_node_id"/>
+        <bm:field name="pay_req_hd_id"/>
+        <bm:field name="doc_id"/>
+        <bm:field name="ins_doc_hd_type_name"/>
+        <bm:field name="ins_doc_hd_title"/>
+        <bm:field name="ins_doc_status"/>
+        <bm:field name="pay_req_num"/>
+        <bm:field name="ins_doc_category"/>
+        <bm:field name="ins_doc_category_desc"/>
+        <bm:field name="pay_req_date"/>
+        <bm:field name="pay_req_com_name"/>
+        <bm:field name="pay_req_created_by"/>
+        <bm:field name="pay_req_created_by_name"/>
+        <bm:field name="pay_req_emp_name"/>
+        <bm:field name="pay_req_pos_name"/>
+        <bm:field name="pay_req_currency_name"/>
+        <bm:field name="pay_req_total_amount"/>
+        <bm:field name="pay_req_desc"/>
+        <bm:field name="can_cancel"/>
+        <bm:field name="attchment_flag"/>
+    </bm:fields>
+</bm:model>

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[	select distinct * from (
+		select a.acp_requisition_header_id,
+       a.requisition_number,
+       a.requisition_date,
+	   to_char(a.requisition_date,'yyyy-mm-dd') fmt_requisition_date,
+  (select sum(lns.amount) from acp_acp_requisition_lns lns where lns.acp_requisition_header_id=a.acp_requisition_header_id) line_amount, 
+       a.closed_date,
+	   to_char(a.closed_date,'yyyy-mm-dd') fmt_closed_date,
+       a.description,
+	   a.employee_id,
+       b.employee_code || '-' || b.name applicant,
+       c.CURRENCY_NAME,
+	   c.currency_code,
+       (select decode(sum(r.amount),null,0,sum(r.amount))
+          from acp_acp_requisition_refs r, acp_acp_requisition_lns lns
+         where lns.acp_requisition_line_id = r.acp_requisition_line_id
+           and lns.acp_requisition_header_id = a.acp_requisition_header_id) ALREADY_PAYING,
+       (select bb.code_value_name
+          from sys_codes_vl aa, sys_code_values_vl bb
+         where aa.code_id = bb.code_id
+           and aa.code = 'PAYMENT_REQUISITION_STATUS'
+           and aa.enabled_flag = 'Y'
+           and bb.enabled_flag = 'Y'
+           and bb.code_value = a.status) status_desc,
+		   a.status,
+       (select bb.code_value_name
+          from sys_codes_vl aa, sys_code_values_vl bb
+         where aa.code_id = bb.code_id
+           and aa.code = 'PAYMENT_OBJECT'
+           and aa.enabled_flag = 'Y'
+           and bb.enabled_flag = 'Y'
+           and bb.code_value = a.partner_category) PARTNER_CATEGORY_DESC,
+		a.PARTNER_CATEGORY,
+       (select name
+          from (SELECT EMPLOYEE_ID ID,
+                       EMPLOYEE_CODE CODE,
+                       NAME,
+                       PARTNER_CATEGORY
+                  FROM (select t.employee_id,
+                               t.name || '-' || t.employee_code name,
+                               t.employee_code,
+                               'EMPLOYEE' partner_category
+                          from exp_employees t, exp_employee_assigns a
+                         where t.employee_id = a.employee_id
+                           and t.enabled_flag = 'Y'
+                           and a.enabled_flag = 'Y'
+                           and a.company_id = ${/session/@company_id}
+                         group by t.employee_id, t.name, t.employee_code
+                        UNION
+                        SELECT SVV.VENDER_ID,
+                               SVV.DESCRIPTION || '-' || SVV.VENDER_CODE,
+                               SVV.VENDER_CODE,
+                               'VENDER' PARTNER_CATEGORY
+                          FROM PUR_COMPANY_VENDERS   CV,
+                               PUR_SYSTEM_VENDERS_VL SVV
+                         WHERE CV.COMPANY_ID = ${/session/@company_id}
+                           AND CV.VENDER_ID = SVV.VENDER_ID
+                           AND CV.ENABLED_FLAG = 'Y'
+                        UNION
+                        SELECT CV.CUSTOMER_ID,
+                               CV.DESCRIPTION || '-' || CV.CUSTOMER_CODE,
+                               CV.CUSTOMER_CODE,
+                               'CUSTOMER' PARTNER_CATEGORY
+                          FROM ORD_COMPANY_CUSTOMERS   CC,
+                               ORD_SYSTEM_CUSTOMERS_VL CV
+                         WHERE CC.COMPANY_ID = ${/session/@company_id}
+                           AND CC.CUSTOMER_ID = CV.CUSTOMER_ID
+                           AND CC.ENABLED_FLAG = 'Y') V) V
+         where PARTNER_CATEGORY = a.partner_category
+           and V.ID = a.partner_id) partner_name,
+		   a.partner_id
+  from acp_acp_requisition_hds a, exp_employees b, gld_currency_vl c,acp_acp_requisition_lns l
+ where a.company_id = ${/session/@company_id}
+   and a.status = 'CLOSED' 
+   and a.closed_date is not null 
+   and a.employee_id = b.employee_id 
+   and c.CURRENCY_CODE = a.currency_code
+   and a.acp_requisition_header_id = l.acp_requisition_header_id
+   ) V
+   #WHERE_CLAUSE# 
+   order by requisition_date desc, requisition_number]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+				begin
+					ACP_REQUISITION_PKG.acp_requisition_open(p_requisition_header_id => ${@acp_requisition_header_id},
+			                                               p_user_id               => ${/session/@user_id});
+				end;
+   			]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="requisition_number" dataType="java.lang.String" queryExpression=" v.requisition_number  like &apos;%&apos;||upper(${@requisition_number})||&apos;%&apos;"/>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="v.employee_id = ${@employee_id}"/>
+        <bm:query-field name="requisition_date_f" dataType="java.lang.String" queryExpression="fmt_requisition_date &gt;= ${@requisition_date_f}"/>
+        <bm:query-field name="requisition_date_t" dataType="java.lang.String" queryExpression="fmt_requisition_date &lt;= ${@requisition_date_t}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="v.currency_code = ${@currency_code}"/>
+        <bm:query-field name="status" dataType="java.lang.String" queryExpression="v.status = ${@status}"/>
+        <!--         <bm:query-field name="partner_category" dataType="java.lang.String" queryExpression="v.partner_category = ${@partner_category}"/>
+        <bm:query-field name="partner_id" data -->
+        <bm:query-field name="amount_f" dataType="java.lang.Double" queryExpression="v.amount &gt;= ${@amount_f}"/>
+        <bm:query-field name="amount_t" dataType="java.lang.Double" queryExpression="v.amount &lt;= ${@amount_t}"/>
+        <bm:query-field name="already_paying_f" dataType="java.lang.Double" queryExpression="v.already_paying &gt;= ${@already_paying_f}"/>
+        <bm:query-field name="already_paying_t" dataType="java.lang.Double" queryExpression="v.already_paying &lt;= ${@already_paying_t}"/>
+        <bm:query-field name="csh_type_id" dataType="java.lang.Long" queryExpression="v.acp_req_type_id = ${@csh_type_id}"/>
+        <bm:query-field name="payment_status_id" dataType="java.lang.String" queryExpression="v.payment_status1 = ${@payment_status_id}"/>
+    </bm:query-fields>
+</bm:model>

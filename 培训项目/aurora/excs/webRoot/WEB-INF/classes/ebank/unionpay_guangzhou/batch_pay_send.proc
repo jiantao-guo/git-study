@@ -1,0 +1,602 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<p:procedure xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application"  xmlns:rs="aurora.database.rsconsumer" xmlns:p="uncertain.proc" trace="true">
+    <s:server-script import="composite_map_util.js"/>
+    <s:server-script import="ebank_util.js"/>
+    <s:server-script import="gz_unionpay_util.js"/>
+    <s:server-script><![CDATA[
+            function doSend() {
+                //生成EbankUtil实例
+                var eUtil = new EbankUtil();
+                var logger = Packages.org.apache.log4j.Logger.getLogger('gzSend');
+                try {
+                    eUtil.dolock('GZ_UNIONPAY_PAY');
+                    eUtil.log({
+                        ref_table: 'gzSend',
+                        log_text: '广银联-批量代付-锁表'
+                    });
+                    //生成GzUnionPayUtil实例
+                    var gzUtil = new GzUnionPayUtil();
+                    eUtil.log({
+                        ref_table: 'gzSend',
+                        log_text: '广银联-批量代付-生成广银联工具包实例'
+                    });
+                    //生成CmUTIL包实例
+                    var cmUtil = new CmUtil();
+                    eUtil.log({
+                        ref_table: 'gzSend',
+                        log_text: '广银联-批量代付-生成CompositeMap工具包实例'
+                    });
+                    try {
+                        var errorMsg;
+                        var reqSn = gzUtil.getReqSn();
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付请求发起'
+                        });
+                        var needPayRecords = gzUtil.getNeedPayRecords();
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-获取待支付记录'
+                        });
+                        var totalLength = 0;
+                        var totalSum = 0;
+                        for (var i = 0;i < needPayRecords.length;i++) {
+                            totalLength++;
+                            //银联接口接受支付金额单位为分，不支持小数
+                            totalSum += parseInt(parseFloat(needPayRecords[i]['amount']) * 100);
+                        }
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: String('广银联-批量代付-本次总支付条数为:' + totalLength + '条,总支付金额为:' + totalSum + '分')
+                        });
+                        if (totalLength == 0) {
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: String('广银联-批量代付-本次总支付条数为0条，退出')
+                            });
+                            
+                            //解除锁表
+                            eUtil.unlock('GZ_UNIONPAY_PAY');
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: '广银联-批量代付-解锁'
+                            });
+            
+                            return;
+                        }
+                        //根节点生成
+                        var gzelink = cmUtil.createNode({
+                            tag: 'GZELINK'
+                        });
+                        //info信息节点插入
+                        var info = cmUtil.addChild(gzelink, {
+                            tag: 'INFO'
+                        });
+                        //body信息节点插入
+                        var body = cmUtil.addChild(gzelink, {
+                            tag: 'BODY'
+                        });
+                        //trans_sum信息节点插入
+                        var trans_sum = cmUtil.addChild(body, {
+                            tag: 'TRANS_SUM'
+                        });
+                        //trans_details信息节点插入
+                        var trans_details = cmUtil.addChild(body, {
+                            tag: 'TRANS_DETAILS'
+                        });
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-报文基础结构生成完成'
+                        });
+                        /*******************************************************************
+                         *头信息明细生成
+                         ********************************************************************/
+                        /**
+                         *字段ID:TRX_CODE
+                         *字段名称:交易代码
+                         *类型:C(1, 20)
+                         *取值:100002
+                         *可空:否
+                         *备注:默认100002
+                         */
+                        cmUtil.addChild(info, {
+                            tag: 'TRX_CODE',
+                            text: '100002'
+                        });
+                        /**
+                         *字段ID:VERSION
+                         *字段名称:版本
+                         *类型:C(2)
+                         *取值:05
+                         *可空:否
+                         *备注:版本05进行了字段扩展，变更内容在字段说明中会标出，默认05
+                         */
+                        cmUtil.addChild(info, {
+                            tag: 'VERSION',
+                            text: '05'
+                        });
+                        /**
+                         *字段ID:DATA_TYPE
+                         *字段名称:数据格式
+                         *类型:N(1)
+                         *取值:2：xml格式
+                         *可空:可
+                         *备注:默认2
+                         */
+                        cmUtil.addChild(info, {
+                            tag: 'DATA_TYPE',
+                            text: '2'
+                        });
+                        /**
+                         *字段ID:LEVEL
+                         *字段名称:处理级别
+                         *类型:N(1)
+                         *取值:0-9,0实时处理,默认5
+                         *可空:可
+                         *备注:目前暂时只提供批量处理,默认5
+                         */
+                        cmUtil.addChild(info, {
+                            tag: 'LEVEL',
+                            text: '5'
+                        });
+                        /**
+                         *字段ID:USER_NAME
+                         *字段名称:用户名
+                         *类型:C(1,20)
+                         *取值:
+                         *可空:可
+                         *备注:需要提供用户名,做系统参数,系统参数[EBANK_GZ_UNIONPAY_USERNAME]
+                         */
+                        cmUtil.addChild(info, {
+                            tag: 'USER_NAME',
+                            text: gzUtil.username
+                        });
+                        /**
+                         *字段ID:USER_PASS
+                         *字段名称:用户密码
+                         *类型:
+                         *取值:
+                         *可空:可
+                         *备注:需要提供用户密码,做系统参数,系统参数[EBANK_GZ_UNIONPAY_PASSWORD]
+                         */
+                        cmUtil.addChild(info, {
+                            tag: 'USER_PASS',
+                            text: gzUtil.password
+                        });
+                        /**
+                         *字段ID:REQ_SN
+                         *字段名称:交易流水号
+                         *类型:C(30)
+                         *取值:
+                         *可空:否
+                         *备注:不重复流水(对代收付系统需要唯一)，付款批号
+                         */
+                        cmUtil.addChild(info, {
+                            tag: 'REQ_SN',
+                            text: reqSn
+                        });
+                        /**
+                         *字段ID:SIGNED_MSG
+                         *字段名称:签名信息
+                         *类型:
+                         *取值:
+                         *可空:否
+                         *备注:
+                         */
+                        cmUtil.addChild(info, {
+                            tag: 'SIGNED_MSG',
+                            text: ''
+                        });
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-报文INFO部分生成'
+                        });
+                        logger.info('广银联-批量代付-报文INFO部分生成,报文内容为:\n' + gzelink.toXML());
+                        /*******************************************************************
+                         *body信息，汇总信息生成
+                         ********************************************************************/
+                        /**
+                         *字段ID:BUSINESS_CODE
+                         *字段名称:业务代码
+                         *类型:C(6)
+                         *取值:
+                         *可空:非空
+                         *备注:需要确认给个固定值
+                         */
+                        cmUtil.addChild(trans_sum, {
+                            tag: 'BUSINESS_CODE',
+                            text: '09900'
+                        });
+                        /**
+                         *字段ID:MERCHANT_ID
+                         *字段名称:商户代码
+                         *类型:C(15)
+                         *取值:银联网络商户ID
+                         *可空:非空
+                         *备注:需要提供商户代码,做系统参数
+                         */
+                        cmUtil.addChild(trans_sum, {
+                            tag: 'MERCHANT_ID',
+                            text: gzUtil.merchantId
+                        });
+                        /**
+                         *字段ID:EXPECT_SEND_TIME
+                         *字段名称:预约发送时间
+                         *类型:C (14)
+                         *取值:YYYYMMDDHHMMSS
+                         *可空:可空
+                         *备注:填空，版本05新增，原提交时间不再由商户提交，提交时间为系统接收到交易的时间，系统会在预约时间发送到银行，不填表示即收即发
+                         */
+                        cmUtil.addChild(trans_sum, {
+                            tag: 'EXPECT_SEND_TIME',
+                            text: ''
+                        });
+                        /**
+                         *字段ID:TOTAL_ITEM
+                         *字段名称:总记录数
+                         *类型:N (1,4)
+                         *取值:
+                         *可空:非空
+                         *备注:
+                         */
+                        cmUtil.addChild(trans_sum, {
+                            tag: 'TOTAL_ITEM',
+                            text: totalLength
+                        });
+                        /**
+                         *字段ID:TOTAL_SUM
+                         *字段名称:总金额
+                         *类型:N (1,12)
+                         *取值:整数，单位分
+                         *可空:非空
+                         *备注:
+                         */
+                        cmUtil.addChild(trans_sum, {
+                            tag: 'TOTAL_SUM',
+                            text: totalSum
+                        });
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-报文TRANS_SUM部分生成'
+                        });
+                        logger.info('广银联-批量代付-报文TRANS_SUM部分生成,报文内容为:\n' + gzelink.toXML());
+                        /*******************************************************************
+                         *body信息，明细信息生成
+                         ********************************************************************/
+                        for (var i = 0;i < needPayRecords.length;i++) {
+                            var payRec = needPayRecords[i];
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: '广银联-批量代付-报文TRANS_DETAIL部分新增一条记录'
+                            });
+                            //trans_detail信息节点插入
+                            var trans_detail = cmUtil.addChild(trans_details, {
+                                tag: 'TRANS_DETAIL'
+                            });
+                            /**
+                             *字段ID:SN
+                             *字段名称:记录序号
+                             *类型:C(1,25)
+                             *取值:同一个请求内必须唯一。建议从0001开始递增
+                             *可空:非空
+                             *备注:csh_transaction_details下的detail_id
+                             */
+                            cmUtil.addChild(trans_detail, {
+                                tag: 'SN',
+                                text: payRec['detail_id']
+                            });
+                            /**
+                             *字段ID:BANK_CODE
+                             *字段名称:银行代码
+                             *类型:C(8)
+                             *取值:3-8位的银行代码，见附录4.3
+                             *可空:非空
+                             *备注:版本05开始银行代码扩展长度到最长8位，原3位代码不变
+                             */
+                            cmUtil.addChild(trans_detail, {
+                                tag: 'BANK_CODE',
+                                text: payRec['payee_bank_code']
+                            });
+                            /**
+                             *字段ID:ACCOUNT_NO
+                             *字段名称:账号
+                             *类型:N(1,32)
+                             *取值:银行卡或存折号码
+                             *可空:非空
+                             *备注:版本05开始对于农行的存折，如果商户要求系统进行处理，则系统将去掉省份代码后的账号发到银行进行交易，查询交易返回处理后的账号
+                             */
+                            cmUtil.addChild(trans_detail, {
+                                tag: 'ACCOUNT_NO',
+                                text: payRec['payee_account_number']
+                            });
+                            /**
+                             *字段ID:ACCOUNT_NAME
+                             *字段名称:账号名
+                             *类型:C(1,60)
+                             *取值:银行卡或存折上的所有人姓名
+                             *可空:非空
+                             *备注:
+                             */
+                            cmUtil.addChild(trans_detail, {
+                                tag: 'ACCOUNT_NAME',
+                                text: payRec['payee_account_name']
+                            });
+                            /**
+                             *字段ID:AMOUNT
+                             *字段名称:金额
+                             *类型:N(1,12)
+                             *取值:整数，单位分
+                             *可空:非空
+                             *备注:截取两位小数，金额*100
+                             */
+                            cmUtil.addChild(trans_detail, {
+                                tag: 'AMOUNT',
+                                text: parseInt(parseFloat(payRec['amount']) * 100)
+                            });
+                            /**
+                             *字段ID:CURRENCY
+                             *字段名称:货币类型
+                             *类型:C (3)
+                             *取值:人民币：CNY, 港元：HKD，美元：USD。不填时，默认为人民币
+                             *可空:可空
+                             *备注:版本05开始，查询交易会返回默认值
+                             */
+                            cmUtil.addChild(trans_detail, {
+                                tag: 'CURRENCY',
+                                text: ''
+                            });
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: '广银联-批量代付-报文TRANS_DETAIL新增记录完成'
+                            });
+                        }
+            
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-报文生成完成'
+                        });
+                        var xmlStr = '<?xml version="1.0" encoding="GBK"?>' + String(gzelink.toXML());
+                        xmlStr = xmlStr.replace(/\n */g, '').replace(/\t/g, '');
+                        logger.info(String('广银联-批量代付-报文生成完成,报文内容为:\n' + xmlStr));
+            
+                        //加密操作
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-开始执行加密操作'
+                        });
+                        try {
+                            var signedXmlStr = gzUtil.encryptXML(xmlStr);
+                        } catch (e) {
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: String('广银联-批量代付-加密部分出现异常，异常信息为:' + e.message)
+                            });
+                            errorMsg = String('加密部分出现异常:' + e.message);
+                            throw new Error('ENCRYPT_ERROR');
+                        }
+                        logger.info(String('广银联-批量代付-报文加密完成,报文内容为:\n' + signedXmlStr));
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-结束执行加密操作'
+                        });
+            
+                        //Http传输之前先修改本次待发送数据的接口状态和支付状态，避免出现接口传输成功，但是应用服务器宕机，导致无法正确回写支付状态
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-开始执行HTTP传输操作'
+                        });
+            
+                        var data = [];
+                        for (var i = 0;i < needPayRecords.length;i++) {
+                            data.push({
+                                detail_id: needPayRecords[i].detail_id,
+                                payment_status: 'PAY_SENT',
+                                interface_status: 'UNKNOWN',
+                                status_desc: '报文拼接完成，进入接口调用步骤',
+                                _status: 'update'
+                            });
+                        }
+            
+                        //HTTP传输操作
+                        try {
+                            var result = gzUtil.invokeInterface(signedXmlStr);
+                        } catch (e) {
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: String('广银联-批量代付-执行HTTP传输操作部分出现异常，异常信息为:' + e.message)
+                            });
+                            errorMsg = String('执行HTTP传输操作部分出现异常:' + e.message);
+                            throw new Error('HTTP_TRANS_ERROR');
+                        }
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-结束执行HTTP传输操作'
+                        });
+                        logger.info(String('广银联-批量代付-结束执行HTTP传输操作，返回结果为:' + result));
+            
+                        //验证返回信息
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: '广银联-批量代付-开始执行验证返回信息操作'
+                        });
+                        try {
+                            var validateResult = gzUtil.validateSign(result);
+                        } catch (e) {
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: String('广银联-批量代付-执行验证返回信息操作部分出现异常，异常信息为:' + e.message)
+                            });
+                            errorMsg = String('执行验证返回信息操作部分出现异常:' + e.message);
+                            throw new Error('VALIDATE_ERROR');
+                        }
+                        eUtil.log({
+                            ref_table: 'gzSend',
+                            log_text: String('广银联-批量代付-结束执行验证返回信息操作,验证结果为:' + validateResult)
+                        });
+            
+                        //信息验证成功，继续执行操作
+                        if (validateResult) {
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: '广银联-批量代付-开始执行返回信息转换操作'
+                            });
+                            try {
+                                // 修改xml头上的编码格式，CompositeMapLocator转换时根据头上的encoding进行转换
+                                result = result.replace('encoding="GBK"', 'encoding="UTF-8"');
+                                var resultMap = cmUtil.parseXml(result);
+                            } catch (e) {
+                                eUtil.log({
+                                    ref_table: 'gzSend',
+                                    log_text: String('广银联-批量代付-执行返回信息转换操作部分出现异常，异常信息为:' + e.message)
+                                });
+                                errorMsg = String('执行返回信息转换操作部分出现异常:' + e.message);
+                                throw new Error('PARSE_XML_ERROR');
+                            }
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: '广银联-批量代付-结束执行返回信息转换操作'
+                            });
+                            //查看整批支付状态
+                            //0000	系统接收成功
+                            //1000	报文域内容检查错（最终失败，具体错误见响应报文中报文体明细的ERR_MSG域）
+                            //1001	报文解析错（最终失败，一般为报文格式有误，无报文体明细返回）
+                            //1003	重复的流水号（新增响应码，最终结果）
+                            //0001	系统处理失败，整批交易未进行处理全部失败(最终结果，如果是代付，则未受理，不扣账户金额)
+                            var infoNode = resultMap.getChild('INFO');
+                            if (infoNode && infoNode.getChild('RET_CODE')) {
+                                //银联接受成功
+                                if (infoNode.getChild('RET_CODE').getText() == '0000') {
+                                    eUtil.log({
+                                        ref_table: 'gzSend',
+                                        log_text: '广银联-批量代付-传输成功，修改该批次资金接口支付状态为：支付传送[PAY_SENT],接口状态为:已发送:[SENT]'
+                                    });
+                                    throw new Error('TRANSFER_SUCCESS');
+                                }
+                                //银联接受异常
+                                else {
+                                    eUtil.log({
+                                        ref_table: 'gzSend',
+                                        log_text: '广银联-批量代付-银联接受失败，修改该批次资金接口支付状态为：支付失败[PAY_FAILED],接口状态为:传送失败:[FAILED]'
+                                    });
+                                    errorMsg = String(infoNode.getChild('RET_CODE').getText() + '-' + infoNode.getChild('ERR_MSG').getText());
+                                    throw new Error('ACCESS_FAILED');
+                                }
+                            } else {
+                                eUtil.log({
+                                    ref_table: 'gzSend',
+                                    log_text: '广银联-批量代付-返回结果格式错误'
+                                });
+                                errorMsg = '返回结果格式错误';
+                                throw new Error('RESULT_FORMAT_ERROR');
+                            }
+                        } else {
+                            //信息验证失败，修改接口表支付状态为：支付传送[PAY_SENT]，接口状态为：传送状态未知[UNKNOWN]
+                            errorMsg = '返回结果验证失败';
+                            throw new Error('VALIDATE_ERROR');
+                        }
+                    } catch (e) {
+                        //签名异常，修改支付状态为等待发送[WAITING_SEND],接口状态为未发送[UNSENT]
+                        if (e.message == 'ENCRYPT_ERROR') {
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'WAITING_SEND',
+                                    interface_status: 'UNSENT',
+                                    status_desc: '报文加密阶段出现异常',
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                        //HTTP传输异常|返回结果验证异常|XML转换异常|返回结果格式异常，修改支付状态为支付传送[PAY_SENT],接口状态为传送状态未知[UNKNOWN]
+                        else if (e.message == 'HTTP_TRANS_ERROR' || e.message == 'VALIDATE_ERROR' || e.message == 'PARSE_XML_ERROR' || e.message == 'RESULT_FORMAT_ERROR') {
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'PAY_SENT',
+                                    interface_status: 'UNKNOWN',
+                                    hec_batch_num: reqSn,
+                                    hec_detail_num: needPayRecords[i].detail_id,
+                                    status_desc: String(e.message + '-' + errorMsg),
+                                    itf_pay_date: eUtil.getTime(),
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                        //广银联接收失败，修改支付状态为支付失败[PAY_FAILED],接口状态为传送失败[FAILED]
+                        else if (e.message == 'ACCESS_FAILED') {
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'PAY_FAILED',
+                                    interface_status: 'FAILED',
+                                    hec_batch_num: reqSn,
+                                    hec_detail_num: needPayRecords[i].detail_id,
+                                    status_desc: String(e.message + '-' + errorMsg),
+                                    itf_pay_date: eUtil.getTime(),
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                        //传输成功，广银联接收成功，修改支付状态为支付传送[PAY_SENT]，接口状态为已发送[SENT]
+                        else if (e.message == 'TRANSFER_SUCCESS') {
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'PAY_SENT',
+                                    interface_status: 'SENT',
+                                    hec_batch_num: reqSn,
+                                    hec_detail_num: needPayRecords[i].detail_id,
+                                    status_desc: '',
+                                    itf_pay_date: eUtil.getTime(),
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                        //其他异常情况，认为支付信息已发送[PAY_SENT]，接口状态未知[UNKNOWN]
+                        else {
+                            eUtil.log({
+                                ref_table: 'gzSend',
+                                log_text: String('广银联-批量代付-出现异常，异常信息为:' + e.message)
+                            });
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'PAY_SENT',
+                                    interface_status: 'UNKNOWN',
+                                    hec_batch_num: reqSn,
+                                    hec_detail_num: needPayRecords[i].detail_id,
+                                    status_desc: String(e.message),
+                                    itf_pay_date: eUtil.getTime(),
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                    }
+                } catch (e) {
+                    eUtil.log({
+                        ref_table: 'gzSend',
+                        log_text: String('广银联-批量代付-最外层出现异常，异常信息为:' + e.message)
+                    });
+                } finally {
+                    //解除锁表
+                    eUtil.unlock('GZ_UNIONPAY_PAY');
+                    eUtil.log({
+                        ref_table: 'gzSend',
+                        log_text: '广银联-批量代付-解锁'
+                    });
+                }
+            }
+            
+            doSend();
+    ]]></s:server-script>
+</p:procedure>

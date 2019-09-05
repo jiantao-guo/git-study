@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select * from (
+                SELECT
+                    f.company_id,
+                    f.company_code,
+                    f.company_short_name
+                FROM
+                    fnd_companies_vl f,
+                    gld_sob_work_order_types t
+                WHERE
+                    f.set_of_books_id =
+                    (SELECT v.set_of_books_id FROM fnd_companies_vl v WHERE v.company_id = ${/session/@company_id}
+                    ) AND
+                    f.set_of_books_id    = t.set_of_books_id AND
+                    t.authority_type     ='ALL' AND
+                    t.work_order_type_id = ${@work_order_type_id}
+                UNION
+                SELECT
+                    f.company_id,
+                    f.company_code,
+                    f.company_short_name
+                FROM
+                    fnd_companies_vl f,
+                    gld_sob_work_order_types t
+                WHERE
+                    f.company_id         = ${/session/@company_id} AND
+                    f.set_of_books_id    = t.set_of_books_id AND
+                    t.authority_type     = 'CURR_COMPANY' AND
+                    t.work_order_type_id = ${@work_order_type_id}
+                UNION
+                SELECT
+                    f.company_id,
+                    f.company_code,
+                    f.company_short_name
+                FROM
+                    fnd_companies_vl f,
+                    gld_sob_work_order_types t
+                WHERE
+                    f.company_id IN
+                    (SELECT
+                        company_id
+                    FROM
+                        fnd_companies u START
+                    WITH u.company_id =${/session/@company_id} CONNECT BY prior u.company_id = u.PARENT_COMPANY_ID
+                    ) AND
+                    f.set_of_books_id    = t.set_of_books_id AND
+                    t.authority_type     = 'COMPANY_JUNIOR' AND
+                    t.work_order_type_id = ${@work_order_type_id}
+                    --新设机构不包含
+                    and NOT EXISTS
+				         (SELECT 1
+				                  FROM fnd_dimensions fds, fnd_dimension_values fdvs
+				                 WHERE fds.dimension_id = fdvs.dimension_id
+				                   AND fds.dimension_code = 'PROJECT'
+				                   AND fdvs.enabled_flag = 'Y'
+				                   AND fdvs.dimension_value_code = f.company_code)
+                    )t
+                    #WHERE_CLAUSE#
+                    ORDER BY company_code
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="company_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="COMPANY_ID"/>
+        <bm:field name="company_code" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="150" forDisplay="true" forQuery="true" physicalName="COMPANY_CODE" prompt="COMPANY_CODE"/>
+        <bm:field name="company_short_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="280" forDisplay="true" forQuery="true" physicalName="COMPANY_SHORT_NAME" prompt="COMPANY_SHORT_NAME"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="company_code" queryExpression="t.company_code like ${@company_code}||&apos;%&apos;"/>
+        <bm:query-field name="company_short_name" queryExpression="t.company_short_name like ${@company_short_name}||&apos;%&apos;"/>
+        <!-- 职责过滤 -->
+        <!-- <bm:query-field name="duty_op" queryExpression="exists ( select  1       from CUX_EMPLOYEE_DUTY ce,cux_employee_duty_comp cdec       WHERE ce.cux_employee_duty_id = cdec.cux_employee_duty_id       and  ce.employee_id =  ${@employee_id}       and ce.duty_code =  ${@duty_code}       and cdec.company_id = t.company_id       and ce.enabled_flag = &apos;Y&apos; )"/> -->
+    </bm:query-fields>
+</bm:model>

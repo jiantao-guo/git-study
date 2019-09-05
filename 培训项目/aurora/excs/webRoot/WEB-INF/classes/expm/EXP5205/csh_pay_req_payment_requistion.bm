@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        t.*,
+                        t.amount - t.document_payed_amount payment_amount,
+                        t.amount - t.document_payed_amount unpaid_amount
+                    FROM
+                        (SELECT
+                            h.payment_requisition_header_id,
+                            l.payment_requisition_line_id,
+                            l.payment_requisition_line_id payment_line_id,
+                            h.requisition_number document_num, --alias
+                            TO_CHAR(h.requisition_date, 'YYYY-MM-DD') requisition_date,
+                            l.partner_category,
+                            l.partner_category payee_category,
+                            (SELECT
+                                a.code_value_name
+                            FROM
+                                sys_code_values_v a
+                            WHERE
+                                a.code       = 'PAYMENT_OBJECT' AND
+                                a.code_value = l.partner_category
+                            ) document_payee_category, --p_partner_category
+                            l.partner_id,
+                            l.partner_id payee_id,
+                            DECODE(l.partner_category, 'EMPLOYEE',
+                            (SELECT
+                                ee.employee_code
+                                || '-'
+                                || ee.name
+                            FROM
+                                exp_employees ee
+                            WHERE
+                                ee.employee_id = l.partner_id
+                            ), 'VENDER',
+                            (SELECT
+                                svv.vender_code
+                                || '-'
+                                || svv.description
+                            FROM
+                                pur_system_venders_vl svv
+                            WHERE
+                                svv.vender_id = l.partner_id
+                            ), 'CUSTOMER',
+                            (SELECT
+                                scv.customer_code
+                                || '-'
+                                || scv.description
+                            FROM
+                                ord_system_customers_vl scv
+                            WHERE
+                                scv.customer_id = l.partner_id
+                            )) document_payee_id, --partner_name
+                            l.payment_method payment_method_id,
+                            (SELECT
+                                m.description
+                            FROM
+                                csh_payment_methods_vl m
+                            WHERE
+                                m.payment_method_id = l.payment_method
+                            ) payment_method,
+                            h.currency_code,
+                            gld.currency_name,
+                            (SELECT
+                                b.description
+                            FROM
+                                csh_transaction_classes_vl b
+                            WHERE
+                                b.csh_transaction_class_code = l.csh_transaction_class_code AND
+                                b.csh_transaction_type_code  = 'PREPAYMENT'
+                            ) transaction_class_desc,
+                            (SELECT
+                                v.description
+                            FROM
+                                csh_pay_req_types_vl v
+                            WHERE
+                                h.payment_req_type_id = v.type_id
+                            ) payment_requisition_line_type,
+                            (SELECT
+                                erh.exp_requisition_number
+                            FROM
+                                exp_requisition_headers erh
+                            WHERE
+                                erh.exp_requisition_header_id = l.ref_document_id
+                            ) ref_document_number,
+                            l.amount,
+                            (SELECT
+                                NVL(SUM(r.amount), 0)
+                            FROM
+                                csh_payment_requisition_refs r
+                            WHERE
+                                r.payment_requisition_line_id = l.payment_requisition_line_id
+                            ) document_payed_amount, --paid_amount
+                            h.employee_id,
+                            h.company_id RPT_COMP_ID,
+                            (SELECT
+                                fv.COMPANY_CODE
+                                ||'-'
+                                ||fv.COMPANY_SHORT_NAME
+                            FROM
+                                fnd_companies_vl fv
+                            WHERE
+                                fv.COMPANY_ID=h.company_id
+                            ) document_company, --REPORT_COMPANY
+                            l.account_number,
+                            'PAYMENT_REQUISITION' document_type
+                        FROM
+                            csh_payment_requisition_hds h,
+                            csh_payment_requisition_lns l,
+                            csh_doc_payment_company c,
+                            gld_currency_vl gld,
+                            (SELECT
+                                sys_parameter_pkg.value('SYS_INTERFACE_TYPE') AS interface_type
+                            FROM
+                                dual
+                            ) erp
+                        WHERE
+                            h.payment_requisition_header_id                                                                          = l.payment_requisition_header_id AND
+                            sys_user_secure_exit_pkg.csh_payment_req_payment(h.payment_requisition_header_id,${/session/@session_id})='Y' AND
+                            c.document_id                                                                                            = h.payment_requisition_header_id AND
+                            c.document_line_id                                                                                       = l.payment_requisition_line_id AND
+                            c.document_type                                                                                          = 'PAYMENT_REQUISITION' AND
+                            c.payment_status                                                                                        IN ('ALLOWED', 'PAID') AND
+                            --支付过的付款单不能再被支付
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                csh_payment_requisition_refs r
+                            WHERE
+                                r.payment_requisition_line_id = l.payment_requisition_line_id AND
+                                r.amount                      = l.amount
+                            ) AND
+                            h.reversed_flag IS NULL AND
+                            h.status         ='APPROVED' AND
+                            (
+                                (
+                                    h.audit_flag       ='Y' AND
+                                    erp.interface_type = 'EBS-AP'
+                                )
+                                OR
+                                (
+                                    erp.interface_type != 'EBS-AP' OR
+                                    erp.interface_type IS NULL
+                                )
+                            )
+                            AND
+                            h.currency_code       =gld.currency_code(+) AND
+                            c.payment_company_id IN
+                            (SELECT
+                                eea.company_id
+                            FROM
+                                exp_employee_assigns eea
+                            WHERE
+                                eea.employee_id =
+                                (SELECT
+                                    su.employee_id
+                                FROM
+                                    sys_user su
+                                WHERE
+                                    su.user_id = ${/session/@user_id}
+                                ) AND
+                                eea.enabled_flag ='Y'
+                            )
+                        ) t
+                    WHERE
+                        (
+                            t.amount - t.document_payed_amount
+                        )
+                        > 0
+                    ORDER BY
+                        document_num DESC
+                    ) x #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@session_id"/>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="employee_id" dataType="java.lang.Integer" queryExpression="employee_id = ${@employee_id}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="currency_code = ${@currency_code}"/>
+        <bm:query-field name="document_date_from" dataType="java.lang.String" queryExpression="requisition_date &gt;= ${@document_date_from}"/>
+        <bm:query-field name="document_date_to" dataType="java.lang.String" queryExpression="requisition_date &lt;= ${@document_date_to}"/>
+        <bm:query-field name="document_payee_category" dataType="java.lang.String" queryExpression="partner_category = ${@document_payee_category}"/>
+        <bm:query-field name="document_payee_id" dataType="java.lang.Integer" queryExpression="partner_id = ${@document_payee_id}"/>
+        <bm:query-field name="document_num" dataType="java.lang.String" queryExpression="document_num like &apos;%&apos;||${@document_num}||&apos;%&apos;"/>
+        <bm:query-field name="rpt_comp_id" dataType="java.lang.Long" queryExpression="rpt_comp_id = ${@rpt_comp_id}"/>
+        <bm:query-field name="document_payment_method_id" dataType="java.lang.Long" queryExpression="payment_method_id = ${@document_payment_method_id}"/>
+        <bm:query-field name="document_company_id" queryExpression="rpt_comp_id=${@document_company_id}"/>
+    </bm:query-fields>
+</bm:model>

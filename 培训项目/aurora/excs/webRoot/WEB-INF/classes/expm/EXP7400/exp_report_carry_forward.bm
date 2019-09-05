@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Rick
+    $Date: 2017-10-12 16:42:21  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	SELECT v.*,
+			       (SELECT scv.code_value_name
+			          FROM sys_code_values_v scv
+			         WHERE scv.code = 'WLZQ_CARRY_FORWARD_STATUS'
+			           AND scv.code_value = v.carry_forward_status) carry_forward_status_desc
+			  FROM (SELECT o.exp_report_header_id,
+			               o.exp_report_number,
+			               o.report_date,
+			               o.exp_report_type_id,
+			               o.type_description,
+			               o.carry_forward_company_name,
+			               o.carry_forward_company_code,
+			               o.carry_forward_company_id,
+			               o.audit_flag_desc,
+			               o.page_name,
+			               cux_exp_carray_forward_pkg.get_forward_status(o.exp_report_header_id,
+			                                                             o.carry_forward_company_id) carry_forward_status,
+			               SUM(o.sale_amount) carry_forward_amount,
+			               to_char((SELECT cecr.creation_date
+			                         FROM cux_exp_cf_ref cecr
+			                        WHERE cecr.exp_report_header_id =
+			                              o.exp_report_header_id
+			                          AND cecr.company_id = o.carry_forward_company_id
+			                          AND rownum = 1),
+			                       'yyyy-mm-dd') carry_forward_date,
+			               (SELECT work_order_header_id
+			                         FROM cux_exp_cf_ref cecr
+			                        WHERE cecr.exp_report_header_id =
+			                              o.exp_report_header_id
+			                          AND cecr.company_id = o.carry_forward_company_id
+			                          AND rownum = 1) work_order_header_id
+			          FROM (SELECT h.exp_report_header_id,
+			                       h.exp_report_number,
+			                       to_char(h.report_date, 'yyyy-mm-dd') report_date,
+			                       h.exp_report_type_id,
+			                       ert.description type_description,
+			                       (SELECT fcv.company_short_name
+			                          FROM fnd_companies_vl fcv, fnd_dimension_values fdv
+			                         WHERE fcv.company_code = fdv.dimension_value_code
+			                           AND fdv.dimension_value_id = l.dimension5_id) carry_forward_company_name,
+			                       (SELECT fcv.company_code
+			                          FROM fnd_companies_vl fcv, fnd_dimension_values fdv
+			                         WHERE fcv.company_code = fdv.dimension_value_code
+			                           AND fdv.dimension_value_id = l.dimension5_id) carry_forward_company_code,
+			                       (SELECT fcv.company_id
+			                          FROM fnd_companies_vl fcv, fnd_dimension_values fdv
+			                         WHERE fcv.company_code = fdv.dimension_value_code
+			                           AND fdv.dimension_value_id = l.dimension5_id) carry_forward_company_id,
+			                       '已审核' audit_flag_desc,
+			                       pv.page_name,
+			                       l.sale_amount
+			                  FROM exp_report_headers          h,
+			                       exp_report_lines            l,
+			                       exp_expense_report_types_vl ert,
+			                       exp_report_type_pages_v     pv
+			                 WHERE h.exp_report_header_id = l.exp_report_header_id
+			                   AND h.audit_flag = 'Y'
+			                   AND nvl(h.reversed_flag, 'N') = 'N'
+			                   AND h.exp_report_type_id = ert.expense_report_type_id
+			                   AND ert.document_page_type = pv.page_type
+			                   AND pv.page_usage = 'QUERY'
+			                   AND EXISTS
+			                 (SELECT 1
+			                          FROM fnd_dimension_values fdv, fnd_companies fc
+			                         WHERE l.dimension5_id = fdv.dimension_value_id
+			                           AND fdv.dimension_value_code = fc.company_code)) o
+			         GROUP BY o.exp_report_header_id,
+			                  o.exp_report_number,
+			                  o.report_date,
+			                  o.exp_report_type_id,
+			                  o.type_description,
+			                  o.carry_forward_company_name,
+			                  o.carry_forward_company_code,
+			                  o.carry_forward_company_id,
+			                  o.audit_flag_desc,
+			                  o.page_name) v
+       
+
+
+			          #WHERE_CLAUSE# 
+
+   		]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+            	begin
+            		cux_exp_carray_forward_pkg.exp_carry_forward(p_exp_report_header_id     => ${@exp_report_header_id},
+                              p_carry_forward_company_id =>  ${@carry_forward_company_id},
+                              p_user_id                  =>  ${/session/@user_id},
+                              p_carry_forward_date       =>  to_date(${@carry_forward_date},'yyyy-mm-dd'),
+                              p_company_id               =>  ${/session/@company_id});
+            	end;
+        	]]></bm:update-sql>
+            <bm:parameters>
+                <bm:parameter name="ref_id" dataType="java.lang.Integer" input="true"/>
+            </bm:parameters>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+            	begin
+            		cux_exp_carray_forward_pkg.cancel_exp_carry_forward(p_exp_report_header_id     => ${@exp_report_header_id},
+                                     p_carry_forward_company_id  => ${@carry_forward_company_id},
+                                     p_user_id                   => ${/session/@user_id});
+            	end;
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="exp_report_number" queryExpression="v.exp_report_number like ${@exp_report_number}"/>
+        <bm:query-field name="exp_report_type_id" queryExpression="v.exp_report_type_id = ${@exp_report_type_id}"/>
+        <bm:query-field name="carry_forward_company_id" queryExpression="v.carry_forward_company_id = ${@carry_forward_company_id}"/>
+        <bm:query-field name="carry_forward_status" queryExpression="v.carry_forward_status = ${@carry_forward_status}"/>
+        <bm:query-field name="carry_forward_date_from" queryExpression="v.carry_forward_date &gt;= ${@carry_forward_date_from}"/>
+        <bm:query-field name="carry_forward_date_to" queryExpression="v.carry_forward_date &lt;= ${@carry_forward_date_to}"/>
+    </bm:query-fields>
+</bm:model>

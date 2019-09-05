@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Guoxuezhao  
+    $Date: 2011-10-9 下午6:51:33  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autocount="false" fetchall="true" model="pur.PUR5110.pur_requisition_line" rootpath="requisition_line"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur_requisition_allocate_quotation_query_tax_rate_link" model="pur.PUR5110.pur_requisition_allocate_quotation_query_tax_rate" modelaction="query"/>
+        <a:link id="pur_requisition_allocate_quotation_query_tax_type_link" model="pur.PUR5110.pur_requisition_allocate_quotation_query_tax_type" modelaction="query"/>
+        <a:link id="pur_requisition_allocate_quotation_update_link" model="db.pur_purchase_requisition_pkg.update_pur_req_lines_quotation" modelaction="update"/>
+        <script><![CDATA[
+            function init() {
+                init_quotation_price();
+                keyup_computer_price();
+            }
+            
+            function closeWin() {
+                $('quotationWin').close();
+            }
+            
+            function init_quotation_price() {
+                var vender_item_list_id = '${/model/requisition_line/record/@vender_item_list_id}';
+                if (!vender_item_list_id == "") { //如该申请行是通过供应商物品定义选择后创建出的行，则单价及金额不允许修改。
+                    $('requisition_allocate_ds').getCurrentRecord().getField('quotation_price').setReadOnly(true);
+                }
+            }
+            
+            function keyup_computer_price() {
+                var line_record = $('requisition_line_ds').getCurrentRecord();
+                var allocate_record = $('requisition_allocate_ds').getCurrentRecord();
+                var num_amount = 0;
+                var num_amount_tax = 0;
+                var num_quotation_price = allocate_record.get('quotation_price'); //报价金额
+                var num_quotation_price_qty = line_record.get("primary_quantity"); //申请数量
+                var tax_rate = Number(allocate_record.get("tax_type_rate")); //税率
+                var is_tax = allocate_record.get("quotation_tax_flag");
+                if (is_tax == "Y") {
+                    num_amount_tax = num_quotation_price * num_quotation_price_qty;
+                    // num_amount = num_quotation_price * num_quotation_price_qty * (1 - tax_rate);
+                    num_amount = num_quotation_price * num_quotation_price_qty / (1 + tax_rate);
+                }
+                if (is_tax == "N") {
+                    num_amount_tax = num_quotation_price * num_quotation_price_qty * (1 + tax_rate);
+                    num_amount = num_quotation_price * num_quotation_price_qty;
+                }
+                allocate_record.set("amount", Math.round(num_amount * 100) / 100);
+                allocate_record.set("tax_amount", Math.round(num_amount_tax * 100) / 100);
+            }
+            
+            function saveAllocate() {
+                if (!$('requisition_allocate_ds').validate()) {
+                    return;
+                }
+                update_quotation_info();
+            }
+            
+            function update_quotation_info() {
+                var allocate_record = $('requisition_allocate_ds').getCurrentRecord();
+                var params = {};
+                params.pur_requisition_line_id = "${/parameter/@pur_requisition_line_id}";
+                params.vender_id = allocate_record.get("vender_id");
+                params.quotation_price = allocate_record.get("quotation_price");
+                params.quotation_price_qty = "${/model/requisition_line/record/@primary_quantity}";
+                params.quotation_tax_flag = allocate_record.get("quotation_tax_flag");
+                params.tax_type_id = allocate_record.get("tax_type_id");
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/pur.pur_requisition_allocate_quotation_update/update*/
+                    $('pur_requisition_allocate_quotation_update_link').getUrl(),
+                    para: params,
+                    success: update_back,
+                    scope: this,
+                    sync: false
+                });
+            }
+            
+            function update_back() {
+                $('requisition_allocate_ds').query();
+                //parent.data_reload();
+                closeWin();
+            }
+            
+            function dsUpdateHandle(dataSet, record, name, value, oldvalue) {
+                if ("vender_name" == name) {
+                    var params = {};
+                    params.vender_id = record.get('vender_id');
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/pur.pur_requisition_allocate_quotation_query_tax_type/query*/
+                        $('pur_requisition_allocate_quotation_query_tax_type_link').getUrl(),
+                        para: params,
+                        success: set_tax_type_value,
+                        scope: this
+                    });
+                    keyup_computer_price();
+                }
+                if ("tax_type_id" == name) {
+                    set_tax_rate();
+                }
+            
+                if (name == "quotation_price") {
+                    keyup_computer_price();
+                }
+            
+                if (name == "quotation_tax_flag") {
+                    keyup_computer_price();
+                }
+            }
+            
+            function set_tax_type_value(agrs) {
+                if (agrs.result != null) {
+                    var res = agrs.result.record;
+                    var record = $('requisition_allocate_ds').getCurrentRecord();
+                    //record.set('tax_type_code', res.tax_type_code);
+                    record.set('tax_type_id', res.tax_type_id);
+                } else {
+                    record.set('tax_type_code', '');
+                    record.set('tax_type_id', '');
+                }
+                set_tax_rate();
+            }
+            
+            function set_tax_rate() {
+                var params = {};
+                var record = $('requisition_allocate_ds').getCurrentRecord();
+                params.tax_type_id = $('requisition_allocate_ds').getCurrentRecord().get('tax_type_id');
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/pur.pur_requisition_allocate_quotation_query_tax_rate/query*/
+                    $('pur_requisition_allocate_quotation_query_tax_rate_link').getUrl(),
+                    para: params,
+                    success: set_tax_type_rate,
+                    scope: this
+                });
+            }
+            
+            function set_tax_type_rate(argv) {
+                var record = $('requisition_allocate_ds').getCurrentRecord();
+                if (argv.result != null) {
+                    var res = argv.result.record;
+                    var tax_type_rate = argv.result.record.tax_type_rate;
+                    record.set('tax_type_rate', res.tax_type_rate);
+                } else {
+                    record.set('tax_type_rate', 1);
+                }
+                keyup_computer_price();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="yes_no_ds" lookupCode="YES_NO"/>
+            <a:dataSet id="tax_type_ds" loadData="true" model="pur.PUR5110.pur_tax_type_cbx"/>
+            <a:dataSet id="requisition_line_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="pur_requisition_number" defaultValue="${/model/requisition_line/record/@pur_requisition_number}" readOnly="true"/>
+                    <a:field name="line_number" defaultValue="${/model/requisition_line/record/@line_number}" readOnly="true"/>
+                    <a:field name="requisition_date" defaultValue="${/model/requisition_line/record/@requisition_date}" readOnly="true"/>
+                    <a:field name="description" defaultValue="${/model/requisition_line/record/@description}" readOnly="true"/>
+                    <a:field name="item_desc" defaultValue="${/model/requisition_line/record/@item_desc}" readOnly="true"/>
+                    <a:field name="expense_item_desc" defaultValue="${/model/requisition_line/record/@expense_item_desc}" readOnly="true"/>
+                    <a:field name="primary_quantity" defaultValue="${/model/requisition_line/record/@primary_quantity}" readOnly="true"/>
+                    <a:field name="primary_uom" defaultValue="${/model/requisition_line/record/@primary_uom}" readOnly="true"/>
+                    <a:field name="price" defaultValue="${/model/requisition_line/record/@price}" readOnly="true"/>
+                    <a:field name="currency_code" defaultValue="${/model/requisition_line/record/@currency_code}" readOnly="true"/>
+                    <a:field name="exchange_rate" defaultValue="${/model/requisition_line/record/@exchange_rate}" readOnly="true"/>
+                    <a:field name="requisition_amount" defaultValue="${/model/requisition_line/record/@requisition_amount}" readOnly="true"/>
+                    <a:field name="requirement_date_from" defaultValue="${/model/requisition_line/record/@requirement_date_from}" readOnly="true"/>
+                    <a:field name="requirement_date_to" defaultValue="${/model/requisition_line/record/@requirement_date_to}" readOnly="true"/>
+                    <a:field name="requisition_functional_amount" defaultValue="${/model/requisition_line/record/@requisition_functional_amount}" readOnly="true"/>
+                    <a:field name="employee_name" defaultValue="${/model/requisition_line/record/@employee_name}" readOnly="true"/>
+                    <a:field name="position" defaultValue="${/model/requisition_line/record/@position}" readOnly="true"/>
+                    <a:field name="unit" defaultValue="${/model/requisition_line/record/@unit}" readOnly="true"/>
+                </a:fields>
+                <a:events><![CDATA[
+                ]]></a:events>
+            </a:dataSet>
+            <a:dataSet id="requisition_allocate_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="buyer_code" defaultValue="${/model/requisition_line/record/@buyer_name}" readOnly="true"/>
+                    <a:field name="vender_id" defaultValue="${/model/requisition_line/record/@vender_id}"/>
+                    <a:field name="vender_name" defaultValue="${/model/requisition_line/record/@vender_desc}" lovGridHeight="320" lovHeight="450" lovService="pur.pur_sys_venders_lov" lovWidth="500" required="true">
+                        <a:mapping>
+                            <a:map from="vender_id" to="vender_id"/>
+                            <a:map from="description" to="vender_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="quotation_price" defaultValue="${/model/requisition_line/record/@quotation_price}" required="true"/>
+                    <a:field name="quotation_tax_flag" defaultValue="${/model/requisition_line/record/@quotation_tax_flag}"/>
+                    <a:field name="quotation_tax_flag_desc" displayField="code_value_name" options="yes_no_ds" required="true" returnField="quotation_tax_flag" valueField="code_value"/>
+                    <a:field name="tax_type_id" defaultValue="${/model/requisition_line/record/@tax_type_id}"/>
+                    <a:field name="tax_type_code" displayField="tax_type_desc" options="tax_type_ds" required="true" returnField="tax_type_id" valueField="tax_type_id"/>
+                    <a:field name="tax_type_rate" defaultValue="${/model/requisition_line/record/@tax_type_rate}"/>
+                    <a:field name="amount" readOnly="true"/>
+                    <a:field name="tax_amount" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="dsUpdateHandle"/>
+                    <!-- <a:event name="load" handler="init"/> -->
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form title="PUR_REQUISITION_ALLOCATE.PUR_REQUISITION_QUERY" width="750">
+                <a:hBox labelWidth="100">
+                    <a:textField name="pur_requisition_number" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_HEADERS.PUR_REQUISITION_NUMBER"/>
+                    <a:textField name="line_number" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.LINE_NUMBER"/>
+                    <a:textField name="requisition_date" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_HEADERS.REQUISITION_DATE"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="description" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.DESCRIPTION" width="645"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="item_desc" bindTarget="requisition_line_ds" prompt="INV_SYSTEM_ITEMS.DESCRIPTION_ID" width="399"/>
+                    <a:textField name="expense_item_desc" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_ALLOCATE.EXPENSE_ITEM_CODE"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="primary_quantity" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.PRIMARY_QUANTITY"/>
+                    <a:textField name="primary_uom" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.PRIMARY_UOM"/>
+                    <a:textField name="price" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.PRICE"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="currency_code" bindTarget="requisition_line_ds" prompt="GLD_CURRENCY.CURRENCY_CODE"/>
+                    <a:textField name="exchange_rate" bindTarget="requisition_line_ds" prompt="BGT_JOURNAL_LINES.EXCHANGE_RATE"/>
+                    <a:textField name="requisition_amount" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.REQUISITION_AMOUNT"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="requirement_date_from" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.DATE_FROM"/>
+                    <a:textField name="requirement_date_to" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.DATE_TO"/>
+                    <a:textField name="requisition_functional_amount" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.REQUISITION_FUNCTIONAL_AMOUNT"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="employee_name" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_HEADERS.EMPLOYEE_ID"/>
+                    <a:textField name="position" bindTarget="requisition_line_ds" prompt="PUR_REQUISITION_LINES.POSITION_ID"/>
+                    <a:textField name="unit" bindTarget="requisition_line_ds" prompt="PUR_ORDER_LINES.UNIT_ID"/>
+                </a:hBox>
+            </a:form>
+            <a:form column="3" labelWidth="100" title="PUR_REQUISITION_ALLOCATE.QUOTATION_MAINTANACE" width="750">
+                <a:textField name="buyer_code" bindTarget="requisition_allocate_ds" prompt="PUR_BUYERS.BUYER_ID"/>
+                <a:lov name="vender_name" bindTarget="requisition_allocate_ds" prompt="PUR_SYSTEM_VENDERS.VENDER_ID"/>
+                <a:numberField name="quotation_price" allowDecimals="true" allowFormat="true" allowNegative="false" bindTarget="requisition_allocate_ds" prompt="PUR_REQUISITION_LINES.QUOTATION_PRICE"/>
+                <a:comboBox name="quotation_tax_flag_desc" bindTarget="requisition_allocate_ds" prompt="PUR_REQUISITION_LINES.QUOTATION_TAX_FLAG"/>
+                <a:comboBox name="tax_type_code" bindTarget="requisition_allocate_ds" prompt="FND_TAX_TYPE_CODES.TAX_TYPE_CODE"/>
+                <a:numberField name="amount" allowDecimals="true" allowFormat="true" allowNegative="false" bindTarget="requisition_allocate_ds" prompt="PUR_REQUISITION_ALLOCATE.AMOUNT"/>
+                <a:numberField name="tax_amount" allowDecimals="true" allowFormat="true" allowNegative="false" bindTarget="requisition_allocate_ds" prompt="PUR_REQUISITION_ALLOCATE.TAX_AMOUNT"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="saveAllocate" text="PROMPT.OK"/>
+                <a:button click="closeWin" text="PROMPT.CLOSE"/>
+            </a:hBox>
+        </a:screenBody>
+        <script><![CDATA[
+            init(); 
+        ]]></script>
+    </a:view>
+</a:screen>

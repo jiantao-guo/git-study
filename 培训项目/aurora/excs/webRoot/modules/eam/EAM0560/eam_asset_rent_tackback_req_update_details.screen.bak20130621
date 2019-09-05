@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-4-24 上午10:58:41  
+    $Revision: 1.0  
+    $Purpose: 出租收回维护
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="eam.eam0560.eam0560_requisition_headers_edit" rootPath="eam0560_req_header"/>
+        <a:model-query defaultWhereClause="t1.base_trx_category = &apos;BAC&apos; and t1.asset_book_id = ${/model/eam0560_req_header/record/@asset_book_id}" fetchAll="true" model="eam.eam0120.eam_transaction_types_lv" rootPath="eam0560_transaction_types"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="asset_headers_link" url="${/request/@context_path}/modules/eam/public/eam_asset_headers_readonly_for_requisition.screen"/>
+        <!-- <a:link id="eam0710_con_contract_headers_details_query_link_2" url="${/request/@context_path}/modules/cont/public/con_contract_headers_details_query.screen"/> -->
+        <script><![CDATA[
+            
+            // 点击岗位时查询
+            function eam0560_onPosFocusHandler() {
+                var employee_id = '${/model/eam0560_req_header/record/@employee_id}';
+                $('eam0560_org_position_ds').setQueryParameter('employee_id', employee_id);
+               	$('eam0560_org_position_ds').query();   
+            }
+            
+            //保存
+            function eam0560_save(){
+                // 验证
+                var validate = $('eam0560_req_lines_ds').validate();
+                if(!validate) {
+                    return false;
+                }
+                $('eam0560_rent_tackback_req_form_ds').submit();
+            }
+            
+            //确认收回
+            function eam0560_tackback(){
+                // 验证
+                var validate = $('eam0560_req_lines_ds').validate();
+                if(!validate) {
+                    return false;
+                }
+                
+                var data = $('eam0560_rent_tackback_req_form_ds').getJsonData();
+                
+                Aurora.request({
+                    url:'${/request/@context_path}/modules/eam/EAM0560/eam_asset_rent_tackback_req_update_save.svc',
+                    para:data,
+                    success: function(args) {
+			                 var requisition_header_id = '${/parameter/@requisition_header_id}';
+			                 var description = '';
+			                 var para = {};
+			                 para.requisition_header_id = requisition_header_id;
+			                 para.description = description;
+			                 
+			                Aurora.Masker.mask(Ext.getBody(), '${l:AST_ASSET.WAITING_FOR_OPERATION}');
+			                Aurora.request({
+			                    url:'${/request/@context_path}/autocrud/eam.eam0560.eam0560_requisition_headers_edit/execute',
+			                    para:para,
+			                    success: function(args) {
+			                        Aurora.Masker.unmask(Ext.getBody());
+                     				$('eam_asset_rent_tackback_update_window').close();  
+			                        $('eam0560_req_result_ds').query();
+			                    },
+			                    failure: function(args) {
+			                        Aurora.Masker.unmask(Ext.getBody());
+			                    },
+			                    error: function(args) {
+			                        Aurora.Masker.unmask(Ext.getBody());
+			                    }
+			                });
+                },
+                    failure: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    }
+                });
+            }
+            
+            // 整单删除
+            function eam0560_delete() {
+                var confirm = window.confirm('${l:EXP_REQUESTION_READONLY.SURE_DELETE_REQ}');
+                if(!confirm) {
+                 	return false;   
+                } 
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+                Aurora.Masker.mask(Ext.getBody(), '${l:AST_ASSET.WAITING_FOR_OPERATION}');
+                Aurora.request({
+                    url:'${/request/@context_path}/autocrud/eam.eam0560.eam0560_requisition_headers_edit/delete?requisition_header_id=' + requisition_header_id,
+                    success: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                     	$('eam_asset_rent_tackback_update_window').close();  
+                        $('eam0560_req_result_ds').query();
+                    },
+                    failure: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    }
+                });
+            }
+            
+            function eam0560AssetCodeEdit(record,name){
+                if(name == 'asset_code'){
+                    if (!record.isNew) {
+	                    return '';
+	                } else {
+	                    return 'eam0560_assert_code_lv';
+	                }
+                }
+            }
+            
+            function onOpenAsset(value, record, name){
+                var asset_id = record.get('asset_id');
+                
+                if (!record.isNew) {
+                    return '<a href="javascript:onOpenAssetInfo(' + asset_id + ')">'+value+'</a>';
+                }else{
+                    return value;
+                }
+            }
+            
+            function onOpenAssetInfo(asset_id) {
+                new Aurora.Window({
+                    id: 'eam_asset_rent_window',
+                    url: $('asset_headers_link').getUrl() + '?asset_id=' + asset_id,
+                    title: '${l:EAM_ASSET_HEADERS.SEARCH}',
+                    height: 430,
+                    width: 930
+                });
+            }
+            
+            /* function onOpenContract(value, record, name){
+                var asset_id = record.get('contract_id');
+                
+                if (!record.isNew) {
+                    return '<a href="javascript:onOpenContractInfo(' + contract_id + ')">'+value+'</a>';
+                }else{
+                    return value;
+                }
+            }
+            
+            function onOpenContractInfo(contract_id) {
+                new Aurora.Window({
+                    id: 'eam_asset_contract_details_window',
+                    url: $('eam0710_con_contract_headers_details_query_link_2').getUrl() + '?contract_header_id=' + contract_id+'&MODIFY_FLAG=false',
+                    title: '${l:CONTRACT_QUERY}',
+                    height: 430,
+                    width: 930
+                });
+            } */
+            
+            function onAdd(dataSet,record,index){
+                var lineNum = (index + 1) * 10;
+                record.set('line_number', lineNum);
+            }
+            
+            function onCellClickFun(grid, row, name, record){
+                if(name == 'asset_code'){
+                    var lovField = record.getField("asset_code");
+                    lovField.setLovPara('ast_requisition_type_id', '${/model/eam0560_req_header/record/@ast_requisition_type_id}');
+                    lovField.setLovPara('employee_id', '${/model/eam0560_req_header/record/@employee_id}');
+                    lovField.setLovPara('asset_book_id', '${/model/eam0560_req_header/record/@asset_book_id}');
+                }
+            }
+            
+            function dateValidate(record, name, value) {
+                if(record){
+	                if (name == 'start_date' || name == 'acceptance_date') {
+	                    var start_date = record.get('start_date');
+	                    var acceptance_date = record.get('acceptance_date');
+	                    
+	                    if (typeof(acceptance_date) != 'undefined' && !Ext.isEmpty(acceptance_date)) {
+	                        if (!compareDate(start_date, acceptance_date)) {
+	                            return '${l:EAM_REQUISITION_RENT_TACKBACK.START_DATE_ACCEPTANCE_DATE_VALIDATE}';
+	                        }
+	                    }
+	                    return true;
+	                }
+                }
+            }
+            
+            function compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+        ]]></script>
+        <!-- 声明dataSets -->
+        <a:dataSets>
+            <!-- 事务类型DS -->
+            <a:dataSet id="eam0560_transaction_types_ds">
+                <a:datas dataSource="/model/eam0560_transaction_types"/>
+            </a:dataSet>
+            <!-- 申请头DS -->
+            <a:dataSet id="eam0560_rent_tackback_req_form_ds" autoCreate="true" submitUrl="${/request/@context_path}/modules/eam/EAM0560/eam_asset_rent_tackback_req_update_save.svc">
+                <a:fields>
+                    <a:field name="requisition_number" defaultValue="${/model/eam0560_req_header/record/@requisition_number}" prompt="ACP_REQUISITION.REQUEST_NO" readOnly="true"/>
+                    <a:field name="asset_book_id" defaultValue="${/model/eam0560_req_header/record/@asset_book_id}"/>
+                    <a:field name="requisition_header_id" defaultValue="${/model/eam0560_req_header/record/@requisition_header_id}"/>
+                    <a:field name="period_name" defaultValue="${/model/eam0560_req_header/record/@period_name}"/>
+                    <a:field name="asset_book_desc" defaultValue="${/model/eam0560_req_header/record/@asset_book_desc}" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" readOnly="true"/>
+                    <a:field name="ast_requisition_type_id" defaultValue="${/model/eam0560_req_header/record/@ast_requisition_type_id}"/>
+                    <a:field name="unit_id" defaultValue="${/model/eam0560_req_header/record/@unit_id}"/>
+                    <a:field name="employee_id" defaultValue="${/model/eam0560_req_header/record/@employee_id}"/>
+                    <a:field name="position_id" defaultValue="${/model/eam0560_req_header/record/@position_id}"/>
+                    <!-- <a:field name="user_group_id"/> -->
+                    <a:field name="requisition_type" defaultValue="${/model/eam0560_req_header/record/@ast_requisition_type_desc}" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_TYPE_CODE" readOnly="true"/>
+                    <a:field name="requisition_date" defaultValue="${/model/eam0560_req_header/record/@requisition_date}" prompt="AST_REQUISITION_DATE" required="true"/>
+                    <a:field name="org_position" defaultValue="${/model/eam0560_req_header/record/@position_name}" prompt="AST_REQUISITION_POSITION" readOnly="true"/>
+                    <a:field name="req_employee_name" defaultValue="${/model/eam0560_req_header/record/@employee_name}" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_PROPOSER" readOnly="true"/>
+                    <a:field name="employee_name" defaultValue="${/model/eam0560_req_header/record/@employee_name}" prompt="AST_REQUISITION_ORIGINATOR" readOnly="true"/>
+                    <a:field name="description" defaultValue="${/model/eam0560_req_header/record/@description}" prompt="AST_REQUISITION_DESC"/>
+                    <a:field name="req_status_desc" defaultValue="${/model/eam0560_req_header/record/@req_status_desc}" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUSII" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 申请行DS -->
+            <a:dataSet id="eam0560_req_lines_ds" autoQuery="true" bindName="lines" bindTarget="eam0560_rent_tackback_req_form_ds" model="eam.eam0560.eam0560_requisition_lines_edit" queryUrl="${/request/@context_path}/autocrud/eam.eam0560.eam0560_requisition_lines_edit/query?requisition_header_id=${/parameter/@requisition_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="line_number"/>
+                    <a:field name="requisition_header_id" defaultValue="${/model/eam0560_req_header/record/@requisition_header_id}"/>
+                    <a:field name="asset_id"/>
+                    <a:field name="asset_name" prompt="EAM_ASSET_HEADERS.DESCRIPTION"/>
+                    <a:field name="from_location_desc" prompt="EAM_REQUISITION_LINES.FROM_LOCATION_DESC"/>
+                    <a:field name="asset_code" lovGridHeight="300" lovHeight="480" lovUrl="${/request/@context_path}/modules/eam/EAM0550/eam_asset_sql_query_lov.screen" lovWidth="920" prompt="EAM_ASSET_HEADERS.ASSET_CODE" required="true" title="EAM_ASSET_HEADERS.SEARCH">
+                        <a:mapping>
+                            <a:map from="asset_id" to="asset_id"/>
+                            <a:map from="asset_code" to="asset_code"/>
+                            <a:map from="asset_name" to="asset_name"/>
+                            <a:map from="description" to="from_location_desc"/>
+                            <a:map from="partner_name" to="partner_name"/>
+                            <a:map from="contract_id" to="contract_id"/>
+                            <a:map from="contract_name" to="contract_name"/>
+                            <a:map from="start_date" to="start_date"/>
+                            <a:map from="end_date" to="end_date"/>
+                            <a:map from="pl_amount" to="pl_amount"/>
+                        </a:mapping>
+                    </a:field>
+                    <!-- <a:field name="asset_code" lovGridHeight="300" lovHeight="450" lovService="eam.eam0550.eam0550_asset_herders_lv" lovWidth="550" prompt="EAM_ASSET_HEADERS.ASSET_CODE" required="true" title="EAM_ASSET_HEADERS.SEARCH">
+                        <a:mapping>
+                            <a:map from="asset_id" to="asset_id"/>
+                            <a:map from="asset_code" to="asset_code"/>
+                            <a:map from="description_text" to="asset_name"/>
+                            <a:map from="description" to="from_location_desc"/>
+                            <a:map from="partner_name" to="partner_name"/>
+                            <a:map from="contract_id" to="contract_id"/>
+                            <a:map from="contract_name" to="contract_name"/>
+                            <a:map from="start_date" to="start_date"/>
+                            <a:map from="end_date" to="end_date"/>
+                            <a:map from="pl_amount" to="pl_amount"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="to_location_id"/>
+                    <a:field name="to_location_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0550.eam0550_asset_location_lv?asset_book_id=${/model/eam0560_req_header/record/@asset_book_id}" lovWidth="550" prompt="EAM_REQUISITION_RENT_TACKBACK.TO_LOCATION_DESC" required="true" title="EAM_LOCATIONS.TITLE">
+                        <a:mapping>
+                            <a:map from="location_id" to="to_location_id"/>
+                            <a:map from="location_name" to="to_location_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="transaction_type_id" defaultValue="${/model/eam0560_req_header/record/@transaction_type_id}"/>
+                    <a:field name="trans_type_desc" defaultValue="${/model/eam0560_req_header/record/@trans_type_desc}" displayField="description" options="eam0560_transaction_types_ds" prompt="EAM_REQUISITION_TYPES.DEFAULT_TRX_TYPE_DESC" returnField="transaction_type_id" valueField="transaction_type_id"/>
+                    <a:field name="partner_name" prompt="EAM_REQUISITION_LINES.PARTNER_NAME"/>
+                    <a:field name="contract_id"/>
+                    <a:field name="contract_name" prompt="CON_CONTRACT_HEADERS.DOCUMENT_DESC"/>
+                    <a:field name="pl_amount" prompt="EAM_REQUISITION_LINES.AMOUNT"/>
+                    <a:field name="start_date" prompt="EAM_REQUISITION_LINES.START_DATE"/>
+                    <a:field name="end_date" prompt="EAM_REQUISITION_LINES.END_DATE"/>
+                    <a:field name="acceptance_date" prompt="EAM_REQUISITION_RENT_TACKBACK.ACCEPTANCE_DATE" required="true" validator="dateValidate"/>
+                    <a:field name="description" prompt="AST_REQUISITION_DESC"/>
+                    <a:field name="unit_id" defaultValue="${/model/eam0560_req_header/record/@unit_id}"/>
+                    <a:field name="employee_id" defaultValue="${/model/eam0560_req_header/record/@employee_id}"/>
+                    <a:field name="position_id" defaultValue="${/model/eam0560_req_header/record/@position_id}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="onAdd"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <!-- 申请头 -->
+            <a:form column="1" title="EAM_REQUISITION_RENT_TACKBACK_DETAILS.TITLE" width="730">
+                <a:hBox width="730">
+                    <a:textField name="req_employee_name" bindTarget="eam0560_rent_tackback_req_form_ds"/>
+                    <a:comboBox name="org_position" bindTarget="eam0560_rent_tackback_req_form_ds">
+                        <a:events>
+                            <a:event name="focus" handler="eam0560_onPosFocusHandler"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:textField name="employee_name" bindTarget="eam0560_rent_tackback_req_form_ds"/>
+                </a:hBox>
+                <a:hBox width="730">
+                    <a:textField name="requisition_number" bindTarget="eam0560_rent_tackback_req_form_ds"/>
+                    <a:textField name="asset_book_desc" bindTarget="eam0560_rent_tackback_req_form_ds"/>
+                    <a:textField name="requisition_type" bindTarget="eam0560_rent_tackback_req_form_ds"/>
+                </a:hBox>
+                <a:box column="2">
+                    <a:datePicker name="requisition_date" bindTarget="eam0560_rent_tackback_req_form_ds" style="float:left;margin-right: 10px;"/>
+                    <a:textField name="req_status_desc" bindTarget="eam0560_rent_tackback_req_form_ds"/>
+                </a:box>
+                <a:hBox width="730">
+                    <a:textArea name="description" bindTarget="eam0560_rent_tackback_req_form_ds" width="632"/>
+                </a:hBox>
+            </a:form>
+            <a:hBox>
+                <a:button click="eam0560_save" text="HAP_SAVE"/>
+                <a:button click="eam0560_tackback" text="HAP_TACKBACK"/>
+                <a:button click="eam0560_delete" text="PROMPT.DELETE_DOCUMENT"/>
+            </a:hBox>
+            <a:grid bindTarget="eam0560_req_lines_ds" height="200" navBar="true" width="1200">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="save"/>
+                    <a:button type="delete"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="line_number" align="center" editor="eam0560_quantityField" width="50"/>
+                    <a:column name="asset_code" align="center" editorFunction="eam0560AssetCodeEdit" renderer="onOpenAsset" width="120"/>
+                    <a:column name="asset_name" align="center" width="200"/>
+                    <a:column name="from_location_desc" align="center" width="100"/>
+                    <a:column name="partner_name" align="center" width="100"/>
+                    <a:column name="contract_name" align="center" width="100"/>
+                    <a:column name="start_date" align="center" renderer="Aurora.formatDate" width="100"/>
+                    <a:column name="end_date" align="center" renderer="Aurora.formatDate" width="100"/>
+                    <a:column name="pl_amount" align="right" width="100"/>
+                    <a:column name="to_location_desc" align="center" editor="eam0560_location_lv" width="100"/>
+                    <a:column name="acceptance_date" align="center" editor="eam0560_acceptance_date_dp" renderer="Aurora.formatDate" width="100"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="eam0560_quantityField" allowDecimals="false" allowNegative="false"/>
+                    <a:lov id="eam0560_assert_code_lv"/>
+                    <a:lov id="eam0560_location_lv"/>
+                    <a:datePicker id="eam0560_acceptance_date_dp"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="onCellClickFun"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

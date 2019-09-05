@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?><bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[SELECT *
+		  FROM (SELECT CPRH.REQUISITION_NUMBER,
+					   CPRH.PAYMENT_REQUISITION_HEADER_ID,
+					   CPRH.EMPLOYEE_ID,
+					   (SELECT EE.NAME || '-' || EE.EMPLOYEE_CODE
+						  FROM EXP_EMPLOYEES EE
+						 WHERE EE.EMPLOYEE_ID = CPRH.EMPLOYEE_ID) REQUISITOR,
+					   TO_CHAR(CPRH.REQUISITION_DATE, 'YYYY-MM-DD') REQUISITION_DATE,
+					   CPRH.CURRENCY_CODE,
+					   (select sum(b.amount)
+                          from csh_payment_requisition_lns b,
+                               con_document_flows A
+                         where A.DOCUMENT_TYPE = 'CON_CONTRACT'
+							   AND A.SOURCE_DOCUMENT_TYPE = 'CSH_PAYMENT_REQUISITION_LNS'
+							   AND A.DOCUMENT_ID =  ${@CONTRACT_HEADER_ID}
+							   and A.source_document_line_id = b.payment_requisition_line_id
+							   and b.payment_requisition_header_id=CPRH.PAYMENT_REQUISITION_HEADER_ID)  AMOUNT,
+					   CPRH.PARTNER_CATEGORY,
+					   (SELECT B.CODE_VALUE_NAME
+						  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+						 WHERE A.CODE_ID = B.CODE_ID
+						   AND A.CODE = 'PAYMENT_OBJECT'
+						   AND B.CODE_VALUE = CPRH.PARTNER_CATEGORY) P_PARTNER_CATEGORY,
+					   CPRH.PARTNER_ID,
+					   DECODE(CPRH.PARTNER_CATEGORY,
+							  'EMPLOYEE',
+							  (SELECT EE.EMPLOYEE_CODE || '-' || EE.NAME
+								 FROM EXP_EMPLOYEES EE
+								WHERE EE.EMPLOYEE_ID = CPRH.PARTNER_ID),
+							  'VENDER',
+							  (SELECT SVV.VENDER_CODE || '-' || SVV.DESCRIPTION
+								 FROM PUR_SYSTEM_VENDERS_VL SVV
+								WHERE SVV.VENDER_ID = CPRH.PARTNER_ID),
+							  'CUSTOMER',
+							  (SELECT SCV.CUSTOMER_CODE || '-' || SCV.DESCRIPTION
+								 FROM ORD_SYSTEM_CUSTOMERS_VL SCV
+								WHERE SCV.CUSTOMER_ID = CPRH.PARTNER_ID)) PAYEE_NAME,
+					   CPRH.DESCRIPTION,
+					   (select sum(b.amount)
+                          from csh_payment_requisition_lns a,
+                               csh_payment_requisition_refs b
+                         where a.payment_requisition_line_id = b.payment_requisition_line_id
+                           and a.payment_requisition_header_id=CPRH.PAYMENT_REQUISITION_HEADER_ID) sum_amount,
+                       (select v.description
+						  from csh_payment_methods_vl v
+						 where v.payment_method_id = CPRH.PAYMENT_METHOD_ID) PAYMENT_METHOD
+					 from CSH_PAYMENT_REQUISITION_HDS CPRH
+						 where CPRH.COMPANY_ID = ${/session/@company_id}
+						   AND exists
+						 (select 1
+								  from con_document_flows a
+								 where A.DOCUMENT_TYPE = 'CON_CONTRACT'
+								   AND A.SOURCE_DOCUMENT_TYPE = 'CSH_PAYMENT_REQUISITION_LNS'
+								   AND A.DOCUMENT_ID =  ${@CONTRACT_HEADER_ID}
+								   AND CPRH.PAYMENT_REQUISITION_HEADER_ID = A.SOURCE_DOCUMENT_ID)) V]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="CONTRACT_HEADER_ID"/>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

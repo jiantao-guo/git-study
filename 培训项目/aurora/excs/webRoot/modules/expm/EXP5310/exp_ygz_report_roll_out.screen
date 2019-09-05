@@ -1,0 +1,815 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: HM  
+    $Date: 2016-4-18 下午3:53:59  
+    $Revision: 1.0  
+    $Purpose: 报销单转出
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="exp.EXP1330.exp_ygz_usage_types_lov" rootPath="usage_type"/>
+        <!-- <a:model-query model="expm.get_batch_id" rootPath="batch_id"/> -->
+        <a:model-query model="expm.get_company_currency_code" rootPath="company_currency_code"/>
+        <a:model-query model="cont.sys_date" rootPath="sysdate"/>
+        <a:model-query model="expm.gld_get_default_period_name" rootPath="default_period_name"/>
+        <a:model-query model="gl.gl_segment_description" rootPath="segment_descs"/>
+        <a:model-query fetchAll="true" model="exp.EXP1340.exp_ygz_invoice_types_lov" rootPath="invoice_type"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="gld_get_period_name_link_3" model="expm.gld_get_period_name" modelaction="query"/>
+        <a:link id="exp_report_audit_account_tmp_control_link_1" url="${/request/@context_path}/modules/expm/public/exp_report_audit_account_tmp_control.svc"/>
+        <a:link id="exp_report_readonly_link" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl.screen"/>
+        <a:link id="exp_report_roll_out_submit_link" url="${/request/@context_path}/modules/expm/EXP5310/exp_ygz_report_roll_out_control.svc"/>
+        <a:link id="get_exchange_rate_link_13" model="expm.get_exchange_rate" modelaction="query"/>
+        <a:link id="get_accounts_result_link" model="expm.exp_report_accounts_query" modelaction="query"/>
+        <a:link id="exp_report_accounts_create_control_link_1" url="${/request/@context_path}/modules/expm/EXP5310/exp_report_roll_out_account_create_control.svc"/>
+        <a:link id="exp_ygz_report_roll_out_save_link" url="${/request/@context_path}/modules/expm/EXP5310/exp_ygz_report_roll_out_save.svc"/>
+        <a:link id="exp_report_roll_out_acc_mod_link" url="${/request/@context_path}/modules/expm/EXP5310/exp_ygz_report_roll_out_account_modify.svc"/>
+        <script><![CDATA[
+            // 全局变量
+            var flag = 0;
+            var save_flag = 0;
+            function exp1330_YGZRollOutQueryFun() {
+                $('exp_ygz_report_roll_out_result_ds').query();
+            }
+            
+            function exp1330_YGZRollOutResetFun() {
+                $('exp_ygz_report_roll_out_query_ds').reset();
+            }
+            
+            function exp1330_YGZRollOutAccountQueryFun() {
+                roll_out_result_load($('exp_ygz_report_roll_out_result_ds'));
+                // $('audit_account_result').query();
+            }
+            
+            function exp1330_YGZRollOutSubmitFun() {
+                var records = $('exp_ygz_report_roll_out_result_ds').getSelected();
+                var datas = [];
+                var url = $('exp_report_roll_out_submit_link').getUrl();
+                if (records.length > 0) {
+                    for (var i = 0;i < records.length;i++) {
+                        var data = new Object();
+                        data['exp_report_line_id'] = records[i].get('exp_report_line_id');
+                        datas.push(data);
+                    }
+                    Aurora.request({
+                        url: url,
+                        para: datas,
+                        success: function() {
+                            Aurora.showMessage('${l:PROMPT}', '提交成功！');
+                            $('exp_ygz_report_roll_out_result_ds').query();
+                        }
+                    });
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:EXP_REPORT.SELECT_DATA}');
+                }
+            }
+            
+             function createFunction(records) {
+                if(save_flag ==  1){
+                    return Aurora.showMessage('${l:PROMPT}', '请先保存数据');
+                }
+                records = $('exp_ygz_report_roll_out_result_ds').getJsonData(true); //added
+                if (records.length > 0) {
+                    if ($('input_date_ds').validate()) {
+                        if ($('exp_ygz_roll_out_per_ds').validate()) {
+                            var per_record = $('exp_ygz_roll_out_per_ds').getAll()[0];
+                            var journal_date = per_record.get('journal_date');
+                            journal_date = Aurora.formatDate(journal_date);
+                            var roll_out_per = per_record.get('roll_out_per');
+                            var param = new Object();
+                            var datas = [];
+                            for (var i = 0,
+                                l = records.length;i < l;i++) {
+                                var data = new Object();
+                                data = records[i];
+                                data['roll_out_per'] = roll_out_per;
+                                data['journal_date'] = journal_date;
+                                datas.push(data);
+                            }
+                            param['details'] = datas;
+                            Aurora.request({
+                                url: /*${/request/@context_path}/modules/expm/exp_report_accounts_create_control.svc*/
+                                $('exp_report_accounts_create_control_link_1').getUrl(),
+                                para: param,
+                                success: refresh,
+                                lockMessage: '正在处理....',
+                                error: errorRefresh,
+                                failure: errorRefresh,
+                                scope: this
+                            });
+                        }
+                    }
+                } else {
+                    return Aurora.showMessage('${l:PROMPT}', '${l:EXP_REPORT.SELECT_DATA}');
+                }
+            }
+            function refresh() {
+                flag = 0;
+                Aurora.showMessage('${l:PROMPT}', '${l:EXP_REPORT_ACCOUNTS.PROMPT}', function() {
+                    // if (exp1330_YGZRollOutQueryFun && typeof(exp1330_YGZRollOutQueryFun) == 'function') {
+                    // exp1330_YGZRollOutQueryFun();
+                    // }
+                    if (exp1330_YGZRollOutAccountQueryFun && typeof(exp1330_YGZRollOutAccountQueryFun) == 'function') {
+                        exp1330_YGZRollOutAccountQueryFun();
+                    }
+                });
+            }
+            
+            
+            function errorRefresh() {
+                flag = 0;
+            }
+            function checkNotEmpty(obj) {
+                return typeof(obj) != 'undefined' && !Ext.isEmpty(obj);
+            }
+            
+            function cdateValidator(record, name, value) {
+                if (name == 'create_date_from' || name == 'create_date_to') {
+                    var start_date = record.get('create_date_from');
+                    var end_date = record.get('create_date_to');
+                    if (checkNotEmpty(start_date) && checkNotEmpty(end_date) && (start_date > end_date)) {
+                        return '开始日期不能大于结束日期';
+                    }
+                }
+                return true;
+            }
+            
+            function expYGZOnUpdateQueryDsFun(ds, record, name, value, oldvalue) {
+                if (name == 'company_name') {
+                    if (Aurora.isEmpty(value)) {
+                        record.getField('all_company_flag').setReadOnly(true);
+                        record.set('all_company_flag', 'N');
+                    } else {
+                        record.getField('all_company_flag').setReadOnly(false);
+                    }
+                } else if (name == 'usage_type') {
+                    if (Aurora.isEmpty(value)) {
+                        $('exp_ygz_roll_out_per_ds').getAt(0).set('roll_out_per', null);
+                    } else {
+                        $('exp_ygz_roll_out_per_ds').setQueryParameter('usage_type', value);
+                        $('exp_ygz_roll_out_per_ds').setQueryParameter('period_name', $('input_date_ds').getAt(0).get('period_name'));
+                        if (value == 'YT888') {
+                            ds.getField('company_name').setRequired(true);
+                            ds.getField('all_company_flag').setReadOnly(true);
+                            record.set('all_company_flag', 'N');
+                        } else {
+                            ds.getField('company_name').setRequired(false);
+                            if (!Aurora.isEmpty(record.get('company_name'))) {
+                                ds.getField('all_company_flag').setReadOnly(false);
+                            }
+                        }
+                        $('exp_ygz_roll_out_per_ds').query();
+                    }
+                    record.set('company_id', '');
+                    record.set('company_name', '');
+                } else if (name == 'company_id') {
+                    $('exp_ygz_roll_out_per_ds').setQueryParameter('company_id', value);
+                    $('exp_ygz_roll_out_per_ds').query();
+                }
+            }
+            
+            function expRepNumRenderer(value, record, name) {
+                var header_id = record.get('exp_report_header_id');
+                var type_id = record.get('exp_report_type_id');
+                return '<a href="javascript:detailNewWindow(' + header_id + ',' + type_id + ');">' + value + '</a>';
+            }
+            
+            function detailNewWindow(header_id, type_id) {
+                new Aurora.Window({
+                    title: '',
+                    id: 'exp_report_maintain_screen',
+                    fullScreen: true,
+                    url: /*${/request/@context_path}/modules/expm/exp_report_readonly_wfl.screen*/
+                    $('exp_report_readonly_link').getUrl() + '?exp_report_header_id=' + header_id + '&exp_report_type_id=' + type_id,
+                    width: 950,
+                    height: 600
+                });
+            }
+            
+            // function doCreate() {
+            // var records = $('exp_ygz_report_roll_out_result_ds').getJsonData(true);
+            // if (records.length < 1) {
+            // Aurora.showWarningMessage('', '${l:PROMPT.PLEASE_SELECT}', null, 200, 100);
+            // return;
+            // }
+            // var param = new Object();
+            // var datas = [];
+            // for (var i = 0,
+            // l = records.length;i < l;i++) {
+            // var data = records[i];
+            // data['batch_id'] = '${/model/batch_id/record/@batch_id}';
+            // data['roll_out_per'] = $('exp_ygz_roll_out_per_ds').getAt(0).get('roll_out_per');
+            // data['roll_out_amount'] = roll_out_per * data['tax'];
+            // datas.push(data);
+            // }
+            // param['details'] = datas;
+            // param['batch_id'] = '${/model/batch_id/record/@batch_id}';
+            // Aurora.request({
+            // url: /*${/request/@context_path}/modules/expm/exp_report_audit_account_tmp_control.svc*/
+            // $('exp_report_audit_account_tmp_control_link_1').getUrl(),
+            // para: param,
+            // success: createSuccess,
+            // scope: this
+            // });
+            // }
+            
+            function saveFunction(){
+                 var recordsData = $('exp_ygz_report_roll_out_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选中数据保存', null, 350, 120);
+                    return;
+                }
+                for(var i=0;i<recordsData.length ;i++){
+                    //仅当“抵扣规则”选择“组合抵扣”时，校验“调整后全额抵扣税额”、“调整后部分抵扣税额”、“调整后不抵扣税额”三个字段的数值之和需要与“税额”字段的数值相等
+	    	        if( recordsData[i].usage_type== 'YT004'){
+	    	            var adjusted_full_deductions = recordsData[i].adjusted_full_deductions;
+	    	            var adjusted_partial_deductions = recordsData[i].adjusted_partial_deductions;
+	    	            var adjustable_tax_deductible = recordsData[i].adjustable_tax_deductible;
+	    	            var tax_amount = recordsData[i].tax_amount;
+	    	            var deductions_amount = adjusted_full_deductions+adjusted_partial_deductions+adjustable_tax_deductible;
+						if(deductions_amount != tax_amount){
+						     Aurora.showErrorMessage('提示',"“调整后全额抵扣税额”、“调整后部分抵扣税额”、“调整后不抵扣税额”三个字段的数值之和需要与“税额”字段的数值相等",null,320,130 );
+	    	            return;
+						}
+	    	        }
+	    	    }
+                Aurora.request({
+                    url: $('exp_ygz_report_roll_out_save_link').getUrl(),
+                    para: recordsData,
+                    success: function (){
+                        $('exp_ygz_report_roll_out_result_ds').query();
+                        save_flag = 0;
+                    },
+                    scope: this
+               		 });
+            }
+            
+            
+            // function createSuccess() {
+            // Aurora.request({
+            // url: /*${/request/@context_path}/modules/expm/exp_report_audit_account_tmp_control.svc*/
+            // $('get_accounts_result_link').getUrl(),
+            // para: {
+            // batch_id: '${/model/batch_id/record/@batch_id}'
+            // },
+            // success: checkPeriodName,
+            // scope: this
+            // });
+            // }
+            
+            // function checkPeriodName(args) {
+            // var records = args.result.record;
+            // var period_name = $('input_date_ds').getAt(0).get('period_name');
+            // if (period_name) {
+            // if (records.length) {
+            // for (var i = 0,
+            // l = records.length;i < l;i++) {
+            // checkChangeRateRecord(records, records[i], records.length);
+            // }
+            // } else {
+            // checkChangeRateRecord(records, records, records.length);
+            // }
+            // } else {
+            // Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+            // }
+            
+            // }
+            
+            // function checkChangeRateRecord(rs, record, length) {
+            
+            // var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}';
+            // var cur_code = record.currency_code;
+            // if (f_cur_code == cur_code) {
+            // flagIncrease(rs, length);
+            // } else {
+            // var from_currency = f_cur_code;
+            // var to_currency = cur_code;
+            // var exchange_rate_type = record.exchange_rate_type;
+            // var exchange_date = $('input_date_ds').getAt(0).get('journal_date');
+            // var exchange_period_name = $('input_date_ds').getAt(0).get('period_name');
+            // exchange_date = Aurora.formatDate(exchange_date);
+            // Aurora.request({
+            // url: /*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/
+            // $('get_exchange_rate_link_13').getUrl(),
+            // para: {
+            // "from_currency": from_currency,
+            // "to_currency": to_currency,
+            // "exchange_rate_type": exchange_rate_type,
+            // "exchange_date": exchange_date,
+            // "exchange_period_name": exchange_period_name
+            // },
+            // success: function(args) {
+            // var pluscols = args.result.record;
+            // if (pluscols.length) {
+            // if (pluscols[0].exchange_rate) {
+            // flagIncrease(rs, length);
+            // } else {
+            // if (record.exchange_rate_type_code != 'MANUAL') {
+            // flag = 0;
+            // Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+            // }
+            // }
+            // } else {
+            // if (pluscols.exchange_rate) {
+            // flagIncrease(rs, length);
+            // } else {
+            // if (record.exchange_rate_type_code != 'MANUAL') {
+            // flag = 0;
+            // Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+            // }
+            // }
+            // }
+            
+            // },
+            // scope: this
+            // });
+            // }
+            // }
+            
+            // function flagIncrease(rs, args) {
+            // flag++;
+            // if (flag == args || (args == null && flag == 1)) {
+            // createFunction(rs);
+            // }
+            // }
+            
+           
+            function dateUpdate() {
+                var journal_date = $('input_date_ds').getAt(0).get('journal_date');
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.gld_get_period_name/query*/
+                    $('gld_get_period_name_link_3').getUrl(),
+                    para: {
+                        p_date: journal_date
+                    },
+                    success: getPeriodName,
+                    scope: this
+                });
+            }
+            
+            function getPeriodName(args) {
+                var record = args.result.record;
+                var red = $('input_date_ds').getAt(0);
+                var period_name = '';
+                if (record.length) {
+                    period_name = record[0].period_name;
+                } else {
+                    period_name = record.period_name;
+                }
+                red.set('period_name', period_name);
+                if (!period_name) {
+                    Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+                }
+                if (!Aurora.isEmpty($('exp_ygz_report_roll_out_query_ds').getAt(0).get('usage_type'))) {
+                    $('exp_ygz_roll_out_per_ds').setQueryParameter('company_id', ${/session/@company_id});
+                    $('exp_ygz_roll_out_per_ds').setQueryParameter('period_name', $('input_date_ds').getAt(0).get('period_name'));
+                    $('exp_ygz_roll_out_per_ds').query();
+                }
+            }
+            
+            function roll_out_result_load(ds) {
+                
+                Linerecords = $('exp_ygz_report_roll_out_result_ds').getAll();
+                 for (var i = 0;i < Linerecords.length;i++) {
+                    var linerecord = Linerecords[i];
+                    if(linerecord.get('usage_type') =='YT004'){
+                        linerecord.getField('adjusted_full_deductions').setRequired(true);
+                        linerecord.getField('adjusted_partial_deductions').setRequired(true);
+                        linerecord.getField('adjustable_tax_deductible').setRequired(true);
+                        linerecord.getField('adjusted_full_deductions').setReadOnly(false);
+                        linerecord.getField('adjusted_partial_deductions').setReadOnly(false);
+                        linerecord.getField('adjustable_tax_deductible').setReadOnly(false);
+                    }else{
+                        linerecord.getField('adjusted_full_deductions').setRequired(false);
+                        linerecord.getField('adjusted_partial_deductions').setRequired(false);
+                        linerecord.getField('adjustable_tax_deductible').setRequired(false);
+                        linerecord.getField('adjusted_full_deductions').setReadOnly(true);
+                        linerecord.getField('adjusted_partial_deductions').setReadOnly(true);
+                        linerecord.getField('adjustable_tax_deductible').setReadOnly(true);
+                        linerecord.set('adjusted_full_deductions','');
+                        linerecord.set('adjusted_partial_deductions','');
+                        linerecord.set('adjustable_tax_deductible','');
+                    }
+                }
+                var record = ds.getCurrentRecord();
+                if (record) {
+                    var headerId = record.get('exp_report_header_id');
+                    var exp_report_line_id = record.get('exp_report_line_id');
+                    $('audit_account_result').setQueryParameter('header_id', headerId);
+                    $('audit_account_result').setQueryParameter('exp_report_line_id', exp_report_line_id);
+                    $('audit_account_result').query();
+                } else {
+                    $('audit_account_result').setQueryParameter('header_id', '');
+                    $('audit_account_result').setQueryParameter('exp_report_line_id', exp_report_line_id);
+                    $('audit_account_result').query();
+                }
+            }
+            
+            function roll_out_result_update(dataSet, record, name, value, oldvalue){
+                save_flag = 1;
+                 if (name == 'usage_type') {
+                    if(value == 'YT004'){
+                        record.getField('adjusted_full_deductions').setRequired(true);
+                        record.getField('adjusted_partial_deductions').setRequired(true);
+                        record.getField('adjustable_tax_deductible').setRequired(true);
+                        record.getField('adjusted_full_deductions').setReadOnly(false);
+                        record.getField('adjusted_partial_deductions').setReadOnly(false);
+                        record.getField('adjustable_tax_deductible').setReadOnly(false);
+                    }else{
+                        record.getField('adjusted_full_deductions').setRequired(false);
+                        record.getField('adjusted_partial_deductions').setRequired(false);
+                        record.getField('adjustable_tax_deductible').setRequired(false);
+                        record.getField('adjusted_full_deductions').setReadOnly(true);
+                        record.getField('adjusted_partial_deductions').setReadOnly(true);
+                        record.getField('adjustable_tax_deductible').setReadOnly(true);
+                        record.set('adjusted_full_deductions','');
+                        record.set('adjusted_partial_deductions','');
+                        record.set('adjustable_tax_deductible','');
+                    }
+                }
+            }
+            
+            function selectChange(grid, rowNum, record) {
+                $('audit_account_result').setQueryParameter('header_id', record.get('exp_report_header_id'));
+                $('audit_account_result').setQueryParameter('exp_report_line_id', record.get('exp_report_line_id'));
+                $('audit_account_result').query();
+            }
+            
+            function onLoad_rollOutPer_ds(ds) {
+                var records = ds.getAll();
+                if (records.length > 0) {
+                    if (Aurora.isEmpty(ds.getAt(0).get('roll_out_per'))) {
+                        ds.getAt(0).getField('roll_out_per').setReadOnly(false);
+                    } else {
+                        ds.getAt(0).getField('roll_out_per').setReadOnly(true);
+                    }
+                    if(ds.getAt(0).get('usage_type') == 'YT004'){
+                        ds.getAt(0).getField('roll_out_per').setRequired(false);
+                    }
+                }
+            }
+            function accountModifySave(){
+                var acc_records = $('audit_account_result').getAll();
+                var acc_datas = [];
+                var url = $('exp_report_roll_out_acc_mod_link').getUrl();
+                if (acc_records) {
+                    for (var i = 0;i < acc_records.length;i++) {
+                        var acc_data = new Object();
+                        acc_data['exp_report_je_line_id'] = acc_records[i].get('exp_report_je_line_id');
+                        acc_data['description'] = acc_records[i].get('description');
+                        acc_datas.push(acc_data);
+                    }
+                    Aurora.request({
+                        url: url,
+                        para: acc_datas,
+                        success: function() {
+                            Aurora.showMessage('${l:PROMPT}', '修改成功！');
+                            $('audit_account_result').query();
+                        }
+                    });
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '当前单据无凭证，无需保存。');
+                }
+            }
+            function summaryRenderer(datas, name) {
+                var sum = 0;
+                for (var i = 0;i < datas.length;i++) {
+                    var r = datas[i];
+                    var d = r.get(name);
+                    var n = parseFloat(d);
+                    if (!isNaN(n)) {
+                        sum += n;
+                    }
+                }   
+                   var total = (typeof(sum) == 'undefined' ? '' : parseFloat(sum).toFixed(3));
+	                 if(name == 'invoice_amount'){
+	                    return '<font>' + '发票金额合计：' + Convert(total) + '</font>';
+	                  }
+	                   if(name == 'invoice_tax_amount'){
+                    return '<font>' + '发票税额额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'report_amount'){
+                    return '<font>' + '报销金额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'tax_amount'){
+                    return '<font>' + '税额额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'sale_amount'){
+                    return '<font>' + '不含税金额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'adjusted_full_deductions'){
+                    return '<font>' + '全额抵扣税额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'adjusted_partial_deductions'){
+                    return '<font>' + '部分抵扣税额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'adjustable_tax_deductible'){
+                    return '<font>' + '不抵扣税额合计：' + Convert(total) + '</font>';
+                  }
+                  
+                 
+            }
+             function Convert(value) {
+                if(value){
+            	var s = value;
+            	 s += "";
+            	 if (s.indexOf(".") == -1){ s += ".00";}
+            	 if (/\.\d$/.test(s)){ s += "0";}   //正则判断
+                 while (/\d{4}(\.|,)/.test(s)){
+            	 	s = s.replace(/(\d)(\d{3}(\.|,))/, "$1,$2"); 
+            	 }       
+            	   return s;  
+                }else{
+                    return '';
+                }      
+           }
+	]]></script>
+        <a:dataSets>
+            <a:dataSet id="exp_report_status_ds" lookupCode="EXP_EXPENSE_REPORT_STATUS"/>
+            <a:dataSet id="yes_or_no_ds" lookupCode="YES_NO"/>
+            <a:dataSet id="exp_ygz_invoice_type_ds">
+                <a:datas dataSource="/model/invoice_type"/>
+            </a:dataSet>
+            <a:dataSet id="vat_invoice_status_ds" lookupCode="VMS_INVOICE_STATUS"/>
+            <a:dataSet id="exp_ygz_usage_type_ds">
+                <a:datas dataSource="/model/usage_type"/>
+            </a:dataSet>
+            <a:dataSet id="vat_input_tax_structure_detail_ds" fetchAll="true" loadData="true" model="exp.EXP1350.exp_ygz_input_tax_struc_dtl_lov"/>
+            <a:dataSet id="exp_ygz_report_roll_out_query_ds">
+                <a:fields>
+                    <a:field name="exp_report_number" prompt="单据编号"/>
+                    <a:field name="exp_report_type_id"/>
+                    <a:field name="exp_report_type_desc" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="expm.EXP2160.exp_report_types_query" lovWidth="540" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID" title="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID">
+                        <a:mapping>
+                            <!-- <a:map from="expense_report_type_id" to="exp_report_type_id"/> -->
+                            <a:map from="description" to="exp_report_type_desc"/>
+                            <a:map from="expense_report_type_code" to="exp_report_type_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exp_report_type_code"/>
+                    <a:field name="company_name" lovGridHeight="320" lovHeight="450" lovService="fnd.fnd_companies_lov" lovWidth="550" prompt="机构" title="机构查询">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="code_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="all_company_flag" checkedValue="Y" defaultValue="N" prompt="包含子公司" uncheckedValue="N"/>
+                    <a:field name="invoice_type"/>
+                    <a:field name="invoice_type_desc" displayField="type_name" options="exp_ygz_invoice_type_ds" prompt="发票类型" readOnly="false" returnField="invoice_type" valueField="type_code"/>
+                    <a:field name="invoice_number" prompt="发票号码"/>
+                    <a:field name="invoice_status_desc" displayField="code_value_name" options="vat_invoice_status_ds" returnField="invoice_status" valueField="code_value"/>
+                    <a:field name="invoice_status"/>
+                    <a:field name="usage_type"/>
+                    <a:field name="usage_type_desc" autoComplete="true" lovGridHeight="320" lovHeight="450" lovLabelWidth="100" lovService="exp.EXP1330.exp_ygz_usage_types_lov" lovWidth="540" prompt="抵扣规则" required="true" title="抵扣规则查询">
+                        <a:mapping>
+                            <a:map from="type_code" to="usage_type"/>
+                            <a:map from="type_name" to="usage_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="audit_flag" defaultValue="Y"/>
+                    <a:field name="audit_flag_desc" defaultValue="已审核" displayField="code_value_name" options="yes_or_no_ds" prompt="审核状态" readOnly="true" returnField="audit_flag" valueField="code_value"/>
+                    <a:field name="create_date_from" prompt="EXP_REPORT_HEADERS.REPORT_DATE_FROM" validator="cdateValidator"/>
+                    <a:field name="create_date_to" prompt="EXP_REPORT_HEADERS.REPORT_DATE_TO" validator="cdateValidator"/>
+                    <a:field name="input_tax_structure_detail"/>
+                    <a:field name="input_tax_struc_detail_desc" displayField="type_name" options="vat_input_tax_structure_detail_ds" returnField="input_tax_structure_detail" valueField="type_code"/>
+                    <a:field name="report_status"/>
+                    <a:field name="report_status_desc" displayField="code_value_name" options="exp_report_status_ds" returnField="report_status" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="expYGZOnUpdateQueryDsFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_ygz_report_roll_out_result_ds" autoPageSize="true" autoQuery="false" model="expm.EXP5310.exp_ygz_report_roll_out" queryDataSet="exp_ygz_report_roll_out_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="usage_type_desc" displayField="type_name" options="exp_ygz_usage_type_ds" returnField="usage_type" valueField="type_code"/>
+                    <a:field name="usage_type"/>
+                    <a:field name="invoice_status_desc" displayField="code_value_name" options="vat_invoice_status_ds" returnField="invoice_status" valueField="code_value"/>
+                    <a:field name="invoice_status"/>
+                    <a:field name="input_tax_structure_detail"/>
+                    <a:field name="input_tax_struc_detail_desc" displayField="type_name" options="vat_input_tax_structure_detail_ds" returnField="input_tax_structure_detail" valueField="type_code"/>
+                    <a:field name="invoice_type"/>
+                    <a:field name="invoice_type_desc" displayField="type_name" options="vat_invoice_type_ds" required="true" returnField="invoice_type" valueField="type_code">
+                        <a:mapping>
+                            <a:map from="special_invoice" to="special_invoice"/>
+                            <a:map from="einvoice_flag" to="einvoice_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="special_invoice"/>
+                    <a:field name="report_status"/>
+                    <a:field name="report_status_desc" displayField="code_value_name" options="exp_report_status_ds" returnField="report_status" valueField="code_value"/>
+                    <a:field name="audit_flag"/>
+                    <a:field name="audit_flag_desc" displayField="code_value_name" options="yes_or_no_ds" returnField="audit_flag" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="roll_out_result_load"/>
+                    <a:event name="update" handler="roll_out_result_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_ygz_roll_out_per_ds" autoCreate="true" model="expm.EXP5310.exp_ygz_get_usage_type_roll_per">
+                <a:fields>
+                    <a:field name="usage_type"/>
+                    <a:field name="roll_out_per" prompt="转出比率(%)" required="true"/>
+                    <a:field name="journal_date" defaultValue="${/model/sysdate/record/@now}" prompt="转出凭证日期" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="onLoad_rollOutPer_ds"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="input_date_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="journal_date" defaultValue="${/model/sysdate/record/@now}" prompt="转出凭证日期" required="true"/>
+                    <a:field name="period_name" defaultValue="${/model/default_period_name/record/@period_name}" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="dateUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="audit_account_result" bindTarget="exp_ygz_report_roll_out_result_ds" model="expm.EXP5310.exp_report_roll_out_accounts_query" selectable="true">
+                <a:fields>
+                    <a:field name="account_segment1" prompt="${/model/segment_descs/record/@segment1_desc}"/>
+                    <a:field name="account_segment2" prompt="${/model/segment_descs/record/@segment2_desc}"/>
+                    <a:field name="account_segment3" prompt="${/model/segment_descs/record/@segment3_desc}"/>
+                    <a:field name="account_segment4" prompt="${/model/segment_descs/record/@segment4_desc}"/>
+                    <a:field name="account_segment5" prompt="${/model/segment_descs/record/@segment5_desc}"/>
+                    <a:field name="account_segment6" prompt="${/model/segment_descs/record/@segment6_desc}"/>
+                    <a:field name="account_segment7" prompt="${/model/segment_descs/record/@segment7_desc}"/>
+                    <a:field name="account_segment8" prompt="${/model/segment_descs/record/@segment8_desc}"/>
+                    <a:field name="account_segment9" prompt="${/model/segment_descs/record/@segment9_desc}"/>
+                    <a:field name="account_segment10" prompt="${/model/segment_descs/record/@segment10_desc}"/>
+                    <a:field name="account_segment11" prompt="${/model/segment_descs/record/@segment11_desc}"/>
+                    <a:field name="account_segment12" prompt="${/model/segment_descs/record/@segment12_desc}"/>
+                    <a:field name="account_segment13" prompt="${/model/segment_descs/record/@segment13_desc}"/>
+                    <a:field name="account_segment14" prompt="${/model/segment_descs/record/@segment14_desc}"/>
+                    <a:field name="account_segment15" prompt="${/model/segment_descs/record/@segment15_desc}"/>
+                    <a:field name="account_segment16" prompt="${/model/segment_descs/record/@segment16_desc}"/>
+                    <a:field name="account_segment17" prompt="${/model/segment_descs/record/@segment17_desc}"/>
+                    <a:field name="account_segment18" prompt="${/model/segment_descs/record/@segment18_desc}"/>
+                    <a:field name="account_segment19" prompt="${/model/segment_descs/record/@segment19_desc}"/>
+                    <a:field name="account_segment20" prompt="${/model/segment_descs/record/@segment20_desc}"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <!-- <a:toolbarButton click="saveFunction" text="保存" width="80"/> -->
+                <a:toolbarButton click="exp1330_YGZRollOutResetFun" style="margin-left:20px" text="PROMPT.RESET" width="80"/>
+                <a:toolbarButton click="createFunction" text="PROMPT.CREATE_JE" width="80"/>
+                <a:toolbarButton click="exp1330_YGZRollOutSubmitFun" text="转出" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="exp_ygz_report_roll_out_query_ds" resultTarget="exp_ygz_report_roll_out_result_ds" style="width:100%;border:none">
+                <a:formToolBar labelWidth="100">
+                    <a:textField name="exp_report_number" bindTarget="exp_ygz_report_roll_out_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp1330_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:textField>
+                    <a:lov name="exp_report_type_desc" bindTarget="exp_ygz_report_roll_out_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp1330_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:lov>
+                    <!--  <a:lov name="company_name" bindTarget="exp_ygz_report_roll_out_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp1330_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:lov> -->
+                    <!-- <a:checkBox name="all_company_flag" bindTarget="exp_ygz_report_roll_out_query_ds"/> -->
+                    <a:lov name="usage_type_desc" bindTarget="exp_ygz_report_roll_out_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp1330_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:lov>
+                </a:formToolBar>
+                <a:formBody column="5" labelWidth="100">
+                    <a:datePicker name="report_date_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="报销日期从"/>
+                    <a:datePicker name="report_date_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="报销日期到"/>
+                    <a:textField name="invoice_code" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票代码"/>
+                    <a:textField name="invoice_number" bindTarget="exp_ygz_report_roll_out_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp1330_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:textField>
+                    <a:comboBox name="invoice_type_desc" bindTarget="exp_ygz_report_roll_out_query_ds"/>
+                    <a:datePicker name="invoice_date_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票日期从"/>
+                    <a:datePicker name="invoice_date_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票日期到"/>
+                    <a:numberField name="invoice_amount" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票金额"/>
+                    <a:numberField name="invoice_tax_amount_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票税额从"/>
+                    <a:numberField name="invoice_tax_amount_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票税额到"/>
+                    <a:numberField name="report_amount_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="报销金额从"/>
+                    <a:numberField name="report_amount_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="报销金额到"/>
+                    <a:textField name="tax_rate" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="税率(%)"/>
+                    <a:numberField name="tax_amount_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="税额从"/>
+                    <a:numberField name="tax_amount_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="税额到"/>
+                    <a:numberField name="sale_amount_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="不含税金额从"/>
+                    <a:numberField name="sale_amount_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="不含税金额到"/>
+                    <a:numberField name="adjusted_full_deductions_from" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后全额抵扣税额从"/>
+                    <a:numberField name="adjusted_full_deductions_to" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后全额抵扣税额到"/>
+                    <a:numberField name="adjusted_partial_deductions_from" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后部分抵扣税额从"/>
+                    <a:numberField name="adjusted_partial_deductions_to" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后部分抵扣税额到"/>
+                    <a:numberField name="adjustable_tax_deductible_from" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后不抵扣税额从"/>
+                    <a:numberField name="adjustable_tax_deductible_to" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后不抵扣税额到"/>
+                    <a:comboBox name="input_tax_struc_detail_desc" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="进项分类"/>
+                    <a:comboBox name="invoice_status_desc" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票状态"/>
+                    <a:comboBox name="report_status_desc" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="状态"/>
+                    <a:comboBox name="audit_flag_desc" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="审核标志"/>
+                    <a:datePicker name="audit_date_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="审核日期从"/>
+                    <a:datePicker name="audit_date_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="审核日期到"/>
+                    <!-- <a:comboBox name="invoice_status_desc" bindTarget="exp_ygz_report_roll_out_query_ds"/> -->
+                    <!--  <a:datePicker name="create_date_from" bindTarget="exp_ygz_report_roll_out_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp1330_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:datePicker>
+                    <a:datePicker name="create_date_to" bindTarget="exp_ygz_report_roll_out_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp1330_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:datePicker> -->
+                    <!-- <a:comboBox name="audit_flag_desc" bindTarget="exp_ygz_report_roll_out_query_ds"/> -->
+                </a:formBody>
+            </a:queryForm>
+            <a:form style="width:100%" title="转出处理">
+                <a:hBox labelWidth="100" style="margin-left:5px">
+                    <a:datePicker name="journal_date" bindTarget="exp_ygz_roll_out_per_ds" renderer="Aurora.formatDate" width="120"/>
+                    <a:numberField name="roll_out_per" allowDecimals="true" allowNegative="false" autoSelect="true" bindTarget="exp_ygz_roll_out_per_ds" decimalPrecision="2" max="100" min="0" width="50"/>
+                </a:hBox>
+            </a:form>
+            <a:grid id="expYGZResultGrid" bindTarget="exp_ygz_report_roll_out_result_ds" height="260" marginWidth="30" navBar="true" style="margin-left:5px;margin-top:5px">
+                <a:toolBar>
+                    <a:button type="excel"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="exp_report_number" align="center" lock="true" prompt="单据编号" renderer="expRepNumRenderer" width="150"/>
+                    <a:column name="line_number" align="center" prompt="行号" width="50"/>
+                    <a:column name="exp_report_type_desc" align="center" prompt="单据类型" width="150"/>
+                    <a:column name="report_date" align="center" prompt="报销日期" renderer="Aurora.formatDate" width="100"/>
+                    <a:column name="invoice_type_desc" align="center" prompt="发票类型" width="120"/>
+                    <a:column name="invoice_code" align="center" prompt="发票代码" width="100"/>
+                    <a:column name="invoice_number" align="center" prompt="发票号码" width="100"/>
+                    <a:column name="invoice_date" align="center" prompt="发票日期" width="100"/>
+                    <a:column name="invoice_amount" align="right" footerRenderer="summaryRenderer" prompt="发票金额" renderer="Aurora.formatMoney" width="140"/>
+                    <a:column name="invoice_tax_amount" align="right" footerRenderer="summaryRenderer" prompt="发票税额" renderer="Aurora.formatMoney" width="140"/>
+                    <!-- <a:column name="company_name" align="center" prompt="机构" width="120"/> -->
+                    <a:column name="report_amount" align="right" footerRenderer="summaryRenderer" prompt="报销金额" renderer="Aurora.formatMoney" width="170"/>
+                    <a:column name="tax_rate" align="center" prompt="税率(%)" width="80"/>
+                    <a:column name="tax_amount" align="right" footerRenderer="summaryRenderer" prompt="税额" renderer="Aurora.formatMoney" width="140"/>
+                    <a:column name="sale_amount" align="right" footerRenderer="summaryRenderer" prompt="不含税金额" renderer="Aurora.formatMoney" width="170"/>
+                    <a:column name="usage_type_desc" align="center" prompt="抵扣规则" width="120"/>
+                    <a:column name="adjusted_full_deductions" align="center" footerRenderer="summaryRenderer" prompt="调整后全额抵扣税额" renderer="Aurora.formatMoney" width="170"/>
+                    <a:column name="adjusted_partial_deductions" align="center" footerRenderer="summaryRenderer" prompt="调整后部分抵扣税额" renderer="Aurora.formatMoney" width="170"/>
+                    <a:column name="adjustable_tax_deductible" align="center" footerRenderer="summaryRenderer" prompt="调整后不抵扣税额" renderer="Aurora.formatMoney" width="170"/>
+                    <a:column name="input_tax_struc_detail_desc" align="center" prompt="进项分类" width="120"/>
+                    <a:column name="invoice_status_desc" align="center" prompt="发票状态" width="80"/>
+                    <a:column name="report_status_desc" align="center" prompt="状态" width="80"/>
+                    <a:column name="audit_flag_desc" align="center" prompt="审核标志" width="80"/>
+                    <a:column name="audit_date" align="center" prompt="审核日期" sortable="true" width="80"/>
+                    <a:column name="deductions_remark" prompt="抵扣备注" width="160"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="combox_editor"/>
+                    <a:numberField id="numberField_editor"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="rowclick" handler="selectChange"/>
+                </a:events>
+            </a:grid>
+            <a:grid autoFocus="false" bindTarget="audit_account_result" height="180" marginWidth="30" navBar="true" style="margin-top:5px;margin-left:5px;">
+                <a:toolBar>
+                    <a:button click="accountModifySave" icon="${/request/@context_path}/images/save.gif" text="HAP_SAVE"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="description" align="center" editor="tf_edit" prompt="CSH_WRITE_OFF_ACCOUNTS.DESCRIPTION" width="110"/>
+                    <a:column name="period_name" align="center" prompt="CSH_WRITE_OFF_ACCOUNTS.PERIOD_NAME" width="90"/>
+                    <a:column name="company_short_name" align="center" prompt="CSH_WRITE_OFF_ACCOUNTS.COMPANY_ID" width="90"/>
+                    <a:column name="responsibility_center_name" align="center" prompt="CSH_WRITE_OFF_ACCOUNTS.RESPONSIBILITY_CENTER_ID" width="100"/>
+                    <a:column name="account_code" align="center" prompt="CSH_WRITE_OFF_ACCOUNTS.ACCOUNT_ID" width="100"/>
+                    <a:column name="account_desc" align="center" prompt="CSH_WRITE_OFF_ACCOUNTS.ACCOUNT_NAME" width="120"/>
+                    <a:column name="entered_amount_dr" align="right" prompt="CSH_WRITE_OFF_ACCOUNTS.ENTERED_AMOUNT_DR" renderer="Aurora.formatMoney" width="80"/>
+                    <a:column name="entered_amount_cr" align="right" prompt="CSH_WRITE_OFF_ACCOUNTS.ENTERED_AMOUNT_CR" renderer="Aurora.formatMoney" width="80"/>
+                    <a:column name="functional_amount_dr" align="right" prompt="CSH_WRITE_OFF_ACCOUNTS.FUNCTIONAL_AMOUNT_DR" renderer="Aurora.formatMoney" width="80"/>
+                    <a:column name="functional_amount_cr" align="right" prompt="CSH_WRITE_OFF_ACCOUNTS.FUNCTIONAL_AMOUNT_CR" renderer="Aurora.formatMoney" width="80"/>
+                    <a:column name="account_segment1" align="center"/>
+                    <a:column name="account_segment2" align="center"/>
+                    <a:column name="account_segment3" align="center"/>
+                    <a:column name="account_segment4" align="center"/>
+                    <a:column name="account_segment5" align="center"/>
+                    <a:column name="account_segment6" align="center"/>
+                    <a:column name="account_segment7" align="center"/>
+                    <a:column name="account_segment8" align="center"/>
+                    <a:column name="account_segment9" align="center"/>
+                    <a:column name="account_segment10" align="center"/>
+                    <a:column name="account_segment11" align="center"/>
+                    <a:column name="account_segment12" align="center"/>
+                    <a:column name="account_segment13" align="center"/>
+                    <a:column name="account_segment14" align="center"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="tf_edit"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT o.*
+				  FROM (SELECT id,
+				               project_number,
+				               project_name,
+				               type_level1_code,
+				               type_level1_name,
+				               type_level2_code,
+				               type_level2_name,
+				               protocol_income_amount,
+				               status_code,
+				               status_name,
+				               bgt_period_name,
+				               unit_code,
+				               unit_name,
+				               org_code,
+				               org_name,
+				               customer_code,
+				               customer_name,
+				               resp_person_code,
+				               resp_person_name,
+				               creation_date,
+				               (SELECT o.pre_year
+				                  FROM (SELECT *
+				                          FROM cux_bgt_invest_ca_his cba
+				                         ORDER BY cba.cux_bgt_invest_ca_his_id DESC) o
+				                 WHERE o.project_number = cbi.project_number
+				                   AND rownum = 1) carried_year,
+				               ye.bgt_period_year,
+				               cux_bgt_invest_pkg.get_year_btg_balance(cbi.project_number,
+				                                                       ye.bgt_period_year) balance
+				          FROM cux_bgt_invest cbi,
+				               (SELECT bp.bgt_period_year
+				                  FROM bgt_periods bp
+				                 WHERE NOT EXISTS
+				                 (SELECT 1
+				                          FROM bgt_period_status bps
+				                         WHERE bps.period_name = bp.period_name
+				                           AND bps.bgt_period_status_code = 'C')
+				                 GROUP BY bp.bgt_period_year) ye
+				         WHERE EXISTS (SELECT 1
+				                  FROM exp_employee_assigns eea,
+				                       sys_user             su,
+				                       exp_org_position     eop,
+				                       exp_org_unit         eou
+				                 WHERE eea.employee_id = su.employee_id
+				                   AND eea.position_id = eop.position_id
+				                   AND eop.unit_id = eou.unit_id
+				                   AND eou.unit_code = cbi.unit_code
+				                   AND su.user_id = ${/session/@user_id})) o
+				                   #WHERE_CLAUSE#
+				 ORDER BY o.project_number
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    cux_bgt_invest_pkg.bgt_invest_carry_forward_ext(p_project_number => ${@project_number},
+                                     							p_bgt_period_year    => ${@bgt_period_year},
+                                     							p_user_id        => ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="unit_code" queryExpression="o.unit_code like ${@unit_code}"/>
+        <bm:query-field name="project_number" queryExpression="o.project_number like ${@project_number}"/>
+        <bm:query-field name="project_name" queryExpression="o.project_name like ${@project_name}"/>
+        <bm:query-field name="unit_name" queryExpression="o.unit_name like ${@unit_name}"/>
+        <bm:query-field name="resp_person_code" queryExpression="o.resp_person_code like ${@resp_person_code}"/>
+        <bm:query-field name="resp_person_name" queryExpression="o.resp_person_name like ${@resp_person_name}"/>
+        <bm:query-field name="bgt_period_year" queryExpression="o.bgt_period_year = ${@bgt_period_year}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="balance" expression="o.balance &gt; 0"/>
+    </bm:data-filters>
+</bm:model>

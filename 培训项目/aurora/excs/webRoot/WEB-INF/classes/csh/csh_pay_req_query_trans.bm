@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[	  
+				select *
+				  from ((select distinct v.transaction_header_id,
+				                v.transaction_header_id payment_header_id,
+				                v.transaction_num,
+				                v.transaction_type,
+				                (select b.code_value_name
+				                   from sys_codes_vl a, sys_code_values_vl b
+				                  where a.code_id = b.code_id
+				                    and a.code = 'CSH_TRANSACTION_TYPE'
+				                    and b.code_value = v.transaction_type) transaction_type_desc,
+				                v.transaction_date,
+				                to_char(v.transaction_date, 'YYYY-MM-DD') p_transaction_date,
+				                v.currency_code,
+				                v.transaction_amount,
+				                v.bank_account_code,
+				                v.bank_account_name,
+				                v.partner_category,
+				                (select b.code_value_name
+				                   from sys_codes_vl a, sys_code_values_vl b
+				                  where a.code_id = b.code_id
+				                    and a.code = 'PAYMENT_OBJECT'
+				                    and b.code_value = v.partner_category) p_partner_category,
+				                v.partner_id,
+				                decode(v.partner_category,
+				                       'EMPLOYEE',
+				                       (select ee.employee_code || '-' || ee.name
+				                          from exp_employees ee
+				                         where ee.employee_id = v.partner_id),
+				                       'VENDER',
+				                       (select svv.vender_code || '-' || svv.description
+				                          from pur_system_venders_vl svv
+				                         where svv.vender_id = v.partner_id),
+				                       'CUSTOMER',
+				                       (select scv.customer_code || '-' || scv.description
+				                          from ord_system_customers_vl scv
+				                         where scv.customer_id = v.partner_id)) parener_code_name,
+				                v.document_num,
+				                v.user_name,
+				                v.user_desc,
+				                v.payment_method_id,
+				                v.agent_name,
+				                v.posted_flag,
+				                v.reversed_flag,
+				                (select b.code_value_name
+				                   from sys_codes_vl a, sys_code_values_vl b
+				                  where a.code_id = b.code_id
+				                    and a.code = 'CSH_REVERSE_SELECT'
+				                    and b.code_value = v.reversed_flag) reversed,
+				                v.returned_flag,
+				                (select b.code_value_name
+				                   from sys_codes_vl a, sys_code_values_vl b
+				                  where a.code_id = b.code_id
+				                    and a.code = 'CSH_RETURN_SELECT'
+				                    and b.code_value = v.returned_flag) returned
+				         
+				           from csh_payment_requisition_refs cpr,
+				                csh_transaction_v            v,
+				                csh_payment_requisition_lns  lns,
+				                csh_payment_requisition_hds  hds
+				          where cpr.csh_transaction_line_id = v.transaction_line_id
+				            and cpr.payment_requisition_line_id =
+				                lns.payment_requisition_line_id
+				            and lns.payment_requisition_header_id =
+				                hds.payment_requisition_header_id
+				            and hds.payment_requisition_header_id = ${@header_id}) union all
+				         select h.transaction_header_id,
+				                h.transaction_header_id payment_header_id,
+				                h.transaction_num,
+				                h.transaction_type,
+				                (select b.code_value_name
+				                   from sys_codes_vl a, sys_code_values_vl b
+				                  where a.code_id = b.code_id
+				                    and a.code = 'CSH_TRANSACTION_TYPE'
+				                    and b.code_value = h.transaction_type) transaction_type_desc,
+				                h.transaction_date,
+				                to_char(h.transaction_date, 'YYYY-MM-DD') p_transaction_date,
+				                csh.currency_code,
+				                csh.transaction_amount,
+				                csh.bank_account_code,
+				                csh.bank_account_name,
+				                csh.partner_category,
+				                (select b.code_value_name
+				                   from sys_codes_vl a, sys_code_values_vl b
+				                  where a.code_id = b.code_id
+				                    and a.code = 'PAYMENT_OBJECT'
+				                    and b.code_value = csh.partner_category) p_partner_category,
+				                csh.partner_id,
+				                decode(csh.partner_category,
+				                       'EMPLOYEE',
+				                       (select ee.employee_code || '-' || ee.name
+				                          from exp_employees ee
+				                         where ee.employee_id = csh.partner_id),
+				                       'VENDER',
+				                       (select svv.vender_code || '-' || svv.description
+				                          from pur_system_venders_vl svv
+				                         where svv.vender_id = csh.partner_id),
+				                       'CUSTOMER',
+				                       (select scv.customer_code || '-' || scv.description
+				                          from ord_system_customers_vl scv
+				                         where scv.customer_id = csh.partner_id)) parener_code_name,
+				                csh.document_num,
+				                csh.user_name,
+				                csh.user_desc,
+				                h.payment_method_id,
+				                csh.agent_name,
+				                h.posted_flag,
+				                h.reversed_flag,
+				                (select b.code_value_name
+				                   from sys_codes_vl a, sys_code_values_vl b
+				                  where a.code_id = b.code_id
+				                    and a.code = 'CSH_REVERSE_SELECT'
+				                    and b.code_value = h.reversed_flag) reversed,
+				                h.returned_flag,
+				                (select b.code_value_name
+				                   from sys_codes_vl a, sys_code_values_vl b
+				                  where a.code_id = b.code_id
+				                    and a.code = 'CSH_RETURN_SELECT'
+				                    and b.code_value = h.returned_flag) returned
+				         
+				           from csh_transaction_headers h, csh_transaction_v csh
+				          where h.transaction_header_id = csh.transaction_header_id
+				            and h.source_header_id in
+				                (select distinct v.transaction_header_id
+				                   from csh_payment_requisition_refs cpr,
+				                        csh_transaction_v            v,
+				                        csh_payment_requisition_lns  lns,
+				                        csh_payment_requisition_hds  hds
+				                  where cpr.csh_transaction_line_id = v.transaction_line_id
+				                    and cpr.payment_requisition_line_id =
+				                        lns.payment_requisition_line_id
+				                    and lns.payment_requisition_header_id =
+				                        hds.payment_requisition_header_id
+				                    and hds.payment_requisition_header_id = ${@header_id})
+				                    union all
+				                    select h.transaction_header_id,
+       h.transaction_header_id payment_header_id,
+       h.transaction_num,
+       h.transaction_type,
+       (select b.code_value_name
+          from sys_codes_vl a, sys_code_values_vl b
+         where a.code_id = b.code_id
+           and a.code = 'CSH_TRANSACTION_TYPE'
+           and b.code_value = h.transaction_type) transaction_type_desc,
+       h.transaction_date,
+       to_char(h.transaction_date, 'YYYY-MM-DD') p_transaction_date,
+       csh.currency_code,
+       csh.transaction_amount,
+       csh.bank_account_code,
+       csh.bank_account_name,
+       csh.partner_category,
+       (select b.code_value_name
+          from sys_codes_vl a, sys_code_values_vl b
+         where a.code_id = b.code_id
+           and a.code = 'PAYMENT_OBJECT'
+           and b.code_value = csh.partner_category) p_partner_category,
+       csh.partner_id,
+       decode(csh.partner_category,
+              'EMPLOYEE',
+              (select ee.employee_code || '-' || ee.name
+                 from exp_employees ee
+                where ee.employee_id = csh.partner_id),
+              'VENDER',
+              (select svv.vender_code || '-' || svv.description
+                 from pur_system_venders_vl svv
+                where svv.vender_id = csh.partner_id),
+              'CUSTOMER',
+              (select scv.customer_code || '-' || scv.description
+                 from ord_system_customers_vl scv
+                where scv.customer_id = csh.partner_id)) parener_code_name,
+       csh.document_num,
+       csh.user_name,
+       csh.user_desc,
+       h.payment_method_id,
+       csh.agent_name,
+       h.posted_flag,
+       h.reversed_flag,
+       (select b.code_value_name
+          from sys_codes_vl a, sys_code_values_vl b
+         where a.code_id = b.code_id
+           and a.code = 'CSH_REVERSE_SELECT'
+           and b.code_value = h.reversed_flag) reversed,
+       h.returned_flag,
+       (select b.code_value_name
+          from sys_codes_vl a, sys_code_values_vl b
+         where a.code_id = b.code_id
+           and a.code = 'CSH_RETURN_SELECT'
+           and b.code_value = h.returned_flag) returned
+
+  from csh_transaction_headers h, csh_transaction_v csh
+ where h.transaction_header_id = csh.transaction_header_id
+   and h.source_header_id in
+       (select distinct ch.transaction_header_id
+          from csh_payment_requisition_refs cpr,
+               csh_transaction_v            v,
+               csh_payment_requisition_lns  lns,
+               csh_payment_requisition_hds  hds,
+               csh_transaction_headers      ch
+         where cpr.csh_transaction_line_id = v.transaction_line_id
+           and cpr.payment_requisition_line_id =
+               lns.payment_requisition_line_id
+           and lns.payment_requisition_header_id =
+               hds.payment_requisition_header_id
+           and ch.source_header_id = v.transaction_header_id
+           and hds.payment_requisition_header_id = ${@header_id})
+				                    ) dl
+				          order by p_transaction_date, transaction_header_id
+			]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="header_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

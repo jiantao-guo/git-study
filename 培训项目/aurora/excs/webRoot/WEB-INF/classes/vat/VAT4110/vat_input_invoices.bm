@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+               select * from ( SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.exp_report_number
+                        || '-'
+                        || l.line_number exp_report_number,
+                        
+                        h.exp_report_header_id,
+                        l.exp_report_line_id,
+                        l.invoice_code,
+                        l.invoice_number,
+                        l.invoice_item,
+                        ey.type_code invoice_type_code,
+                        ey.type_name invoice_type_name,
+                        l.company_id,
+                        (SELECT
+                            fc.company_short_name
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = l.company_id
+                        ) company_name,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'EXP_EXPENSE_REPORT_STATUS' AND
+                            b.code_value = h.report_status
+                        ) report_status_cn,
+                        l.tax_amount,
+                        l.report_amount,
+                        (l.report_amount - l.tax_amount) no_tax_amount,
+                        l.tax_rate * 100 tax_rate,
+                        l.invoice_status,
+                        (SELECT
+                            sc.code_value_name
+                        FROM
+                            sys_code_values_v sc
+                        WHERE
+                            sc.code       = 'VMS_INVOICE_STATUS' AND
+                            sc.code_value = l.invoice_status
+                        ) invoice_status_cn,
+                        TO_CHAR(authentication_time,'yyyy-mm-dd') authentication_time,
+                        l.usage_type,
+                        l.input_tax_structure_detail,
+                        (SELECT
+                            eyu.type_name
+                        FROM
+                            exp_ygz_usage_types eyu
+                        WHERE
+                            eyu.type_code = l.usage_type
+                        ) usage_type_cn,
+                        (SELECT
+                            eyi.type_name
+                        FROM
+                            exp_ygz_input_tax_struc_dtl eyi
+                        WHERE
+                            eyi.type_code = l.input_tax_structure_detail
+                        ) input_tax_structure_detail_cn,
+                        (SELECT to_char(gae.accounting_date,'yyyy-mm-dd')
+		                  FROM gl_account_entry gae
+		                 WHERE gae.transaction_type = 'EXP_REPORT'
+		                   AND gae.transaction_header_id = h.exp_report_header_id
+		                   AND gae.transaction_line_id = l.exp_report_line_id
+		                   AND rownum = 1) transaction_date
+                    FROM
+                        exp_report_lines l,
+                        exp_report_headers h,
+                        exp_ygz_invoice_types ey
+                    WHERE
+                        l.exp_report_header_id = h.exp_report_header_id AND
+                        l.invoice_type         = ey.type_code AND
+                        ey.special_invoice     = 'Y' AND
+                        l.invoice_status      <> '10' AND
+                        h.report_status        = 'COMPLETELY_APPROVED'
+                        AND nvl(h.reversed_flag, 'N') = 'N'
+                              --已过账
+				           AND EXISTS
+				         (SELECT 1
+				                  FROM gl_account_entry gae
+				                 WHERE gae.transaction_type = 'EXP_REPORT'
+				                   AND gae.transaction_header_id = h.exp_report_header_id
+				                   AND gae.transaction_line_id = l.exp_report_line_id
+				                   AND gae.imported_flag = 'Y')
+                    	AND EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            vat_comp_assign vca,
+                            vat_comp_assign_detail vcad,
+                            exp_employees ee,
+                            sys_user su
+                        WHERE
+                            vca.vat_comp_assign_id = vcad.vat_comp_assign_id AND
+                            vca.employee_code      = ee.employee_code AND
+                            ee.employee_id         = su.employee_id AND
+                            vcad.company_id        = l.company_id AND
+                            su.user_id             = ${/session/@user_id}
+                        )
+                    ) o
+                    
+                    -- 同一个报销单,同发票代码,发票号码,取金额最大的一行
+                    WHERE EXISTS
+					 (SELECT 1
+					          FROM exp_report_lines ll
+					         WHERE ll.report_amount * 100000000000000000 + ll.exp_report_line_id =
+					               (SELECT MAX(lll.report_amount * 100000000000000000 +
+					                           lll.exp_report_line_id)
+					                  FROM exp_report_lines lll
+					                 WHERE lll.invoice_number = o.invoice_number
+					                   AND lll.invoice_code = o.invoice_code
+					                   and lll.exp_report_header_id = o.exp_report_header_id
+					                 GROUP BY lll.invoice_number, lll.invoice_code)
+					           AND ll.exp_report_line_id = o.exp_report_line_id) )o #WHERE_CLAUSE#
+                ORDER BY
+                    o.exp_report_number
+            ]]></bm:query-sql>
+        </bm:operation>
+        <!-- 分配进项结构明细,用途类型 -->
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+            	begin
+            		cux_invoice_auth.assign_use_and_structure(p_exp_report_line_id => ${@exp_report_line_id},
+                            p_input_tax_structure_detail         => ${@input_tax_structure_detail},
+                            p_usage_type => ${@usage_type},
+                            p_tax_rate => ${@tax_rate},
+                            p_user_id            => ${/session/@user_id});
+            	end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <!-- 批量分配进项结构明细 -->
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+            	begin
+            		cux_invoice_auth.assign_structure_detail(p_exp_report_line_id => ${@exp_report_line_id},
+                           									 p_input_tax_structure_detail         => ${@input_tax_structure_detail},
+                            								 p_user_id            => ${/session/@user_id});
+            	end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <!-- 批量分配用途类型 -->
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+            	begin
+            		cux_invoice_auth.assign_use_type(p_exp_report_line_id => ${@exp_report_line_id},
+                            p_usage_type         => ${@usage_type},
+                            p_user_id            => ${/session/@user_id});
+            	end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="invoice_code" queryExpression="o.invoice_code like ${@invoice_code}"/>
+        <bm:query-field name="invoice_number" queryExpression="o.invoice_number like ${@invoice_number}"/>
+        <bm:query-field name="invoice_item" queryExpression="o.invoice_item like ${@invoice_item}"/>
+        <bm:query-field name="exp_report_number" queryExpression="o.exp_report_number like &apos;%&apos; || ${@exp_report_number} || &apos;%&apos;"/>
+        <bm:query-field name="tax_rate" queryExpression="o.tax_rate like ${@tax_rate}"/>
+        <bm:query-field name="report_status_cn" queryExpression="o.report_status_cn like ${@report_status_cn}"/>
+        <bm:query-field name="invoice_status_cn" queryExpression="o.invoice_status_cn like ${@invoice_status_cn}"/>
+        <bm:query-field name="authentication_time_from" queryExpression="o.authentication_time &gt;= ${@authentication_time_from}"/>
+        <bm:query-field name="authentication_time_to" queryExpression="o.authentication_time &lt; ${@authentication_time_to}"/>
+        <bm:query-field name="company_name" queryExpression="o.company_name = ${@company_name}"/>
+        <bm:query-field name="transaction_date_from" queryExpression="o.transaction_date &gt;= ${@transaction_date_from}"/>
+        <bm:query-field name="transaction_date_to" queryExpression="o.transaction_date &lt;= ${@transaction_date_to}"/>
+    </bm:query-fields>
+</bm:model>

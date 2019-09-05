@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_report_employeelist" rootPath="employee_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_report_typelist" rootPath="exp_report_type_list"/>
+        <a:model-query autoCount="false" defaultwhereclause="code=&apos;EXP_EXPENSE_REPORT_STATUS&apos; and code_value in(&apos;GENERATE&apos;,&apos;REJECTED&apos;,&apos;TAKEN_BACK&apos;) and  language=${/session/@lang}" fetchAll="true" model="sys.sys_service_lookup_v" rootPath="maintain_exp_report_status_list"/>
+        <a:model-query autoCount="false" defaultwhereclause="code=&apos;PAYMENT_OBJECT&apos;  and  language=${/session/@lang}" fetchAll="true" model="sys.sys_service_lookup_v" rootPath="maintain_payee_category_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_report_maintain_link" url="${/request/@context_path}/modules/expm/public/exp_report_maintain.screen"/>
+        <a:link id="exp_report_batch_delete_link" url="${/request/@context_path}/modules/expm/public/exp_report_batch_delete.svc"/>
+        <script><![CDATA[
+            function headcommitpayee(lov, r1, r2) {
+                var payee_category = r1.get('payee_category')
+                if (payee_category == null || payee_category == undefined || payee_category == '') {
+                    return;
+                } else if (payee_category == 'EMPLOYEE') {
+                    r1.set('payee_id', r2.get('employee_id'));
+                } else if (payee_category == 'VENDER') {
+                    r1.set('payee_id', r2.get('vender_id'));
+                } else {
+                    r1.set('payee_id', r2.get('customer_id'));
+                }
+            }
+            
+            function header_ds_update(ds, record, name, value, oldvalue) {
+                if (name == 'payee_category') {
+                    record.set('payee_code', '');
+                    record.set('payee_id', '');
+                    var payee_category = value;
+              
+                    var f1 = record.getField('payee_code');
+                    if (payee_category == null || payee_category == undefined || payee_category == '') {
+                        f1.setLovService('');
+                        f1.setReadOnly(true);
+                    } else if (payee_category == 'EMPLOYEE') {
+                        title = '${l:EXP_EMPLOYEES.QUERY}';
+                        f1.setLovService('expm.exp_employee_req_lov');
+                        f1.setReadOnly(false);
+                    } else if (payee_category == 'VENDER') {
+                        title = '${l:CUSTOMER_QUERY}';
+                        f1.setLovService('expm.exp_vender_req_lov');
+                        f1.setReadOnly(false);
+                    } else {
+                        title = '${l:VENDER_SEARCH}';
+                        f1.setLovService('expm.exp_customer_req_lov');
+                        f1.setReadOnly(false);
+                    }
+                    f1.setTitle(title);
+                } else if (name == 'payee_code') {
+                    if (value == '') {
+                        record.set('payee_id', '');
+                    }
+                }
+            }
+            
+            function query() {
+                $('exp_report_maintain_result_ds').query();
+            }
+            
+            function reset() {
+                $('exp_report_maintain_query_ds').getCurrentRecord().getField('payee_code').setReadOnly(true);
+                $('exp_report_maintain_query_ds').reset();
+            }
+            
+            function column_detail(value, record, name) {
+                var head_id = record.get('exp_report_header_id');
+                return '<a href="javascript:openDetail(' + head_id + ',\'' + record.get('page_name') + '\')">' + value + '</a>';
+            }
+            
+            function openDetail(id,pageName) {
+                url = '${/request/@context_path}/' + pageName +'?exp_report_header_id=' + id;
+                new Aurora.Window({
+                    id: 'new_report_detail_window',
+                    fullScreen:true,
+                    url: url
+                });
+                //window.open(url,'','fullscreen=no,resizable=yes,width=1024,height=620');
+            }
+            
+            function deleteFunction(){
+                var recordsData = $('exp_report_maintain_result_ds').getJsonData(true);
+                if (recordsData.length < 1) {
+                    Aurora.showInfoMessage('', '${l:PROMPT.PLEASE_SELECT_ONE}', null, 250, 100);
+                    return;
+                }
+                var msgBox = Aurora.showConfirm('${l:PROMPT}', '${l:EXP_REQUESTION_READONLY.SURE_DELETE_REQ}', function() {
+                    msgBox.close();
+                    processDeleteFunction();
+                }, null, 250, 100);
+            }
+            function processDeleteFunction() {
+                var recordsData = $('exp_report_maintain_result_ds').getJsonData(true);
+                Aurora.request({
+                    url:$('exp_report_batch_delete_link').getUrl(),
+                    para:recordsData,
+                    success:function(){
+                        query();
+                    },
+                    scope:this
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="maintain_employee_ds">
+                <a:datas dataSource="/model/employee_list"/>
+            </a:dataSet>
+            <a:dataSet id="maintain_exp_report_type_ds">
+                <a:datas dataSource="/model/exp_report_type_list"/>
+            </a:dataSet>
+            <a:dataSet id="maintain_exp_report_status">
+                <a:datas dataSource="/model/maintain_exp_report_status_list"/>
+            </a:dataSet>
+            <a:dataSet id="maintain_payee_category_list">
+                <a:datas dataSource="/model/maintain_payee_category_list"/>
+            </a:dataSet>
+            <a:dataSet id="maintain_currencylist" loadData="true" model="gld.gld_currency_vl"/>
+            <a:dataSet id="exp_report_maintain_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="employee_name" displayField="employeename" options="maintain_employee_ds" returnField="employee_id" valueField="employee_id"/>
+                    <!--<a:field name="exp_reprot_type_name" displayField="description" options="maintain_exp_report_type_ds" returnField="exp_report_type_id" valueField="expense_report_type_id"/>-->
+                    <a:field name="exp_reprot_type_name" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="expm.exp_report_typelist" lovWidth="500" title="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID">
+                        <a:mapping>
+                            <a:map from="expense_report_type_id" to="exp_report_type_id"/>
+                            <a:map from="description" to="exp_reprot_type_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exp_report_type_id"/>
+                    <a:field name="maintain_exp_report_status_name" displayField="code_value_name" options="maintain_exp_report_status" returnField="exp_report_status" valueField="code_value"/>
+                    <a:field name="payee_category_name" displayField="code_value_name" options="maintain_payee_category_list" returnField="payee_category" valueField="code_value"/>
+                    <a:field name="payee_category"/>
+                    <a:field name="payee_code" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovWidth="500" readOnly="true">
+                        <a:mapping>
+                            <a:map from="code_name" to="payee_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="payee_id"/>
+                    <a:field name="currency_name" displayField="currency_name" options="maintain_currencylist" returnField="currency" valueField="currency_code"/>
+                    <a:field name="currency"/>
+                    <a:field name="description" prompt="EXP_REPORT_HEADERS.DESCRIPTION"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="header_ds_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_report_maintain_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="expm.exp_report_headers_query_formaintain" pageSize="20" queryDataSet="exp_report_maintain_query_ds" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="reset" text="HAP_RESET" width="80"/>
+                <a:gridButton click="deleteFunction" text="PROMPT.DELETE" type="delete" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="exp_report_maintain_query_ds" resultTarget="exp_report_maintain_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="exp_report_number" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER"/>
+                    <a:datePicker name="exp_report_date_from" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.REPORT_DATE_FROM"/>
+                    <a:datePicker name="exp_report_date_to" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.REPORT_DATE_TO"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:lov name="exp_reprot_type_name" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID"/>
+                    <a:comboBox name="employee_name" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.EMPLOYEE_NAME"/>
+                    <a:comboBox name="currency_name" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE"/>
+                    <a:comboBox name="payee_category_name" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.PAYEE_CATEGORY"/>
+                    <a:lov name="payee_code" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.PAYEE_ID">
+                        <a:events>
+                            <a:event name="commit" handler="headcommitpayee"/>
+                        </a:events>
+                    </a:lov>
+                    <a:numberField name="amount_from" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.REPORT_AMOUNT_FROM"/>
+                    <a:numberField name="amount_to" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REPORT_HEADERS.REPORT_AMOUNT_TO"/>
+                    <a:datePicker name="created_date_from" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REQUISITION_HEADERS.CREATE_DATE_FROM"/>
+                    <a:datePicker name="created_date_to" bindTarget="exp_report_maintain_query_ds" prompt="EXP_REQUISITION_HEADERS.CREATE_DATE_TO"/>
+                    <a:textField name="description" bindtarget="exp_report_maintain_query_ds"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="exp_rep_query_result_grid" bindTarget="exp_report_maintain_result_ds" marginHeight="121" marginWidth="37" navBar="true">
+                <a:columns>
+                    <a:column name="exp_report_number" align="center" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER" renderer="column_detail" width="180"/>
+                    <a:column name="type_description" align="center" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID" width="140"/>
+                    <a:column name="report_date" align="center" prompt="EXP_REPORT_HEADERS.REPORT_DATE" width="80"/>
+                    <a:column name="currency_name" align="center" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE" width="60"/>
+                    <a:column name="quarter_num" align="right" prompt="EXP_REPORT_LINES.REPORT_AMOUNT" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="quarter_num_fun" align="right" prompt="EXP_REPORT_LINES.REPORT_FUNCTIONAL_AMOUNT" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="employee_name" align="center" prompt="EXP_REPORT_HEADERS.EMPLOYEE_ID" width="80"/>
+                    <!-- <a:column name="payee_category_name" align="center" prompt="EXP_REPORT_HEADERS.PAYEE_CATEGORY" width="80"/> -->
+                    <!-- <a:column name="payee_name" align="center" prompt="EXP_REPORT_HEADERS.PAYEE_ID" width="100"/> -->
+                    <a:column name="report_status" align="center" prompt="EXP_REPORT_HEADERS.REPORT_STATUS" width="60"/>
+                    <a:column name="description" align="left" prompt="EXP_REPORT_HEADERS.DESCRIPTION" width="120"/>
+                    <a:column name="creation_date1" align="center" prompt="EXP_REPORT_HEADERS.CREATION_DATE" width="80"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

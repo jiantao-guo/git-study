@@ -1,0 +1,405 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="gld.gld_currency_vl" rootpath="currencylist"/>
+        <a:model-query defaultWhereClause="company_id = ${/session/@company_id}" fetchAll="true" model="expm.exp_expense_report_types_vl" rootPath="exp_report_type_list"/>
+        <a:model-query model="expm.get_batch_id" rootPath="batch_id"/>
+        <a:model-query model="gl.gl_segment_description" rootPath="segment_descs"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_req_query_report_link1" url="${/request/@context_path}/modules/exp/exp_requisition_query_report.screen"/>
+        <a:link id="exp_report_reject_link_1" url="${/request/@context_path}/modules/expm/public/exp_report_reject.screen"/>
+        <a:link id="exp_report_audit_control_link_1" url="${/request/@context_path}/modules/expm/public/exp_report_audit_recheck_control.svc"/>
+        <a:link id="exp_report_query_history_link_2" url="${/request/@context_path}/modules/exp/public/exp_report_query_history.screen"/>
+        <a:link id="exp_expense_report_audit_log_link_1" url="${/request/@context_path}/modules/expm/public/exp_expense_report_audit_log.screen"/>
+        <a:link id="exp_report_accounts_link_1" url="${/request/@context_path}/modules/expm/public/exp_report_accounts.screen"/>
+        <a:link id="exp_report_audit_account_tmp_control_link_1" url="${/request/@context_path}/modules/expm/public/exp_report_audit_account_tmp_control.svc"/>
+        <a:link id="exp_report_readonly_wfl_link_5" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl_edit_for_expense_journal_adjust2.screen"/>
+        <a:link id="EXP5250_delete_exp_report_accounts_link" model="db.exp_report_pkg.delete_exp_report_rec_accounts" modelaction="batch_update"/>
+        <a:link id="cux_exp_report_paste_temp_clear_link" model="expm.exp_report_paste_temp_clear" modelaction="delete"/>
+        <a:link id="cux_exp_report_paste_temp_insert_link" model="expm.exp_report_report_temp_insert" modelaction="batch_update"/>
+        <script><![CDATA[
+			function doQuery(){
+				$('audit_result_ds').query();
+			}
+			
+			function audit_result_onload() {
+                var record = $('audit_result_ds').getAt(0);
+                if (record) {
+                    var headerId = record.get('exp_report_header_id');
+            
+                    $('audit_account_result').setQueryParameter('header_id', headerId);
+                    $('audit_account_result').query();
+            
+                } else {
+                    $('audit_account_result').setQueryParameter('header_id', '');
+                    $('audit_account_result').query();
+                }
+            }
+			function selectChange(grid,rowNum,record){				
+				$('audit_account_result').setQueryParameter('header_id',record.get('exp_report_header_id'));
+				$('audit_account_result').query();
+			}
+			function seeDetail(value,record,name){
+				var header_id = record.get('exp_report_header_id');
+				return '<a href="javascript:detailNewWindow(' + header_id + ');">' + value + '</a>';
+			}
+			function detailNewWindow(header_id){				
+				var url=/*${/request/@context_path}/modules/expm/exp_report_readonly_wfl.screen*/$('exp_report_readonly_wfl_link_5').getUrl()+'?exp_report_header_id=' + header_id + '&canUploadFlag=false&reaudit=Y';			
+				//window.open(url,'','fullscreen=no,resizable=yes,width=1024,height=600');
+				new Aurora.Window({
+                    url: url,
+                    title: '${l:EXP_REPORT_QUERY_DETAIL}',
+                    id: 'exp_report_detail',
+                    fullScreen:true
+                });	
+			}
+			
+            function doDelete() {
+                var records = $('audit_result_ds').getJsonData(true);
+                if (records.length < 1) {
+                    Aurora.showWarningMessage('', '${l:PROMPT.PLEASE_SELECT}', null, 200, 100);
+                    return;
+                }
+                var datas = [];
+                for (var i = 0,	
+                    l = records.length;i < l;i++) {
+                    var data = {exp_report_header_id:records[i]['exp_report_header_id'],_status:'execute'};
+                    datas.push(data);
+                }
+                Aurora.request({
+                    url: $('EXP5250_delete_exp_report_accounts_link').getUrl(),
+                    para: datas,
+                    success: function(){
+                        doQuery();
+                    },
+                    scope: this
+                });
+            }
+    		
+    		function createSuccess(){    			
+    			var url = /*${/request/@context_path}/modules/expm/exp_report_accounts.screen*/$('exp_report_accounts_link_1').getUrl()+'?batch_id='+'${/model/batch_id/record/@batch_id}';
+                //window.open(url,'','fullscreen=no,resizable=yes,width=530,height=515');
+                new Aurora.Window({
+	    			id:'exp_report_accounts_screen',
+	    			url:url,
+	    			title:'',
+	    			height:515,
+	    			width:530
+	    		});
+    		}
+    		function seeLog(){
+    			var url=/*${/request/@context_path}/modules/expm/exp_expense_report_audit_log.screen*/$('exp_expense_report_audit_log_link_1').getUrl()+'?batch_id='+'${/model/batch_id/record/@batch_id}';
+	    		//window.open(url);
+	    		  new Aurora.Window({
+                    url: url,
+                    title: '${l:LOGS_MESSAGE}',
+                    id: 'exp_expense_report_audit_log_screen',
+                    fullScreen:true
+                });
+    		}
+    		function doHistory(){    		
+    			var myRecords=$('audit_result_ds').getSelected();
+    			if(myRecords.length != 1){
+    				Aurora.showWarningMessage('','${l:PROMPT.PLEASE_SELECT_ONE}',null,200,100);
+    				return;    			
+	    		}
+	    		var head_id=myRecords[0].get('exp_report_header_id');
+	    		if(head_id){
+	    			var url = /*${/request/@context_path}/modules/exp/exp_report_query_history.screen*/$('exp_report_query_history_link_2').getUrl()+'?head_id='+ head_id;
+	    			//window.open(url);
+	    			new Aurora.Window({
+                    url: url,
+                    title: '${l:REC_REQUISITION_HISTORY}',
+                    id: 'exp_report_history_window',
+                    fullScreen:true
+                });
+	    		}
+    		}
+    		function doFlag(){    		
+    			var myRecords=$('audit_result_ds').getSelected();
+    			if(myRecords.length < 1){
+    				Aurora.showWarningMessage('','${l:PROMPT.PLEASE_SELECT}',null,200,100);
+    				return;    			
+	    		}
+	    		
+	    		  /* var cash_flow_code_null_flag_msg='';
+                for (var i = 0;i < myRecords.length;i++) {
+                    var cash_flow_code_null_flag = myRecords[i].get('cash_flow_code_null_flag');
+                    if (cash_flow_code_null_flag == 'Y') {
+                        if (cash_flow_code_null_flag_msg == '') {
+                            cash_flow_code_null_flag_msg = myRecords[i].get('exp_report_number');
+                        } else {         
+                            cash_flow_code_null_flag_msg = cash_flow_code_null_flag_msg + '&nbsp;,&nbsp;' + myRecords[i].get('exp_report_number');
+                        }
+                    }
+                }
+            
+                if(cash_flow_code_null_flag_msg != ''){
+                      cash_flow_code_null_flag_msg = '<span style="word-wrap:break-word;overflow:hidden;"><pre>报销单' + cash_flow_code_null_flag_msg + '未填写现金流量项，请返回修改！</pre></span>';
+                      Aurora.showWarningMessage('', cash_flow_code_null_flag_msg, null, 400, 200);
+                       return;    
+                } */
+	    		
+	    		var datas=[];
+	    		for(var i=0,l=myRecords.length;i<l;i++){
+	    			var data=myRecords[i].data;
+	    			datas.push(data);
+	    		}
+	    		var params=new Object();
+	    		params['details']=datas;
+	    		
+	    		Aurora.request({
+	    			url:/*${/request/@context_path}/modules/expm/exp_report_audit_control.svc*/$('exp_report_audit_control_link_1').getUrl(),
+	    			para:params,
+	    			success:function(){
+	    				doQuery();
+	    			},
+	    			scope:this
+	    		});
+	    		
+    		}
+    		function doReject(){    		
+    			var myRecords=$('audit_result_ds').getSelected();
+    			if(myRecords.length < 1){
+    				Aurora.showWarningMessage('','${l:PROMPT.PLEASE_SELECT}',null,200,100);
+    				return;    			
+	    		}
+	    		new Aurora.Window({
+	    			id:'exp_report_reject_window',
+	    			url:/*${/request/@context_path}/modules/expm/exp_report_reject.screen*/$('exp_report_reject_link_1').getUrl(),
+	    			title:'',
+	    			height:240,
+	    			width:640
+	    		});
+    		}  
+    		function reset(){
+    			$('audit_query_ds').reset();
+    		} 
+    		 //查看关联申请单
+    		 function viewFunction() {
+                var records = $('audit_result_ds').getSelected();
+                if (records.length != 1) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT_ONE}', null, 250, 100);
+                    return;
+                }
+                new Aurora.Window({
+                    url: $('exp_req_query_report_link1').getUrl() + '?exp_report_header_id=' + records[0].get('exp_report_header_id'),
+                    title: '',
+                    fullScreen: true,
+                    id: 'exp_req_query_report_screen'
+                });
+            } 		
+             //批量打印
+            function batchPrintFunction() {
+                var records = $('audit_result_ds').getJsonData(true);
+                var record = $('audit_result_ds').getSelected();
+                var reportName = record[0].get('report_name');
+                var href = window.location.href;
+                href = href.substring(0, href.indexOf("/modules"));
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}');
+                    return false;
+                }
+                for (var i = 0;i < records.length;i++) {
+                    records[i]["web_url"] = href;
+                    //复核凭证页面，单据本来就已经审核通过了
+                    // if (record[i].get('requisition_status_value') != 'COMPLETELY_APPROVED') {
+                    // Aurora.showInfoMessage('${l:PROMPT}', '请打印审批通过的单据!');
+                    // return;
+                    // }
+                    var reportNameLine = record[i].get('report_name');
+                    if (reportName != reportNameLine) {
+                        Aurora.showMessage('${l:PROMPT}', '请选择同类型的单据打印!');
+                        return;
+                    }
+                }
+                new Aurora.request({
+                    url: $('cux_exp_report_paste_temp_clear_link').getUrl(),
+                    success: function(res) {
+                        new Aurora.request({
+                            url: $('cux_exp_report_paste_temp_insert_link').getUrl(),
+                            para: records,
+                            success: function(res) {
+                                window.open('${/request/@context_path}/reports?__report=' + reportName + '&session_id=' + '${/session/@session_id}' + '&__format=pdf');
+                            }
+                        });
+                    }
+                });
+            }
+		]]></script>
+        <a:dataSets>
+            <a:dataSet id="exp_report_type_ds">
+                <a:datas dataSource="/model/exp_report_type_list"/>
+            </a:dataSet>
+            <a:dataSet id="currency_ds">
+                <a:datas dataSource="/model/currencylist"/>
+            </a:dataSet>
+            <a:dataSet id="audit_query_ds" model="expm.exp_expense_report_audit_query">
+                <a:fields>
+                    <a:field name="exp_reprot_type_display" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="expm.exp_expense_report_types_lov" lovWidth="500" title="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID">
+                        <a:mapping>
+                            <a:map from="expense_report_type_id" to="exp_report_type_id"/>
+                            <a:map from="description" to="exp_reprot_type_display"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exp_report_type_id"/>
+                    <a:field name="employee_display" autoComplete="true" autoCompleteField="name_code" lovGridHeight="320" lovHeight="450" lovService="exp.exp_com_employees_v_lov" lovWidth="500" title="EXP_EMPLOYEES.QUERY">
+                        <a:mapping>
+                            <a:map from="name_code" to="employee_display"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                            <a:map from="employee_code" to="employee_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="employee_id"/>
+                    <a:field name="employee_code"/>
+                    <a:field name="currency_display" displayField="currency_name" options="currency_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="currency_code"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="audit_result_ds" autoQuery="true" model="expm.EXP5260.exp_expense_report_reaudit_query" queryDataSet="audit_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="amortization_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="je_creation_status" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="cash_flow_code_null_flag" prompt="现金流量项有空值"/>
+                    <a:field name="exp_report_number"/>
+                    <a:field name="report_name"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="audit_result_onload"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="audit_account_result" model="expm.EXP5140.exp_report_audit_account_query_control" selectable="true">
+                <a:fields>
+                    <a:field name="account_segment1" prompt="${/model/segment_descs/record/@segment1_desc}"/>
+                    <a:field name="account_segment2" prompt="${/model/segment_descs/record/@segment2_desc}"/>
+                    <a:field name="account_segment3" prompt="${/model/segment_descs/record/@segment3_desc}"/>
+                    <a:field name="account_segment4" prompt="${/model/segment_descs/record/@segment4_desc}"/>
+                    <a:field name="account_segment5" prompt="${/model/segment_descs/record/@segment5_desc}"/>
+                    <a:field name="account_segment6" prompt="${/model/segment_descs/record/@segment6_desc}"/>
+                    <a:field name="account_segment7" prompt="${/model/segment_descs/record/@segment7_desc}"/>
+                    <a:field name="account_segment8" prompt="${/model/segment_descs/record/@segment8_desc}"/>
+                    <a:field name="account_segment9" prompt="${/model/segment_descs/record/@segment9_desc}"/>
+                    <a:field name="account_segment10" prompt="${/model/segment_descs/record/@segment10_desc}"/>
+                    <a:field name="account_segment11" prompt="${/model/segment_descs/record/@segment11_desc}"/>
+                    <a:field name="account_segment12" prompt="${/model/segment_descs/record/@segment12_desc}"/>
+                    <a:field name="account_segment13" prompt="${/model/segment_descs/record/@segment13_desc}"/>
+                    <a:field name="account_segment14" prompt="${/model/segment_descs/record/@segment14_desc}"/>
+                    <a:field name="account_segment15" prompt="${/model/segment_descs/record/@segment15_desc}"/>
+                    <a:field name="account_segment16" prompt="${/model/segment_descs/record/@segment16_desc}"/>
+                    <a:field name="account_segment17" prompt="${/model/segment_descs/record/@segment17_desc}"/>
+                    <a:field name="account_segment18" prompt="${/model/segment_descs/record/@segment18_desc}"/>
+                    <a:field name="account_segment19" prompt="${/model/segment_descs/record/@segment19_desc}"/>
+                    <a:field name="account_segment20" prompt="${/model/segment_descs/record/@segment20_desc}"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="reset" text="HAP_RESET" width="80"/>
+                <a:toolbarButton click="doFlag" text="PROMPT.REAUDIT" width="80"/>
+                <a:toolbarButton click="doReject" text="PROMPT.REJECT" width="80"/>
+                <a:toolbarButton click="viewFunction" text="关联申请单" width="80"/>
+                <!-- <a:toolbarButton click="doDelete" text="PROMPT.DELETE_JE" width="80"/> -->
+                <!-- <a:toolbarButton click="seeLog" text="PROMPT.VIEW_LOG" width="80"/> -->
+                <a:toolbarButton click="doHistory" text="PROMPT.HISTORY" width="80"/>
+                <a:toolbarButton click="batchPrintFunction" text="PROMPT.BATCH_PRINT" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="audit_query_ds" resultTarget="audit_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="exp_report_number" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER"/>
+                    <a:lov name="exp_reprot_type_display" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID"/>
+                    <a:lov name="employee_display" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.EMPLOYEE_NAME"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:comboBox name="currency_display" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE"/>
+                    <a:datePicker name="report_date_f" bindTarget="audit_query_ds" prompt="EXP_EXPENSE_REPORT_AUDIT.REPORT_DATE_F"/>
+                    <a:datePicker name="report_date_t" bindTarget="audit_query_ds" prompt="EXP_EXPENSE_REPORT_AUDIT.REPORT_DATE_T"/>
+                    <a:numberField name="requisition_amount_from" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.REQUISITION_AMOUNT_FROM"/>
+                    <a:numberField name="requisition_amount_to" bindTarget="audit_query_ds" prompt="EXP_REPORT_HEADERS.REQUISITION_AMOUNT_TO"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="audit_result_ds_grid" bindTarget="audit_result_ds" height="300" navBar="true">
+                <a:columns>
+                    <a:column name="company_name" align="left" prompt="ACP_INVOICE_HEADERS.COMPANY_ID" width="240"/>
+                    <a:column name="exp_report_number" align="center" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER" renderer="seeDetail" sortable="true" width="160"/>
+                    <!-- <a:column name="amortization_flag" align="center" editor="edt_cbx" prompt="PROMPT.AMORTIZATION_FLAG" width="50"/> -->
+                    <a:column name="exp_report_type_desc" align="left" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID" width="120"/>
+                    <a:column name="employee_name" align="left" prompt="EXP_REPORT_HEADERS.EMPLOYEE_ID" width="100"/>
+                    <a:column name="currency_name" align="left" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE" width="60"/>
+                    <a:column name="report_amount" align="right" prompt="EXP_REPORT_LINES.REPORT_AMOUNT" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="report_date" align="center" prompt="EXP_REPORT_HEADERS.REPORT_DATE" sortable="true" width="80"/>
+                    <a:column name="report_status_desc" align="left" prompt="EXP_REPORT_HEADERS.REPORT_STATUS" width="80"/>
+                    <a:column name="description" align="left" prompt="EXP_REPORT_HEADERS.DESCRIPTION" width="180"/>
+                    <a:column name="je_creation_status" align="center" editor="" prompt="PROMPT.CREATE_JE" width="60"/>
+                </a:columns>
+                <a:editors>
+                    <a:checkBox id="edt_cbx"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="rowclick" handler="selectChange"/>
+                </a:events>
+            </a:grid>
+            <a:grid id="audit_account_result_grid" bindTarget="audit_account_result" height="330" navBar="true">
+                <a:columns>
+                    <a:column name="description" align="left" prompt="CSH_WRITE_OFF_ACCOUNTS.DESCRIPTION" width="120"/>
+                    <a:column name="period_name" align="center" prompt="CSH_WRITE_OFF_ACCOUNTS.PERIOD_NAME" width="80"/>
+                    <a:column name="company_short_name" align="left" prompt="CSH_WRITE_OFF_ACCOUNTS.COMPANY_ID" width="120"/>
+                    <a:column name="responsibility_center_name" align="left" prompt="CSH_WRITE_OFF_ACCOUNTS.RESPONSIBILITY_CENTER_ID" width="120"/>
+                    <a:column name="account_code" align="center" prompt="CSH_WRITE_OFF_ACCOUNTS.ACCOUNT_ID" width="100"/>
+                    <a:column name="account_desc" align="left" prompt="CSH_WRITE_OFF_ACCOUNTS.ACCOUNT_NAME" width="120"/>
+                    <a:column name="entered_amount_dr" align="right" prompt="CSH_WRITE_OFF_ACCOUNTS.ENTERED_AMOUNT_DR" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="entered_amount_cr" align="right" prompt="CSH_WRITE_OFF_ACCOUNTS.ENTERED_AMOUNT_CR" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="functional_amount_dr" align="right" prompt="CSH_WRITE_OFF_ACCOUNTS.FUNCTIONAL_AMOUNT_DR" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="functional_amount_cr" align="right" prompt="CSH_WRITE_OFF_ACCOUNTS.FUNCTIONAL_AMOUNT_CR" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="account_segment1" align="center"/>
+                    <a:column name="account_segment2" align="center"/>
+                    <a:column name="account_segment3" align="center"/>
+                    <a:column name="account_segment4" align="center"/>
+                    <a:column name="account_segment5" align="center"/>
+                    <a:column name="account_segment6" align="center"/>
+                    <a:column name="account_segment7" align="center"/>
+                    <a:column name="account_segment8" align="center"/>
+                    <a:column name="account_segment9" align="center"/>
+                    <a:column name="account_segment10" align="center"/>
+                    <a:column name="account_segment11" align="center"/>
+                    <a:column name="account_segment12" align="center"/>
+                    <a:column name="account_segment13" align="center"/>
+                    <a:column name="account_segment14" align="center"/>
+                    <!--  <a:column name="account_segment15" align="center"/>
+                    <a:column name="account_segment16" align="center"/>
+                    <a:column name="account_segment17" align="center"/>
+                    <a:column name="account_segment18" align="center"/>
+                    <a:column name="account_segment19" align="center"/>
+                    <a:column name="account_segment20" align="center"/> -->
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function expReqDupInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            　　    //Ext.get('exp_requestion_duplication_head_form').setWidth(autoWidth + 4);       
+            	   $('audit_result_ds_grid').setWidth(autoWidth); 
+            	   $('audit_account_result_grid').setWidth(autoWidth);          
+            }
+            //Ext.fly(window).on('resize', expReqDupInitSize);
+            expReqDupInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

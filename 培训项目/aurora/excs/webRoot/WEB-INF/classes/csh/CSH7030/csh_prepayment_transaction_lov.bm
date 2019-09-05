@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: majianjian  
+    $Date: 2015-3-5 上午10:48:02  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t.transaction_header_id,
+                    t.transaction_num,
+                    t.transaction_date,
+                    t.transaction_line_id,
+                    t.transaction_amount,
+                    t.balance,
+                    t.payment_header_id,
+                    t.payment_line_id,
+                    t.payment_num,
+                    decode(t.account_number,null,null,'*******' || substr(t.account_number,-4,4)) account_number,
+                    t.account_name,
+                    t.payment_requisition_line_id
+                FROM
+                    (SELECT
+                        pcth.transaction_header_id,
+                        pcth.transaction_num,
+                        pcth.transaction_date,
+                        pctl.transaction_line_id,
+                        pctl.transaction_amount,
+                        pctl.transaction_amount -
+                        (SELECT
+                            NVL(SUM(sc.csh_write_off_amount), 0) -- 报销单核销借款的部分
+                        FROM
+                            csh_write_off sc
+                        WHERE
+                            sc.write_off_type          = 'PREPAYMENT_EXPENSE_REPORT' AND
+                            sc.csh_transaction_line_id = pctl.transaction_line_id
+                        ) -
+                        (SELECT
+                            NVL(SUM(ctl2.transaction_amount), 0) -- 退款金额
+                        FROM
+                            csh_transaction_headers cth1,
+                            csh_transaction_lines ctl1,
+                            csh_transaction_headers cth2,
+                            csh_transaction_lines ctl2
+                        WHERE
+                            ctl1.transaction_line_id   = pctl.transaction_line_id AND
+                            ctl1.transaction_header_id = cth1.transaction_header_id AND
+                            cth2.source_header_id      = cth1.transaction_header_id AND
+                            cth2.transaction_header_id = ctl2.transaction_header_id AND
+                            cth2.reversed_flag        IS NULL
+                        ) balance,
+                        cth.transaction_header_id payment_header_id,
+                        cth.transaction_num payment_num,
+                        ctl.transaction_line_id payment_line_id,
+                         -- 收款账号
+		               (SELECT lns.account_number
+		                  FROM csh_payment_requisition_lns lns
+		                 WHERE lns.payment_requisition_line_id =
+		                       r.payment_requisition_line_id) account_number,
+		               -- 收款户名
+		               (SELECT lns.account_name
+		                  FROM csh_payment_requisition_lns lns
+		                 WHERE lns.payment_requisition_line_id =
+		                       r.payment_requisition_line_id) account_name,
+		                r.payment_requisition_line_id
+                    FROM
+                        csh_transaction_headers pcth,
+                        csh_transaction_lines pctl,
+                        csh_transaction_headers cth,
+                        csh_transaction_lines ctl,
+                        csh_write_off cwo,
+                        csh_payment_requisition_refs r
+                    WHERE
+                        r.payment_requisition_line_id = ${@requisition_line_id} AND
+                        r.write_off_id                = cwo.write_off_id AND
+                        r.csh_transaction_line_id     = ctl.transaction_line_id AND
+                        cwo.csh_transaction_line_id   = ctl.transaction_line_id AND
+                        ctl.transaction_header_id     = cth.transaction_header_id AND
+                        cwo.source_csh_trx_line_id    = pctl.transaction_line_id AND
+                        pctl.transaction_header_id    = pcth.transaction_header_id AND
+                        cth.transaction_type          = 'PAYMENT' AND
+                        cth.posted_flag               = 'Y' AND
+                        cth.reversed_flag            IS NULL AND
+                        cth.returned_flag            IN ('Y', 'N') AND
+                        pcth.transaction_type         = 'PREPAYMENT' AND
+                        pcth.posted_flag              = 'Y' AND
+                        pcth.reversed_flag           IS NULL AND
+                        pcth.returned_flag           IN ('Y', 'N')
+                    ) t #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="requisition_line_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="transaction_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="TRANSACTION_HEADER_ID"/>
+        <bm:field name="transaction_num" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="120" forDisplay="true" forQuery="true" physicalName="TRANSACTION_NUM" prompt="CSH_REPAYMENT_REGISTER_DISTS.PREPAY_TRX_NUM"/>
+        <bm:field name="payment_num" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="120" forDisplay="true" forQuery="true" prompt="CSH_REPAYMENT_REGISTER_DISTS.PAY_TRX_NUM"/>
+        <bm:field name="transaction_date" databaseType="DATE" datatype="java.util.Date" displayAlign="center" displayWidth="80" forDisplay="true" physicalName="TRANSACTION_DATE" prompt="CSH_BANK_BALANCES.BALANCE_DATE"/>
+        <bm:field name="transaction_line_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="TRANSACTION_LINE_ID"/>
+        <bm:field name="transaction_amount" databaseType="NUMBER" datatype="java.lang.Double" displayWidth="100" forDisplay="true" physicalName="TRANSACTION_AMOUNT" prompt="CSH_TRANSACTION_DISTS.AMOUNT"/>
+        <bm:field name="balance" databaseType="NUMBER" datatype="java.lang.Double" displayWidth="100" forDisplay="true" physicalName="BALANCE" prompt="CSH7010.BALANCE"/>
+        <bm:field name="payment_header_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="payment_line_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="account_number" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="120" forDisplay="true" forQuery="true" physicalName="account_number" prompt="收款账户"/>
+        <bm:field name="account_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="120" forDisplay="true" physicalName="account_name" prompt="收款户名"/>
+        <bm:field name="payment_requisition_line_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="transaction_num" queryOperator="like"/>
+        <bm:query-field field="payment_num" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,672 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zhangyi2652 $
+    $Date: 2010/11/26 05:56:20 $
+    $Revision: 1.2 $
+    $Purpose:
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="acp.acp_req_maintain_init_hd_id" rootpath="acp_req_hd_id"/>
+        <a:model-query model="acp.acp_req_update_init_header" rootpath="acp_requisition_header"/>
+        <a:model-query defaultWhereClause="employee_id = ${/model/acp_requisition_header/record/@employee_id}" model="acp.acp_applicant_position" rootPath="emp_position"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="acp_acp_req_query_detail_readonly_link" url="${/request/@context_path}/modules/acp/public/acp_acp_req_query_detail_readonly.screen"/>
+        <a:link id="uploadFile_link_1" url="${/request/@context_path}/uploadFile.screen"/>
+        <a:link id="acp_acp_req_maintain_link" url="${/request/@context_path}/modules/acp/public/acp_acp_req_maintain.screen"/>
+        <a:link id="acp_req_maintain_submit_link" model="acp.acp_req_maintain_submit" modelaction="update"/>
+        <a:link id="acp_acp_req_maintain_update_link" url="${/request/@context_path}/modules/acp/public/acp_acp_req_maintain_update.screen"/>
+        <a:link id="acp_req_create_save_link" url="${/request/@context_path}/modules/acp/public/acp_req_create_save.svc"/>
+        <script><![CDATA[
+
+            function loadComplete() {
+                var headerDataSet = $('acp_input_ds');
+                var headerRecord = headerDataSet.getAt(0);
+                var acpReqHeaderRecord = $('acp_req_header_ds').getAt(0);
+                headerRecord.isNew = false;
+                headerRecord.set('_status', 'update');
+                headerRecord.set('acp_requisition_header_id', '${/parameter/@acp_requisition_header_id}');
+                if (!acpReqHeaderRecord) {
+                    return;
+                }
+                headerRecord.set('applicant', acpReqHeaderRecord.get('applicant'));
+                headerRecord.set('employee_id', acpReqHeaderRecord.get('employee_id'));
+                headerRecord.set('position_id_display', acpReqHeaderRecord.get('pos_desc'));
+                headerRecord.set('position_id', acpReqHeaderRecord.get('position_id'));
+                headerRecord.set('requisition_date', acpReqHeaderRecord.get('requisition_date'));
+                headerRecord.set('requisition_number', acpReqHeaderRecord.get('requisition_number'));
+                headerRecord.set('partner_category_display', acpReqHeaderRecord.get('partner_category_display'));
+                headerRecord.set('payment_object_id', acpReqHeaderRecord.get('partner_category'));
+                $('partner_name_ds').setQueryParameter('partner_category', acpReqHeaderRecord.get('partner_category'));
+                $('partner_name_ds').query();
+                headerRecord.set('partner_name', acpReqHeaderRecord.get('p_partner_name'));
+                headerRecord.set('partner_id', acpReqHeaderRecord.get('partner_id'));
+                headerRecord.set('csh_type', acpReqHeaderRecord.get('req_type_desc'));
+                headerRecord.set('csh_type_id', acpReqHeaderRecord.get('acp_req_type_id'));
+                headerRecord.set('currency_code', acpReqHeaderRecord.get('currency_code'));
+                headerRecord.set('amount', acpReqHeaderRecord.get('amount'));
+                headerRecord.set('payment_method', acpReqHeaderRecord.get('payment_method_desc'));
+                headerRecord.set('payment_method_id', acpReqHeaderRecord.get('payment_method_id'));
+                headerRecord.set('payment_com_id', acpReqHeaderRecord.get('payment_com_id'));
+                headerRecord.set('company_short_name', acpReqHeaderRecord.get('company_short_name'));
+                headerRecord.set('req_description', acpReqHeaderRecord.get('description'));
+                if (acpReqHeaderRecord.get('partner_category') != null && acpReqHeaderRecord.get('partner_category') != '') {
+                    headerRecord.getField('partner_name').setLovPara('partner_category', acpReqHeaderRecord.get('partner_category'));
+                    headerRecord.getField('partner_name').setLovService('acp.acp_partner_name');
+                    headerRecord.getField('partner_name').setReadOnly(false);
+                }
+                headerRecord.getMeta().getField('applicant').setReadOnly(true);
+                headerRecord.getMeta().getField('position_id_display').setReadOnly(true);
+                headerRecord.getMeta().getField('requisition_date').setReadOnly(true);
+                headerRecord.getMeta().getField('partner_category_display').setReadOnly(true);
+                headerRecord.getMeta().getField('csh_type').setReadOnly(true);
+                headerRecord.getMeta().getField('partner_name').setReadOnly(true);
+            }
+            
+            function refreshCombox(s, value, name, record) {
+            
+                $('gld_set_of_applicant_position_ds').setQueryParameter('employee_id', value);
+                $('gld_set_of_applicant_position_ds').query();
+                var record2 = $('acp_input_ds').getCurrentRecord();
+                record2.set('position_id_display', record.get('position_code'));
+                record2.set('position_id', record.get('position_id'));
+            }
+            
+            function refreshPartnerNameCombox(s, value, name, record) {
+            
+                $('partner_name_ds').setQueryParameter('partner_category', value);
+                $('partner_name_ds').query();
+                record.getField('p_partner_name').setLovService('acp.acp_partner_name');
+            }
+            
+            function setCurrency(s, value, name, record) {
+            
+                var record2 = $('acp_input_ds').getCurrentRecord();
+                record2.set('currency_code', record.get('currency_code'));
+            }
+            
+            function refDocLov(record, name) {
+            
+                var v_invoice_type = record.get('acp_requisition_line_type');
+            
+                var metaField = record.getMeta().getField('ref_document_id_display');
+                metaField.setLovPara('invoice_type', v_invoice_type);
+                metaField.setLovService('acp.acp_ref_document_id_display_lov');
+            
+                return 'ref_document_id_display_lov';
+            }
+            
+            function save() {
+                if (checkAmount()) {
+                    var headerDataSet = $('acp_input_ds');
+                    var lineDataSet = $('acp_result_ds');
+                    headerDataSet.getCurrentRecord().set('param_status', 'GENERATE');
+                    if (headerDataSet.validate() && lineDataSet.validate()) {
+                        var param = [];
+                        param = headerDataSet.getJsonData(false)[0] || [];
+                        param['line'] = lineDataSet.getJsonData(false);
+                        Aurora.request({
+                            url: $('acp_req_create_save_link').getUrl(),
+                            para: param,
+                            success: dispatch_create,
+                            scope: this
+                        });
+                    }
+                } else {
+                    alert('${l:ACP_ACP_REQUISITION_HDS.CHECK5}');
+                }
+            }
+            
+            function dispatch_create(args) {
+                window.location.href = $('acp_acp_req_maintain_update_link').getUrl() + '?acp_requisition_header_id=' + '${/parameter/@acp_requisition_header_id}';
+            }
+            
+            function addFunction(dataSet, record, index) {
+                var dataSetHeader = $('acp_input_ds');
+                var recordHeader = dataSetHeader.getAt(0);
+                var lineRecords = dataSet.getSelected();
+                if (typeof(recordHeader.get('employee_id')) == 'undefined' || recordHeader.get('employee_id') == '') {
+                    alert('${l:ACP_ACP_REQUISITION_HDS.CHECK2}');
+                    return false;
+                }
+                if (typeof(recordHeader.get('currency_code')) == 'undefined') {
+                    alert('${l:ACP_ACP_REQUISITION_HDS.CHECK1}');
+            
+                    return false;
+                }
+            
+                var payee_category = recordHeader.get('partner_category');
+                if (payee_category == 'EMPLOYEE') {
+                    records = $('exp_employee_accounts_ds').getAll();
+                    if (records.length > 0) {
+                        bank_record = $('exp_employee_accounts_ds').getAt(0);
+                    } else {
+                        bank_record = recordHeader;
+                    }
+                } else if (payee_category == 'VENDER') {
+                    records = $('pur_vender_accounts_ds').getAll();
+                    if (records.length > 0) {
+                        bank_record = $('pur_vender_accounts_ds').getAt(0);
+                    } else {
+                        bank_record = recordHeader;
+                    }
+                } else if (payee_category == 'CUSTOMER') {
+                    records = $('ord_customer_accounts_ds').getAll();
+                    if (records.length > 0) {
+                        bank_record = $('ord_customer_accounts_ds').getAt(0);
+                    } else {
+                        bank_record = recordHeader;
+                    }
+                }
+                recordHeader.getMeta().getField('applicant').setReadOnly(true);
+                recordHeader.getMeta().getField('position_id_display').setReadOnly(true);
+                recordHeader.getMeta().getField('requisition_date').setReadOnly(true);
+                recordHeader.getMeta().getField('partner_category_display').setReadOnly(true);
+                recordHeader.getMeta().getField('csh_type').setReadOnly(true);
+                recordHeader.getMeta().getField('partner_name').setReadOnly(true);
+                var acpReqHeaderRecord = $('acp_req_header_ds').getAt(0);
+                recordHeader.set('partner_id', acpReqHeaderRecord.get('partner_id'));
+                record.set('acp_requisition_header_id', $('acp_input_ds').getAt(0).get('acp_requisition_header_id'));
+                record.set('CURRENCY_CODE', recordHeader.get('description'));
+                record.set('partner_category_display', recordHeader.get('partner_category_display'));
+                record.set('partner_category', recordHeader.get('partner_category'));
+                record.set('p_partner_name', recordHeader.get('partner_name'));
+                record.set('partner_id', recordHeader.get('partner_id'));
+                record.set('partner_payee', recordHeader.get('partner_name'));
+                record.set('account_number', bank_record.get('account_number'));
+                record.set('account_name', bank_record.get('account_name'));
+                record.set('bank_code', bank_record.get('bank_code'));
+                record.set('bank_name', bank_record.get('bank_name'));
+                record.set('bank_location_code', bank_record.get('bank_location_code'));
+                record.set('bank_location_name', bank_record.get('bank_location'));
+                record.set('province_code', bank_record.get('province_code'));
+                record.set('province_name', bank_record.get('province_name'));
+                record.set('city_code', bank_record.get('city_code'));
+                record.set('city_name', bank_record.get('city_name'));
+                if (lineRecords.length != 0) {
+                    record.set('cls_des', lineRecords[0].get('cls_des'));
+                    record.set('csh_transaction_class_code', lineRecords[0].get('csh_transaction_class_code'));
+                    record.set('ref_document_type_desc', lineRecords[0].get('ref_document_type_desc'));
+                    record.set('acp_requisition_line_type', lineRecords[0].get('acp_requisition_line_type'));
+                    record.set('ref_document_id_display', lineRecords[0].get('ref_document_id_display'));
+                    record.set('ref_document_id', lineRecords[0].get('ref_document_id'));
+                    record.set('requisited_amount', lineRecords[0].get('requisited_amount'));
+                    record.set('need_payment_amount', lineRecords[0].get('need_payment_amount'));
+                    record.set('partner_category_display', lineRecords[0].get('partner_category_display'));
+                    record.set('partner_category', lineRecords[0].get('partner_category'));
+                    record.set('p_partner_name', lineRecords[0].get('p_partner_name'));
+                    record.set('partner_id', lineRecords[0].get('partner_id'));
+                    record.set('line_description', lineRecords[0].get('line_description'));
+                    record.set('amount', lineRecords[0].get('amount'));
+                    record.set('account_number', lineRecords[0].get('account_number'));
+                    record.set('account_name', lineRecords[0].get('account_name'));
+                    record.set('bank_code', lineRecords[0].get('bank_code'));
+                    record.set('bank_name', lineRecords[0].get('bank_name'));
+                    record.set('bank_location_code', lineRecords[0].get('bank_location_code'));
+                    record.set('bank_location_name', lineRecords[0].get('bank_location'));
+                    record.set('province_code', lineRecords[0].get('province_code'));
+                    record.set('province_name', lineRecords[0].get('province_name'));
+                    record.set('city_code', lineRecords[0].get('city_code'));
+                    record.set('city_name', lineRecords[0].get('city_name'));
+                }
+            }
+            
+            function submit() {
+                if (checkAmount()) {
+                    var headerDataSet = $('acp_input_ds');
+                    var lineDataSet = $('acp_result_ds');
+                    headerDataSet.getCurrentRecord().set('param_status', 'GENERATE');
+                    if (headerDataSet.validate() && lineDataSet.validate()) {
+                        var param = [];
+                        param = headerDataSet.getJsonData(false)[0] || [];
+                        param['line'] = lineDataSet.getJsonData(false);
+                        Aurora.request({
+                            url: /*acp_req_create_save.svc*/
+                            $('acp_req_create_save_link').getUrl(),
+                            para: param,
+                            success: finalSubmit,
+                            scope: this
+                        });
+                    }
+                } else {
+                    alert('${l:ACP_ACP_REQUISITION_HDS.CHECK5}');
+                }
+            }
+            
+            function finalSubmit() {
+                var param = {};
+                var rc = $('acp_input_ds').getAt(0);
+                param['acp_requisition_header_id'] = rc.get('acp_requisition_header_id');
+                param['_status'] = 'update';
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/acp.acp_req_maintain_submit/update*/
+                    $('acp_req_maintain_submit_link').getUrl(),
+                    para: param,
+                    success: function() {
+                        dispatch_submit();
+                    },
+                    scope: this
+                });
+            }
+            
+            function dispatch_submit(args) {
+            
+                window.location.href = /*acp_acp_req_maintain.screen*/
+                $('acp_acp_req_maintain_link').getUrl();
+            }
+            
+            function cellClickFunction_update(grid, row, name, record, value) {
+                if (name == 'account_number') {
+                    var r = record.getMeta();
+                    var f1 = r.getField('account_number');
+                    var payee_category = record.get('partner_category');
+                    if (payee_category == null || payee_category == undefined || payee_category == '') {
+                        f1.setLovService('');
+                    } else if (payee_category == 'EMPLOYEE') {
+                        f1.setLovService('expm.exp_employee_accounts');
+                        record.getMeta().getField('account_number').setLovPara('employee_id', record.get('partner_id'));
+                    } else if (payee_category == 'VENDER') {
+                        f1.setLovService('expm.pur_vender_accounts');
+                        record.getMeta().getField('account_number').setLovPara('vender_id', record.get('partner_id'));
+                    } else {
+                        f1.setLovService('expm.ord_customer_accounts');
+                        record.getMeta().getField('account_number').setLovPara('customer_id', record.get('partner_id'));
+                        //record.getMeta().getField('account_number').setLovPara('id', record.get('partner_id'));
+                    }
+                }
+                if (name == 'p_partner_name') {
+                    var f1 = record.getMeta().getField('p_partner_name');
+                    var payee_category = record.get('partner_category');
+                    if (payee_category == null || payee_category == undefined || payee_category == '') {
+                        f1.setLovService('');
+                    } else if (payee_category == 'EMPLOYEE') {
+                        f1.setLovService('csh.csh_pay_req_emp_lov');
+                        // f1.setLovService('expm.exp_req_employee_lov');
+                    } else if (payee_category == 'VENDER') {
+                        // f1.setLovService('fnd.pur_system_venders');
+                        f1.setLovService('csh.csh_pay_req_ven_lov');
+                    } else {
+                        // f1.setLovService('fnd.ord_system_customers');
+                        f1.setLovService('csh.csh_pay_req_cus_lov');
+                    }
+                }
+                if (name=='document_number'){
+                    var payed_amount=$('acp_input_ds').getAt(0).get('amount');
+                    var f1 = record.getMeta().getField('document_number');
+                    f1.setLovPara('payed_amount',payed_amount);
+                }
+            }
+            
+            function onUpdate(dataSet, record, name, value, oldValue) {
+                if (name == 'amount' && value != '') {
+            
+                    if (record.get('acp_requisition_line_type') == 'ACP_INVOICE' || record.get('acp_requisition_line_type') == 'ACR_INVOICE') {
+                        if (record.get('amount') <= 0 || record.get('amount') > record.get('need_payment_amount') - record.get('requisited_amount')) {
+            
+                            alert('${l:ACP_ACP_REQUISITION_HDS.CHECK3}');
+                            //record.set('amount', 0);
+                            //alert('*');
+                        }
+                    } else {
+                        if (record.get('amount') <= 0) {
+                            alert('${l:ACP_ACP_REQUISITION_HDS.CHECK4}');
+                            //record.set('amount', '');
+                        }
+                    }
+                }
+                if (name == 'p_partner_name' && value != '') {
+            
+                    record.set('partner_payee', record.get('p_partner_name'));
+            
+                }
+                if (name == 'partner_category') {
+                    if (value != null && value != '') {
+                        record.getField('p_partner_name').setLovPara('partner_category', value);
+                        record.getField('p_partner_name').setLovService('acp.acp_partner_name');
+                        record.getField('p_partner_name').setReadOnly(false);
+                    } else {
+                        record.getField('p_partner_name').setLovService('');
+                        record.getField('p_partner_name').setReadOnly(true);
+                    }
+                    record.set('p_partner_name', '');
+                    record.set('partner_id', '');
+                }
+            }
+            
+            function validateAmount(record, name, value) {
+                if (record.get('acp_requisition_line_type') == 'ACP_INVOICE' || record.get('acp_requisition_line_type') == 'ACR_INVOICE') {
+                    if (record.get('amount') <= 0 || record.get('amount') > record.get('need_payment_amount') - record.get('requisited_amount')) {
+                        return '${l:ACP_ACP_REQUISITION_HDS.CHECK3}';
+                    }
+                }
+                return true;
+            }
+            
+            function checkAmount() {
+                var dataSetHeader = $('acp_input_ds');
+                var dataSetLine = $('acp_result_ds');
+                var recordHeader = dataSetHeader.getAt(0);
+            
+                var lineRecords = dataSetLine.getAll();
+            
+                var headerAmount = recordHeader.get('amount');
+            
+                var lineAmount = 0;
+            
+                for (var i = 0;i < lineRecords.length;i++) {
+                    lineAmount = lineAmount + lineRecords[i].get('amount');
+                }
+                if (headerAmount == lineAmount) {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+            
+            function setPartnerName(ds, record, name, value, oldvalue) {
+                if (name == 'partner_category') {
+                    if (value != null && value != '') {
+                        record.getField('partner_name').setLovPara('partner_category', value);
+                        record.getField('partner_name').setLovService('acp.acp_partner_name');
+                        record.getField('partner_name').setReadOnly(false);
+                    } else {
+                        record.getField('partner_name').setLovService('');
+                        record.getField('partner_name').setReadOnly(true);
+                    }
+                    record.set('partner_name', '');
+                    record.set('partner_id', '');
+                }
+		    	if(name=='partner_id'){
+		    	    
+                    var payee_category = record.get('partner_category');
+                    if (payee_category == 'EMPLOYEE') {
+            
+                        $('exp_employee_accounts_ds').setQueryParameter('employee_id', value);
+                        $('exp_employee_accounts_ds').setQueryParameter('primary_flag', 'Y');
+                        $('exp_employee_accounts_ds').query();
+            
+                    } else if (payee_category == 'VENDER') {
+                        $('pur_vender_accounts_ds').setQueryParameter('vender_id', value);
+                        $('pur_vender_accounts_ds').setQueryParameter('primary_flag', 'Y');
+                        $('pur_vender_accounts_ds').query();
+            
+                    } else if (payee_category == 'CUSTOMER') {
+                        $('ord_customer_accounts_ds').setQueryParameter('customer_id', value);
+                        $('ord_customer_accounts_ds').setQueryParameter('primary_flag', 'Y');
+                        $('ord_customer_accounts_ds').query();
+            
+                    }
+		    	}
+            }
+            
+            function upLoad() {
+                var url = /*${/request/@context_path}/uploadFile.screen*/
+                $('uploadFile_link_1').getUrl() + '?table_name=ACP_REQ_HEADERS&header_id=${/parameter/@acp_requisition_header_id}';
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'exp_report_pmtplan_schedules_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            
+            function seeHistory() {
+                new Aurora.Window({
+                    id: 'acp_acp_req_query_detail_readonly_screen',
+                    url: /*acp_acp_req_query_detail_readonly.screen*/
+                    $('acp_acp_req_query_detail_readonly_link').getUrl() + '?acp_requisition_header_id=' + '${/parameter/@acp_requisition_header_id}',
+                    title: '${l:DOCUMENT_RECORD_QUERY}',
+                    height: 435,
+                    width: 540
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="exp_employee_accounts_ds" model="expm.exp_employee_accounts"/>
+            <a:dataSet id="ord_customer_accounts_ds" model="expm.ord_customer_accounts"/>
+            <a:dataSet id="pur_vender_accounts_ds" model="expm.pur_vender_accounts"/>
+            <a:dataSet id="acp_req_header_ds">
+                <a:datas dataSource="/model/acp_requisition_header"/>
+            </a:dataSet>
+            <a:dataSet id="gld_set_of_applicant_ds" loadData="true" model="acp.acp_applicant"/>
+            <a:dataSet id="gld_set_of_applicant_position_ds" model="acp.acp_applicant_position">
+                <a:datas dataSource="/model/emp_position"/>
+            </a:dataSet>
+            <a:dataSet id="payment_object_ds" loadData="true" lookupcode="PAYMENT_OBJECT"/>
+            <a:dataSet id="partner_name_ds" model="acp.acp_partner_name"/>
+            <a:dataSet id="partner_name_ds_line" model="acp.acp_partner_name"/>
+            <a:dataSet id="pay_req_type" loadData="true" model="acp.acp_pay_req_type">
+                <a:fields>
+                    <a:field name="description"/>
+                    <a:field name="id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="company_list_ds" loadData="true" model="acp.acp_company_list"/>
+            <a:dataSet id="req_doc_category_ds" lookupcode="ACP_REQ_DOC_CATEGORY"/>
+            <a:dataSet id="default_company_ds" loadData="true" model="acp.acp_default_company"/>
+            <a:dataSet id="acp_req_hd_id_ds">
+                <a:datas dataSource="/model/acp_req_hd_id"/>
+            </a:dataSet>
+            <a:dataSet id="acp_input_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="acp_requisition_header_id" defaultValue="${/model/acp_req_hd_id/record/@acp_requisition_header_id}"/>
+                    <a:field name="applicant" displayField="name" options="gld_set_of_applicant_ds" readOnly="true" required="true" returnField="employee_id" valueField="employee_id"/>
+                    <a:field name="employee_id" required="true"/>
+                    <a:field name="position_id"/>
+                    <a:field name="position_id_display" displayField="position_code" options="gld_set_of_applicant_position_ds" required="true" returnField="position_id" valueField="position_id"/>
+                    <a:field name="requisition_date" required="true"/>
+                    <a:field name="requisition_number"/>
+                    <a:field name="partner_category_display" displayfield="code_value_name" options="payment_object_ds" required="true" returnfield="partner_category" valuefield="code_value"/>
+                    <a:field name="payment_object_id"/>
+                    <a:field name="partner_name" autoComplete="true" autoCompleteField="name_code" lovGridHeight="300" lovHeight="450" lovWidth="500" readOnly="true" required="true" title="CSH_TRANSACTION_LINES.PARTNER_ID_ONE">
+                        <a:mapping>
+                            <a:map from="name_code" to="partner_name"/>
+                            <a:map from="id" to="partner_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_id"/>
+                    <a:field name="csh_type" displayfield="description" options="pay_req_type" required="true" returnfield="csh_type_id" valuefield="type_id"/>
+                    <a:field name="csh_type_id"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="amount" required="true"/>
+                    <a:field name="payment_method" autoComplete="true" autoCompleteField="description" lovGridHeight="350" lovHeight="500" lovService="acp.acp_payment_method" lovWidth="500" required="true" title="CSH_PAYMENT_METHODS.CSH_PAYMENT_METHODS_QUERY">
+                        <a:mapping>
+                            <a:map from="description" to="payment_method"/>
+                            <a:map from="payment_method_id" to="payment_method_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="payment_status"/>
+                    <a:field name="payment_com_id"/>
+                    <a:field name="company_short_name" displayfield="company_short_name" options="company_list_ds" required="true" returnfield="payment_com_id" valuefield="company_id"/>
+                    <a:field name="req_description" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="setPartnerName"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="acp_result_ds" autoPageSize="true" autoQuery="true" fetchAll="false" model="acp.acp_req_maintain_update_line_query" queryUrl="${/request/@context_path}/autocrud/acp.acp_req_maintain_update_line_query/query?acp_requisition_header_id=${/parameter/@acp_requisition_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="acp_requisition_line_id"/>
+                    <a:field name="cls_des" autoComplete="true" autoCompleteField="cls_des" lovGridHeight="350" lovHeight="500" lovService="acp.acp_tran_class_code_list" lovWidth="500" required="true" title="ACP_REQUISITION.CSH_TRANSACTION_CLASS_CODE">
+                        <a:mapping>
+                            <a:map from="cls_des" to="cls_des"/>
+                            <a:map from="csh_transaction_class_code" to="csh_transaction_class_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="document_number" lovGridHeight="300" lovHeight="430" lovService="acp.acp_ref_report_display_lov" lovWidth="500" title="EXP_EXPENSE_ACCRUED.CLAIMS">
+                        <a:mapping>
+                            <a:map from="exp_report_number" to="document_number"/>
+                            <a:map from="due_amount" to="due_amount"/>
+                            <a:map from="payed_amount" to="payed_amount"/>
+                            <a:map from="payment_schedule_line_id" to="ref_document_line_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="ref_document_type_desc" displayField="code_value_name" options="req_doc_category_ds" required="true" returnField="acp_requisition_line_type" valueField="code_value"/>
+                    <a:field name="ref_document_id_display" autoComplete="true" autoCompleteField="invoice_number" lovGridHeight="300" lovHeight="430" lovWidth="500" title="ACP_REQUISITION.REF_DOCUMENT_ID_DISPLAY">
+                        <a:mapping>
+                            <a:map from="invoice_number" to="ref_document_id_display"/>
+                            <a:map from="invoice_id" to="ref_document_id"/>
+                            <a:map from="invoice_req_amount" to="requisited_amount"/>
+                            <a:map from="need_payment_amount" to="need_payment_amount"/>
+                            <!--a:map from="p_requisited_unpayment_amount" to="amount"/-->
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_category_display" displayfield="code_value_name" options="payment_object_ds" required="true" returnfield="partner_category" valuefield="code_value">
+                        <a:mapping>
+                            <a:map from="code_value" to="partner_category"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_number" lovGridHeight="320" lovHeight="460" lovWidth="500" required="true" title="CSH_BANK_BALANCES.BANK_ACCOUNT_ID">
+                        <a:mapping>
+                            <a:map from="account_number" to="account_number"/>
+                            <a:map from="account_name" to="account_name"/>
+                            <a:map from="bank_code" to="bank_code"/>
+                            <a:map from="bank_name" to="bank_name"/>
+                            <a:map from="bank_location_code" to="bank_location_code"/>
+                            <a:map from="bank_location_name" to="bank_location_name"/>
+                            <a:map from="province_code" to="province_code"/>
+                            <a:map from="province_name" to="province_name"/>
+                            <a:map from="city_code" to="city_code"/>
+                            <a:map from="city_name" to="city_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_category"/>
+                    <a:field name="p_partner_name" lovGridHeight="350" lovHeight="500" lovWidth="500" title="ACP_REQUISITION.PARTNER_NAME">
+                        <a:mapping>
+                            <a:map from="partner_code" to="p_partner_name"/>
+                            <a:map from="id" to="partner_id"/>
+                            <a:map from="account_name" to="account_name"/>
+                            <a:map from="account_number" to="account_number"/>
+                            <a:map from="bank_code" to="bank_code"/>
+                            <a:map from="bank_name" to="bank_name"/>
+                            <a:map from="bank_location_code" to="bank_location_code"/>
+                            <a:map from="bank_location_name" to="bank_location_name"/>
+                            <a:map from="province_code" to="province_code"/>
+                            <a:map from="province_name" to="province_name"/>
+                            <a:map from="city_code" to="city_code"/>
+                            <a:map from="city_name" to="city_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_id"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="payment_method"/>
+                    <a:field name="payment_status"/>
+                    <a:field name="pay_company"/>
+                    <a:field name="amount" required="true" validator="validateAmount"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="addFunction"/>
+                    <a:event name="update" handler="onUpdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="acp_mant_upd_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="save" text="HAP_SAVE" width="80"/>
+                <a:toolbarButton click="submit" text="PROMPT.SUBMIT" width="80"/>
+                <a:toolbarButton click="upLoad" text="EXP_REQUESTION_CREATE_SERVICE.UPLOAD" width="80"/>
+                <a:toolbarButton click="seeHistory" text="PROMPT.HISTORY" width="80"/>
+            </a:screenTopToolbar>
+            <a:form id="acp_req_mant_upd_desc_ta" column="1" title="PAYMENT_REQUISITION_MAINTENANCE">
+                <a:box column="4" style="width:100%">
+                    <a:comboBox name="applicant" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.APPLICANT">
+                        <a:events>
+                            <a:event name="select" handler="refreshCombox"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:comboBox name="position_id_display" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.POSITION"/>
+                    <a:datePicker name="requisition_date" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.REQUISITION_DATE"/>
+                    <a:textField name="requisition_number" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.REQUEST_NO" readOnly="true"/>
+                    <a:comboBox name="partner_category_display" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.PARTNER_CATEGORY">
+                        <a:events>
+                            <a:event name="select" handler="refreshPartnerNameCombox"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:lov name="partner_name" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.PARTNER_NAME"/>
+                    <a:comboBox name="csh_type" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.REQ_TYPES">
+                        <a:events>
+                            <a:event name="select" handler="setCurrency"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:textField name="currency_code" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.CURRENCY" readOnly="true"/>
+                    <a:numberField name="amount" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.AMOUNT"/>
+                    <a:lov name="payment_method" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.PAYMENT_METHOD"/>
+                    <a:textField name="payment_status" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.PAYMENT_STATUS" readOnly="true"/>
+                    <a:comboBox name="company_short_name" id="pay_company_id" bindTarget="acp_input_ds" prompt="ACP_REQUISITION.PAYMENT_COM"/>
+                </a:box>
+                <a:hBox style="width:100%;">
+                    <a:textArea name="req_description" id="acp_req_mant_upd_desc_ta" bindTarget="acp_input_ds" colspan="4" prompt="ACP_REQUISITION.LINE_DESCRIPTION"/>
+                </a:hBox>
+            </a:form>
+            <a:grid id="result_grid" bindTarget="acp_result_ds" marginHeight="225" marginWidth="15" navBar="true">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="delete"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="cls_des" align="left" editor="csh_transaction_class_code_cb" prompt="ACP_REQUISITION.CSH_TRANSACTION_CLASS_CODE" sortable="true" width="80"/>
+                    <a:column name="ref_document_type_desc" align="left" editor="acp_requisition_line_type_cb" prompt="ACP_REQUISITION.ACP_REQUISITION_LINE_TYPE" width="150"/>
+                    <a:column name="ref_document_id_display" align="left" editorFunction="refDocLov" prompt="ACP_REQUISITION.REF_DOCUMENT_ID_DISPLAY" width="150"/>
+                    <a:column name="document_number" align="left" editor="p_partner_name_cb" prompt="EXP_EXPENSE_ACCRUED.CLAIMS" sortable="true" width="120"/>
+                    <a:column name="partner_category_display" align="left" editor="partner_category_cb" prompt="ACP_REQUISITION.PARTNER_CATEGORY" sortable="true" width="80"/>
+                    <a:column name="p_partner_name" align="left" editor="p_partner_name_cb" prompt="ACP_REQUISITION.PARTNER_NAME" sortable="true" width="120"/>
+                    <a:column name="account_number" align="left" editor="ref_document_id_display_lov" prompt="EXP_EMPLOYEE.BANK_ACCOUNT" width="150"/>
+                    <a:column name="account_name" align="left" prompt="CSH_BANK_BALANCES.BANK_ACCOUNT_ID" width="80"/>
+                    <a:column name="line_description" align="left" editor="line_description_tf" prompt="ACP_REQUISITION.LINE_DESCRIPTION" width="150"/>
+                    <a:column name="need_payment_amount" align="right" prompt="ACP_REQUISITION.NEED_PAYMENT_AMOUNT" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="requisited_amount" align="right" prompt="ACP_REQUISITION.REQUISITED_AMOUNT" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="amount" align="right" editor="amount_tf" prompt="ACP_REQUISITION.AMOUNT" renderer="Aurora.formatMoney" width="100"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="csh_transaction_class_code_cb"/>
+                    <a:comboBox id="acp_requisition_line_type_cb"/>
+                    <a:lov id="ref_document_id_display_lov"/>
+                    <a:comboBox id="partner_category_cb"/>
+                    <a:lov id="p_partner_name_cb"/>
+                    <a:textField id="partner_bank_branch_code_tf"/>
+                    <a:textField id="partner_bank_acc_code_tf"/>
+                    <a:textField id="partner_bank_acc_addr_tf"/>
+                    <a:textField id="line_description_tf"/>
+                    <a:numberField id="amount_tf"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="cellClickFunction_update"/>
+                </a:events>
+            </a:grid>
+            <script><![CDATA[
+        	
+        		loadComplete();
+        	
+        ]]></script>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function acpmantupdInitSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度
+                var vw = parseInt(Aurora.getCookie('vw'));
+                //自适应宽度
+                var marginWidth = 15;
+                //Form的自适宽度，需要 -4
+                var formMarginWidth = marginWidth - 4;
+                //Form的宽度
+                var formWidth = vw - formMarginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = formWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置Form的宽度自适应
+                Ext.get('acp_req_mant_upd_head_form').setWidth(formWidth);
+                //设置TextArea的自适应宽度, 
+                Ext.get('acp_req_mant_upd_desc_ta').setWidth(formInnerWidth - (formInnerWidth / colSpan - labelWidth - tagWidth) - labelWidth - 10);
+            }
+            //Ext.fly(window).on('resize', acpmantupdInitSize);
+            acpmantupdInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

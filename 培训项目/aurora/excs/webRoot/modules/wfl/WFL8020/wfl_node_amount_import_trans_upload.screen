@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: waiwaids  
+    $Date: 2011-9-9 下午3:47:11  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="wfl.WFL8020.wfl_node_amount_import_batch_id" rootPath="batch_id"/>
+        <a:model-query model="wfl.wlf_get_node_amount_import_head_id" rootPath="header"/>
+        <a:import-excel header_id="${/model/header/record/@header_id}" separator="," status_field="/parameter/@importsuccess" template_code="WFL_NODE_AMOUNT_IMPORT" user_id="${/session/@user_id}"/>
+        <a:model-query defaultWhereClause="header_id=${/model/header/record/@header_id} and TEMPLATE_CODE = &apos;WFL_NODE_AMOUNT_IMPORT&apos;" model="wfl.wfl_note_amonut_import_get_status" rootPath="status"/>
+        <a:model-query autoCount="false" defaultWhereClause="header_id=${/model/header/record/@header_id} order by line_id" fetchAll="true" model="wfl.wfl_node_amount_import_get_fnd_data" rootPath="importData"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="wfl_node_amount_import_link" url="${/request/@context_path}/modules/wfl/WFL8020/wfl_node_amount_import.screen"/>
+        <a:link id="wfl_node_amount_import_save_data_link" url="${/request/@context_path}/modules/wfl/WFL8020/wfl_node_amount_import_save_data.svc"/>
+        <script><![CDATA[
+    		function loadComplete2(){
+    			if ('${/model/status/record/@status}' == 'NEW'){
+    				var importData		= $('fnd_data_ds').getAll();
+	    			var param			= {};
+	    			var saveData		= [];
+	    			var errorData		= "";
+	    			var importFlag		= true;
+	    			param['batch_id']	= '${/model/batch_id/record/@batch_id}';
+	    			for(var i=1; i<importData.length; i++){
+	    				var lineErrorFlag	= true;
+	    				if (importData[i].get('attribute_2') && importData[i].get('attribute_6')){
+	    				} else{
+	    					errorData  += importData[i].get('line_id') + ",";
+	    					importFlag 	= false;
+	    				}
+	    			}
+	    			if (importFlag) {
+	    			
+	    				for(var i=1; i<importData.length; i++){
+		    				var lineData	= {};
+		    				lineData['batch_id']					= '${/model/batch_id/record/@batch_id}';
+		    				lineData['seq_no']				= importData[i].get('attribute_1');
+		    				lineData['workflow_code']				= importData[i].get('attribute_2');
+		    				lineData['company_code']		= importData[i].get('attribute_3');
+		    				lineData['transaction_category']	= importData[i].get('attribute_4');
+		    				lineData['type_code']			= importData[i].get('attribute_5');
+		    				lineData['node_name']				= importData[i].get('attribute_6');
+		    				lineData['amount']		= importData[i].get('attribute_7');
+		    				saveData.push(lineData);
+		    			}
+	    				param['details']	 = saveData;
+		    			Aurora.request({
+		    				url		: /*wfl_node_amount_import_save_data.svc*/$('wfl_node_amount_import_save_data_link').getUrl(),
+		    				para	: param,
+		    				success	: function(){
+		    					Ext.get('failure_form').setStyle('display','none');
+		    					Ext.get('success_form').setStyle('visibility','visible');
+		    				},
+		    				scope	: this
+		    			});
+	    			} else {
+	    				errorData	 = errorData.substr(0, errorData.length-1);
+	    				Ext.get('success_form').setStyle('display','none');
+	    				Ext.get('failure_form').setStyle('visibility','visible');
+	    				$('error_ds').setQueryParameter('errorData', errorData);
+	    				$('error_ds').query();
+	    			}
+    			} else {
+    				Ext.get('success_form').setStyle('display','none');
+    				Ext.get('failure_form').setStyle('visibility','visible');
+    			}
+    		}
+    		function view(){
+    			window.location.href = /*wfl_node_amount_import.screen*/$('wfl_node_amount_import_link').getUrl()+'?batch_id=${/model/batch_id/record/@batch_id}';
+    			//window.close();
+    		}
+    		function back(){
+    			window.location.href = /*wfl_node_amount_import.screen*/$('wfl_node_amount_import_link').getUrl()+'?batch_id=${/model/batch_id/record/@batch_id}';
+    		}
+	  	]]></script>
+        <a:dataSets>
+            <a:dataSet id="fnd_data_ds">
+                <a:datas dataSource="/model/importData"/>
+            </a:dataSet>
+            <a:dataSet id="error_ds" model="wfl.WFL2500.wfl_node_amount_import_get_error_data">
+                <a:fields>
+                    <a:field name="seq_no" prompt="WORKFLOW_APPR.SEQ_NUMBER"/>
+                    <a:field name="workflow_code" prompt="WFL_WORKFLOW_CODE"/>
+                    <a:field name="company_code" prompt="COMPANY_CODE"/>
+                    <a:field name="transaction_category" prompt="WFL_WORKFLOW_TRANSACTION.TRANSACTION_CATEGORY"/>
+                    <a:field name="type_code" prompt="FND_CODE_RULE_DOCUMENT_TYPES.CODE"/>
+                    <a:field name="message_date" prompt="LOG_DATE"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form id="success_form" style="visibility:hidden" title="IMPORT_SUCCESS" width="400">
+                <a:button click="view" text="PROMPT.VIEW"/>
+            </a:form>
+            <a:form id="failure_form" height="400" style="visibility:hidden" title="ERROR_MESSAGE" width="980">
+                <a:grid bindTarget="error_ds" height="350" navBar="true" width="980">
+                    <a:columns>
+                        <a:column name="seq_no"/>
+                        <a:column name="workflow_code"/>
+                        <a:column name="company_code"/>
+                        <a:column name="transaction_category"/>
+                        <a:column name="type_code"/>
+                        <a:column name="node_name" prompt="WORKFLOW_NODE_NAME"/>
+                        <a:column name="amount" prompt="AMOUNT_PREMISSION"/>
+                        <a:column name="message_date" width="150"/>
+                    </a:columns>
+                </a:grid>
+                <a:hBox>
+                    <a:button click="back" text="HAP_BACK"/>
+                </a:hBox>
+            </a:form>
+        </a:screenBody>
+        <script><![CDATA[
+	  		loadComplete2();
+	  	]]></script>
+    </a:view>
+</a:screen>

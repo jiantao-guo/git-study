@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Dream  
+    $Date: 2011-10-12 下午01:58:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="pur.pur_employee_name" rootPath="employee"/>
+        <a:model-query fetchall="true" model="pur.pur_proxy_dimension_order" rootpath="head_dimension"/>
+        <a:model-query fetchall="true" model="pur.pur_req_ref_obj_type_order" rootpath="head_object"/>
+        <a:model-query fetchall="true" model="pur.pur_report_line_dimension" rootpath="line_dimension"/>
+        <a:model-query fetchall="true" model="pur.pur_report_line_object" rootpath="line_object"/>
+        <a:model-query fetchall="true" model="pur.pur_include_rat" rootpath="rat"/>
+        <a:model-query fetchall="true" model="pur.pur_rate_kind" rootpath="rate"/>
+        <a:model-query fetchall="true" model="pur.pur_precision_amount" rootpath="prec"/>
+        <a:model-query fetchAll="true" model="pur.pur_order_objects" rootPath="object_record"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur_budget_check_log_link" url="${/request/@context_path}/modules/pur/public/pur_budget_check_log.screen"/>
+        <a:link id="pur_order_query_history_link" url="${/request/@context_path}/modules/pur/public/pur_order_query_history.screen"/>
+        <script><![CDATA[
+          
+          function setNotCludeAmount(value,record,p){
+                var price = record.get('unit_price');
+                    var amount=record.get('primary_quantity');
+                    var include_flag=record.get('rate_conlud_flag');
+                    
+                    var rate=record.get('rate')/100;
+                    var not_include_amount=0;
+                    if(include_flag=='Y'){
+                        not_include_amount=price/(1-rate)*amount;
+                    }else{
+                        not_include_amount=price*amount;
+                    }
+                    
+                
+                    return not_include_amount.toFixed(2);
+            }
+            
+            
+            function setRateAmount(value,record,p){
+                var price = record.get('unit_price');
+                    var amount=record.get('primary_quantity');
+                    var include_flag=record.get('rate_conlud_flag');
+                    
+                    var rate=record.get('rate')/100;
+                    var rate_amount=0;
+                    if(include_flag=='Y'){
+                        rate_amount=price/(1-rate)*amount*rate;
+                    }else{
+                        rate_amount=0;
+                    }
+                    
+                
+                return  rate_amount.toFixed(2);
+            }
+            
+            
+            function setReqFunctionalAmount(value,record,p){
+                var price =record.get('unit_price');
+                var rate  =record.get('exchange_rate');
+                var req_functional_amount=0;
+                     
+                var quantity =record.get('primary_quantity');
+                if (record.get('exchange_rate_quotation')==""){
+                    record.set('req_functional_amount', price*quantity);
+                    return req_functional_amount.toFixed(2);
+                }
+                else if(record.get('exchange_rate_quotation')=='DIRECT QUOTATION'){
+                    record.set('req_functional_amount',price*quantity*rate);
+                    return  req_functional_amount.toFixed(2);
+                }else{
+                    record.set('req_functional_amount', price*quantity/rate);
+                    return  req_functional_amount.toFixed(2);
+                          
+                }
+            }
+            
+            function Track_order(){
+             var head_id = '${/parameter/@head_id}';
+                var openurl = /*pur_order_query_history.screen*/$('pur_order_query_history_link').getUrl()+'?pur_order_header_id=' + head_id;
+            
+                new Aurora.Window({
+                    url: openurl,
+                    title: '${l:PROMPT.HISTORY}',
+                    id: 'pur_order_query_history',
+                    width: 500,
+                    height: 460
+                });}
+                
+              function Over_bgt() {
+                openurl = /*pur_budget_check_log.screen*/$('pur_budget_check_log_link').getUrl()+'?head_id=${/parameter/@head_id}&document_type=PUR_REQUISITION';
+                new Aurora.Window({
+                    url: openurl,
+                    title: '${l:PROMPT.OVER_BUDGET_TYPE}',
+                    id: 'pur_order_adj_vender_list',
+                    width: 900,
+                    height: 700
+                });
+             }
+             
+             function back(){
+                location.href='${/parameter/@return}'+".screen";  
+                               
+             }
+             
+             function pur_purchase_order_detail_ds_load(ds){
+                 initHeadObject();
+                 initHeadDim();
+             }
+             
+              //初始化头上的费用对象
+            function initHeadObject(){
+                //在采购订单创建中关联的费用对象
+                var records=$("object_record_ds").getAll(); 
+                //在采购订单类型定义中关联的默认的费用对象         
+                var headObjDs=$("pur_report_object_head");
+                var headObjRecords=headObjDs.getAll();
+                //当前页面动态列中的费用对象
+                var headRecord=$("pur_report_head_object").getAt(0);
+                for(var i=0;i<headObjRecords.length;i++){
+                    var hor=headObjRecords[i];
+                    var exp_obj_type_id=hor.data["expense_object_type_id"];
+                    var exp_obj_type_code=hor.data["expense_object_type_code"];
+                    var forname=hor.data["forname"];
+                    for(var j=0;j<records.length;j++){
+                        if(records[j].get("line_id")){
+                            continue;
+                        }
+                        var r=records[j];
+                        if(r.get("expense_object_type_id")==exp_obj_type_id){
+                            headRecord.set(forname,r.get("expense_object_id"));
+                            headRecord.set(exp_obj_type_code,r.get("expense_object_desc"));
+                        }
+                    }
+                }
+            }
+            //初始化头上的维度，头上的维度是存放在行上的，每一行都是一样的
+            function initHeadDim() {
+                $('pur_report_head_dimension').create();
+                var lineRecord = $('pur_purchase_order_detail_ds').getAt(0);
+                if (!lineRecord) {
+                    return;
+                }
+                //在采购订单类型定义中关联的默认的维度对象      
+                var headDims = $('pur_report_dimension_head').getAll();
+                //当前页面动态列中的维度对象
+                var headDimRecord = $('pur_report_head_dimension').getAt(0);
+                for (var i = 0;i < headDims.length;i++) {
+                    var headDim = headDims[i];
+                    var d = headDim.get('dimension_code_d');
+                    var e = headDim.get('dimension_code_e');
+                    headDimRecord.set(d, lineRecord.get(d));
+                    headDimRecord.set(e, lineRecord.get(e));
+                }
+            }
+            ]]></script>
+        <a:dataSets>
+            <a:dataSet id="object_record_ds">
+                <a:datas dataSource="/model/object_record"/>
+            </a:dataSet>
+            <a:dataSet id="pur_report_object_head">
+                <a:datas dataSource="/model/head_object"/>
+            </a:dataSet>
+            <a:dataSet id="pur_report_dimension_head">
+                <a:datas dataSource="/model/head_dimension"/>
+            </a:dataSet>
+            <a:dataSet id="pur_cur_emp_query_ds" loadData="true" model="pur.pur_cur_emp">
+                <a:fields>
+                    <a:field name="employee_code" prompt="EXP_REQUISITION_HEADERS.CREATED_BY" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_report_head_dimension">
+                <a:fields>
+                    <a:placeHolder id="dynamicHeadFields"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_report_head_object" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="refobjHeadFields"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_order_headers_query_ds" loadData="true" model="pur.pur_order_headers">
+                <a:fields>
+                    <a:field name="order_type_desc" readOnly="true"/>
+                    <a:field name="pur_order_number" readOnly="true"/>
+                    <a:field name="document_date" readOnly="true"/>
+                    <a:field name="attachment_num" readOnly="true"/>
+                    <a:field name="vender_desc" readOnly="true"/>
+                    <a:field name="document_date" readOnly="true"/>
+                    <a:field name="buyer_desc" readOnly="true"/>
+                    <a:field name="period_name" readOnly="true"/>
+                    <a:field name="currency_code" readOnly="true"/>
+                    <a:field name="exchange_rate_type" readOnly="true"/>
+                    <a:field name="exchange_rate_quotation" readOnly="true"/>
+                    <a:field name="exchange_rate_quotation_desc" readOnly="true"/>
+                    <a:field name="exchange_rate" readOnly="true"/>
+                    <a:field name="description" readOnly="true"/>
+                    <a:placeHolder id="dynamicLineFields"/>
+                    <a:placeHolder id="dynamicLineFieldsObj"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_purchase_order_detail_ds" loadData="true" model="pur.pur_purchase_order_detail_query" pageSize="10" selectable="true">
+                <a:events>
+                    <a:event name="load" handler="pur_purchase_order_detail_ds_load"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="4" labelWidth="100" title="PUR_PURCHASE_ORDER_UNION_QUERY.PURCHASE_ORDER_QUERY" width="980">
+                <a:label name="order_type_desc" bindTarget="pur_order_headers_query_ds" prompt="PUR_ORDER_HEADERS.ORDER_TYPE_ID"/>
+                <a:label name="pur_order_number" bindTarget="pur_order_headers_query_ds" prompt="ACP_REQUISITION.REF_DOCUMENT_NUMBER"/>
+                <a:label name="document_date" bindTarget="pur_order_headers_query_ds" prompt="PUR_ORDER_HEADERS.DOCUMENT_DATE"/>
+                <a:label name="attachment_num" bindTarget="pur_order_headers_query_ds" prompt="EXP_REPORT_DISTS.ATTACHMENT_NUM"/>
+                <a:label name="vender_desc" bindTarget="pur_order_headers_query_ds" prompt="PUR_SYSTEM_VENDERS.DESCRIPTION"/>
+                <a:label name="document_date" bindTarget="pur_order_headers_query_ds" prompt="PUR_PURCHASE_ORDER_CREATE.DEFAULT_DATE"/>
+                <a:label name="employee_code" bindTarget="pur_cur_emp_query_ds"/>
+                <a:label name="currency_code" bindTarget="pur_order_headers_query_ds" prompt="ACP_REQUISITION.CURRENCY"/>
+                <a:label name="exchange_rate_type" bindTarget="pur_order_headers_query_ds" prompt="BGT_JOURNAL_INTERFACE.EXCHANGE_RATE_TYPE"/>
+                <a:label name="exchange_rate_quotation_desc" bindTarget="pur_order_headers_query_ds" prompt="BGT_BUDGET_RESERVES.EXCHANGE_RATE_QUOTATION"/>
+                <a:label name="exchange_rate" bindTarget="pur_order_headers_query_ds" prompt="BGT_BUDGET_RESERVES.EXCHANGE_RATE"/>
+            </a:form>
+            <a:vBox width="1000">
+                <a:label name="description" bindTarget="pur_order_headers_query_ds" prompt="CSH_PAYMENT_REQUISITION_HDS.DESCRIPTION" width="650"/>
+            </a:vBox>
+            <a:hBox height="120" width="860">
+                <a:fieldSet height="120" title="EXP_REQUESTION_CREATE_SERVICE.DIMENSION" width="485">
+                    <a:fieldSet column="2" style="width:460px;height:90px;overflow-x:hidden;overflow-y:auto;border:none;">
+                        <a:placeHolder id="dynamicHeadColumn"/>
+                    </a:fieldSet>
+                </a:fieldSet>
+                <a:fieldSet height="120" title="EXP_REQUESTION_CREATE_SERVICE.OBJECT" width="485">
+                    <a:fieldSet column="2" style="width:460px;height:90px;overflow-x:hidden;overflow-y:auto;border:none;">
+                        <a:placeHolder id="dynamicHeadObject"/>
+                    </a:fieldSet>
+                </a:fieldSet>
+            </a:hBox>
+            <a:box column="4" width="200">
+                <a:button text="PROMPT.PRINT"/>
+                <a:button click="Track_order" text="PROMPT.HISTORY"/>
+                <a:button click="Over_bgt" text="PROMPT.OVER_BUDGET_TYPE"/>
+                <a:button click="back" text="HAP_BACK"/>
+            </a:box>
+            <a:grid bindTarget="pur_purchase_order_detail_ds" height="265" width="980">
+                <a:toolBar>
+                    <a:button/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="line_number" lock="true" prompt="ACP_INVOICE_LINES.LINE_NUMBER" width="50"/>
+                    <a:column name="description" lock="true" prompt="ACP_INVOICE_HEADERS.DESCRIPTION" width="100"/>
+                    <a:column name="item_name" prompt="PUR_ORDER_LINES.ITEM_ID"/>
+                    <a:column name="expense_item_name" prompt="PUR_ORDER_LINES.EXPENSE_ITEM_ID" width="80"/>
+                    <a:column name="unit_price" align="right" prompt="PUR_ORDER_LINES.PRICE"/>
+                    <a:column name="primary_quantity" align="right" prompt="BGT_CHECK_LOGS.QUANTITY" width="100"/>
+                    <a:column name="rate_kind" align="right" prompt="PUR_COMPANY_VENDERS.TAX_TYPE_ID" width="100"/>
+                    <a:column name="rate_conlud_flag" align="right" prompt="PUR_ORDER_LINES.TAX_FLAG" width="100"/>
+                    <a:column name="total_amount" align="right" prompt="CON_CONTRACT_HEADERS.SUM_AMOUNT" width="100"/>
+                    <a:column name="date_from" align="center" prompt="PUR_REQUISITION_LINES.DATE_FROM" width="100"/>
+                    <a:column name="date_to" align="center" prompt="PUR_REQUISITION_LINES.DATE_TO" width="150"/>
+                    <a:column name="period_num" align="right" prompt="PUR_REQUISITION_LINES.PERIOD_NAME" width="100"/>
+                    <a:column name="primary_uom" align="right" prompt="PUR_REQUISITION_LINES.PRIMARY_UOM" width="100"/>
+                    <a:column name="not_include_amount" align="right" prompt="ACP_INVOICE_LINES.NET_AMOUNT" renderer="setNotCludeAmount" width="100"/>
+                    <a:column name="rate_amount" align="right" prompt="PUR_ORDER_LINES.TAX_AMOUNT" renderer="setRateAmount" width="100"/>
+                    <a:column name="req_functional_amount" align="right" prompt="BGT_CHECK_LOGS.FUNCTIONAL_AMOUNT" renderer="setReqFunctionalAmount" width="100"/>
+                    <a:column name="contract_id" prompt="CSH_PREPAYMENT_WRITE_OFF.CONTACT_NUMBER" width="100"/>
+                    <a:column name="company_code" prompt="ACP_ACP_REQUISITION_HDS.COMPANY_ID" width="100"/>
+                    <a:column name="responsibility_center_code" prompt="BGT_BUDGET_ITEM_MAPPING.RESPONSIBILITY_CENTER" width="100"/>
+                    <a:column name="unit_code" prompt="CON_CONTRACT_HEADERS.UNIT_ID" width="100"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        
+          
+        ]]></script>
+    </a:view>
+    <a:view-config>
+        <c:batch-config xmlns:c="aurora.application.action" source="/model/head_dimension" targetId="dynamicHeadColumn">
+            <a:label name="${@dimension_code_d}" bindTarget="pur_report_head_dimension"/>
+        </c:batch-config>
+        <c:create-config xmlns:c="aurora.application.action" targetId="dynamicHeadFields">
+            <p:loop xmlns:p="uncertain.proc" source="/model/head_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code_d}" defaultValue="${@value_description}" prompt="${@description}" readOnly="true"/>
+                    <a:field name="${@dimension_code_e}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config xmlns:c="aurora.application.action" source="/model/head_object" targetId="dynamicHeadObject">
+            <a:label name="${@expense_object_type_code}" bindTarget="pur_report_head_object"/>
+        </c:batch-config>
+        <c:create-config xmlns:c="aurora.application.action" targetId="refobjHeadFields">
+            <p:loop xmlns:p="uncertain.proc" source="/model/head_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" prompt="${@description}" readOnly="true"/>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config xmlns:c="aurora.application.action" source="/model/line_dimension" targetId="dynamicLineColumn">
+            <a:label name="${@dimension_code_d}" bindTarget="pur_report_line_ds"/>
+        </c:batch-config>
+        <c:create-config xmlns:c="aurora.application.action" targetId="dynamicLineFields">
+            <p:loop xmlns:p="uncertain.proc" source="/model/line_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code_d}" defaultValue="${@value_description}" prompt="${@description}" readOnly="true"/>
+                    <a:field name="${@dimension_code_e}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config xmlns:c="aurora.application.action" source="/model/line_object" targetId="dynamicLineColumnObj">
+            <a:label name="${@expense_object_type_code}" bindTarget="pur_report_line_ds"/>
+        </c:batch-config>
+        <c:create-config xmlns:c="aurora.application.action" targetId="dynamicLineFieldsObj">
+            <p:loop xmlns:p="uncertain.proc" source="/model/line_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" prompt="${@description}" readOnly="true"/>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

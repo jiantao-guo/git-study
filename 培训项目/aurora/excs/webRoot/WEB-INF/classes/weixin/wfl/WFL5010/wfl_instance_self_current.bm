@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                select
+                  t.*,
+                  wfl_common_pkg.can_cancel_instance(${/session/@user_id},t.ins_id) can_cancel,
+                  (
+                    select 
+                      x.document_desc
+                    from 
+                      (
+                        select 
+                          'EXP_REPORT' document_type,
+                          erh.exp_report_header_id document_id,
+                          erh.description document_desc
+                        from exp_report_headers erh
+                        union all
+                        select 
+                            'EXP_REQUISITION' document_type,
+                            erqh.exp_requisition_header_id document_id,
+                            erqh.description
+                          from exp_requisition_headers erqh
+                        union all
+                        select
+                            'PAYMENT_REQUISITION' document_type,
+                            cprh.payment_requisition_header_id document_id,
+                            cprh.description document_desc
+                        from csh_payment_requisition_hds cprh
+                      ) x 
+                    where 
+                        x.document_type = t.ins_doc_category 
+                        and x.document_id = t.ins_param
+                  ) ins_doc_desc, 
+                  decode(t.last_approve_name,
+                            null,
+                            null,
+                            to_char(t.LAST_UPDATE_DATE, 'yyyy-mm-dd hh24:mi')
+                  ) LAST_UPDATE_DATE_desc
+                from 
+                  (
+                    select 
+                      rs.*,
+                      to_char(rs.creation_date, 'yyyy-mm-dd hh24:mi') ins_sub_date,
+                      to_char(rs.creation_date, 'yyyy-mm-dd') ins_sub_date_day,
+                      sys_mobile_pkg.get_date_format(rs.creation_date) AS ins_sub_date_format,
+                      (
+                        select 
+                          code_value_name 
+                        from sys_code_values_v
+                        where 
+                          code = 'WFL_WORKFLOW_INSTANCE_STATUS'
+                          and code_value = to_char(rs.status)
+                      ) status_name,
+                        wfl_common_pkg.get_current_node(rs.workflow_id,
+                                                 rs.ins_id,
+                                                 rs.current_node) curr_approve_name,
+                        wfl_common_pkg.get_wfl_user_name(rs.created_by) ins_sub_emp, --create_by_name
+                        wfl_common_pkg.get_wfl_user_name((select r.created_by
+                                                  from wfl_approve_record r
+                                                 where r.record_id =
+                                                     (select max(record_id)
+                                                      from wfl_approve_record
+                                                     where instance_id =
+                                                         rs.ins_id))) last_approve_name,
+                        (
+                          select 
+                            wdr.document_desc
+                          from wfl_document_reference_vl wdr
+                          where rs.ins_doc_category = wdr.workflow_category
+                        ) ins_doc_category_desc,
+                        to_char( (select max(nr.date_limit)
+                                     from wfl_instance_node_recipient nr,
+                                        wfl_workflow_node           n
+                                    where nr.instance_id = rs.ins_id
+                                      and nr.node_id = n.node_id
+                                      and n.sequence_num = rs.current_node),
+                                     'yyyy-mm-dd hh24:mi') date_limit
+                    from (
+                      select 
+                        a.instance_id as ins_id,
+                        a.workflow_id,
+                        sys_mobile_pkg.get_ins_doc_hd_title(a.instance_param, b.workflow_category) as ins_doc_hd_title,
+                        sys_mobile_pkg.get_current_node_emp_name(a.workflow_id,
+                                                               a.instance_id,
+                                                               a.current_node) ins_cur_node_emp_name,
+                        a.instance_param as ins_param,
+                        a.current_node,
+                        a.created_by,
+                        a.creation_date,
+                        a.document_number as ins_doc_num,
+                        b.name workflow_name,
+                        a.LAST_UPDATE_DATE,
+                        b.workflow_category as ins_doc_category,
+                        a.status,
+                        a.status_desc,
+                        a.instance_amount
+                      from wfl_workflow_instance a, wfl_workflow_vl b
+                      where 
+                        a.created_by= ${/session/@user_id}
+                          and a.workflow_id = b.workflow_id
+                          and a.status = 1
+                          order by a.creation_date desc
+                    ) rs
+                  ) t
+                  #WHERE_CLAUSE# 
+                ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <!-- add by fangqi 20151207 -->
+        <bm:query-field name="fuzzy_query" queryexpression="t.ins_doc_num like &apos;%&apos;|| UPPER(${@fuzzy_query})||&apos;%&apos; or t.instance_amount like &apos;%&apos;||${@fuzzy_query}||&apos;%&apos; or t.ins_sub_emp like &apos;%&apos;||${@fuzzy_query}||&apos;%&apos; or t.ins_doc_hd_title like &apos;%&apos;||${@fuzzy_query}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

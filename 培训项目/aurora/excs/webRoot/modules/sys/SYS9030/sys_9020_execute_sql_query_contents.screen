@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:view>
+        <a:link id="update_link" model="sys.SYS9020.sys_9020_query_sql_execute" modelaction="update"/>
+        <script><![CDATA[
+            Aurora.request_sql = function(opt) {
+                var url = opt.url,
+                    para = opt.para,
+                    successCall = opt.success,
+                    errorCall = opt.error,
+                    scope = opt.scope,
+                    failureCall = opt.failure,
+                    lockMessage = opt.lockMessage,
+                    body = Ext.getBody(),
+                    opts = Ext.apply({}, opt.opts);
+                if (!Ext.isEmpty(lockMessage)) {
+                    $A.Masker.mask(body, lockMessage);
+                }
+                $A.manager.fireEvent('ajaxstart', url, para);
+                if ($A.logWindow) {
+                    $A['_startTime'] = new Date();
+                    $('HTTPWATCH_DATASET').create({
+                        'url': url,
+                        'request': Ext.util.JSON.encode({
+                            parameter: para
+                        })
+                    })
+                }
+                var data = Ext.apply({
+                    parameter: para
+                }, opt.ext);
+                return Ext.Ajax.request({
+                    url: url,
+                    method: 'POST',
+                    params: {
+                        _request_data: Ext.util.JSON.encode(data)
+                    },
+                    opts: opts,
+                    sync: opt.sync,
+                    success: function(response, options) {
+                        if (!Ext.isEmpty(lockMessage)) {
+                            $A.Masker.unmask(body);
+                        }
+                        if ($A.logWindow) {
+                            var st = $A['_startTime'];
+                            var ed = new Date();
+                            var record = $('HTTPWATCH_DATASET').getCurrentRecord();
+                            record.set('spend', ed - st);
+                            record.set('result', response.statusText);
+                            record.set('status', response.status);
+                            record.set('response', response.responseText);
+                        }
+                        $A.manager.fireEvent('ajaxcomplete', url, para, response);
+                        if (response) {
+                            var res = null;
+                            try {
+                                res = Ext.decode(response.responseText);
+                            } catch (e) {
+                                $A.showErrorMessage(_lang['ajax.error'], _lang['ajax.error.format']);
+                                return;
+                            }
+            
+                            if (res && !res.success) {
+                                $A.manager.fireEvent('ajaxfailed', $A.manager, url, para, res);
+                                if (res.error) {
+                                    if (res.error.code && (res.error.code == 'session_expired' || res.error.code == 'login_required')) {
+                                        if ($A.manager.fireEvent('timeout', $A.manager)) $A.showErrorMessage(_lang['ajax.error'], _lang['session.expired']);
+                                    } else {
+                                        var st = res.error.stackTrace;
+                                        st = (st) ? st.replaceAll('\r\n', '</br>') : '';
+                                        if (res.error.message) {
+                                            var h = (st == '') ? 150 : 250;
+                                            //$A.showErrorMessage(_lang['ajax.error'], res.error.message + '</br>' + st, null, 400, h);
+                                        } else {
+                                            $A.showErrorMessage(_lang['ajax.error'], st, null, 400, 250);
+                                        }
+                                    }
+                                    if (errorCall) errorCall.call(scope, res, options);
+                                }
+                            } else {
+                                if (successCall) {
+                                    successCall.call(scope, res, options);
+                                    opt.showSuccessTip = opt.showSuccessTip || false;
+                                }
+                                if (opt.showSuccessTip) {
+                                    $A.manager.fireEvent('ajaxsuccess', opt.successTip);
+                                }
+                            }
+                        }
+                    },
+                    failure: function(response, options) {
+                        if (!Ext.isEmpty(lockMessage)) {
+                            $A.Masker.unmask(body);
+                        }
+                        if (failureCall) failureCall.call(scope, response, options);
+                    },
+                    scope: scope
+                });
+            }
+            
+            function sys9020_executeFun(v1, v2, raise_error_flag) {
+                var param = {};
+                var sql = $('sql_contents_ds').getAll()[0].get('sql_contents');
+                param.sql_contents = sql;
+                if (raise_error_flag) {
+                    param.raise_error_flag = raise_error_flag;
+                } else {
+                    param.raise_error_flag = 'Y';
+                }
+                Aurora.request_sql({
+                    url: $('update_link').getUrl(),
+                    para: param,
+                    error: function(res) {
+                        var okCan = Aurora.showConfirm('${l:PROMPT}', res.error.message + ',是否执行!<BR> <font color="red" size="8">请慎重!!!!!</font>', function() {
+                            sys9020_executeFun(1, 1, 'N');
+                            okCan.close();
+                        }, function() {
+                            okCan.close();
+                        }, 300, 200);
+                    },
+                    success: function() {
+                        Aurora.showInfoMessage('${l:PROMPT}', '操作成功', null, 250, 100);
+                    },
+                    scope: this
+                });
+            }
+            
+            //重置
+            
+            
+            function sys9020_resetFun() {
+                $('sql_contents_ds').reset();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="sql_contents_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="sql_contents" prompt="SQL语句" required="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="sql_result" pageSize="50" queryDataSet="sql_contents_ds" queryUrl="${/request/@context_path}/autocrud/sys.SYS9020.sys_9020_query_sql_execute/query">
+                <a:events>
+                    <a:event name="load" handler="linesLoadFunHandler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton id="sys9020_executeFun" click="sys9020_executeFun" text="执行"/>
+                <a:toolbarButton id="sys9020_resetFun" click="sys9020_resetFun" text="重置"/>
+            </a:screenTopToolbar>
+            <a:fieldSet height="600" style="margin-left:30px;" title="SQL语句" width="1200">
+                <a:textArea name="sql_contents" bindTarget="sql_contents_ds" height="500" width="1000"/>
+            </a:fieldSet>
+        </a:screenBody>
+    </a:view>
+</a:screen>

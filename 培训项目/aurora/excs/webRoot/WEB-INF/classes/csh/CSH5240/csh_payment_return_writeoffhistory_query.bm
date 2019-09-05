@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    v.return_amount9 return_amount,
+                    v.csh_write_off_amount - v.return_amount9 UNWRITE_OFF_AMOUNT
+                FROM
+                    (SELECT
+                        TO_CHAR(cwo.write_off_date, 'YYYY-MM-DD') write_off_date,
+                        cwo.period_name,
+                        cwo.write_off_type WRITE_OFF_TYPE_HIDDEN,
+                        cwo.document_header_id,
+                        (SELECT
+                            B.CODE_VALUE_NAME
+                        FROM
+                            SYS_CODES_VL A,
+                            SYS_CODE_VALUES_VL B
+                        WHERE
+                            A.CODE_ID    = B.CODE_ID AND
+                            A.CODE       = 'CSH_WRITE_OFF_TYPE' AND
+                            B.CODE_VALUE = CWO.WRITE_OFF_TYPE
+                        ) WRITE_OFF_TYPE,
+                        (SELECT
+                            erh.exp_report_number
+                        FROM
+                            exp_report_headers erh
+                        WHERE
+                            erh.exp_report_header_id = cwo.document_header_id AND
+                            cwo.document_source      = 'EXPENSE_REPORT'
+                        ) exp_report_number,
+                        (SELECT
+                            CTH.TRANSACTION_NUM
+                        FROM
+                            CSH_TRANSACTION_HEADERS CTH,
+                            CSH_TRANSACTION_LINES CTL
+                        WHERE
+                            CTH.TRANSACTION_HEADER_ID = CTL.TRANSACTION_HEADER_ID AND
+                            CTL.TRANSACTION_LINE_ID   = CWO.SOURCE_CSH_TRX_LINE_ID
+                        ) TRANSACTION_NUM,
+                        (SELECT
+                            (SELECT
+                                description
+                            FROM
+                                csh_transaction_classes_vl vl
+                            WHERE
+                                vl.csh_transaction_class_code = cth.transaction_class
+                            )
+                        FROM
+                            CSH_TRANSACTION_HEADERS CTH,
+                            CSH_TRANSACTION_LINES CTL
+                        WHERE
+                            CTH.TRANSACTION_HEADER_ID = CTL.TRANSACTION_HEADER_ID AND
+                            CTL.TRANSACTION_LINE_ID   = CWO.SOURCE_CSH_TRX_LINE_ID
+                        ) TRANSACTION_CLASS,
+                        CWO.CSH_WRITE_OFF_AMOUNT,
+                        DECODE(cwo.write_off_type, 'PAYMENT_EXPENSE_REPORT',
+                        (SELECT
+                            SUM(cwo1.csh_write_off_amount)
+                        FROM
+                            csh_write_off cwo1
+                        WHERE
+                            cwo.csh_transaction_line_id = cwo1.csh_transaction_line_id AND
+                            cwo.document_line_id        = cwo1.document_line_id AND
+                            cwo.document_header_id      = cwo1.document_header_id
+                        ), 'PAYMENT_PREPAYMENT', cwo.csh_write_off_amount - NVL(
+                        (SELECT
+                            SUM(l.transaction_amount)
+                        FROM
+                            csh_transaction_headers cth,
+                            csh_transaction_lines l,
+                            csh_transaction_lines l2
+                        WHERE
+                            cth.transaction_header_id = l.transaction_header_id AND
+                            cth.source_header_id      = l2.transaction_header_id AND
+                            l2.transaction_line_id    = cwo.source_csh_trx_line_id AND
+                            cth.returned_flag         = 'R' AND
+                            cth.reversed_flag        IS NULL
+                        ), 0) -
+                        (SELECT
+                            NVL(SUM(w2.csh_write_off_amount), 0)
+                        FROM
+                            csh_write_off w2
+                        WHERE
+                            w2.csh_transaction_line_id = cwo.source_csh_trx_line_id
+                        )) RETURN_AMOUNT9,
+                        CTL.TRANSACTION_HEADER_ID,
+                        CWO.WRITE_OFF_ID,
+                        (SELECT
+                            cprh.requisition_number
+                        FROM
+                            csh_payment_requisition_lns cprl,
+                            csh_payment_requisition_hds cprh
+                        WHERE
+                            cprl.payment_requisition_header_id = cprh.payment_requisition_header_id AND
+                            cprl.payment_requisition_line_id   = cprr.payment_requisition_line_id
+                        ) REQUISITION_NUMBER,
+                        (SELECT
+                            cprh.PAYMENT_REQUISITION_HEADER_ID
+                        FROM
+                            csh_payment_requisition_lns cprl,
+                            csh_payment_requisition_hds cprh
+                        WHERE
+                            cprl.payment_requisition_header_id = cprh.payment_requisition_header_id AND
+                            cprl.payment_requisition_line_id   = cprr.payment_requisition_line_id
+                        ) PAYMENT_REQUISITION_HEADER_ID,
+                        (SELECT
+                            cps.payment_schedule_line_number
+                        FROM
+                            con_payment_schedules cps
+                        WHERE
+                            cps.payment_schedule_line_id = cctpsl.payment_schedule_line_id
+                        ) line_number,
+                        (SELECT
+                            cch.contract_number
+                        FROM
+                            con_contract_headers cch
+                        WHERE
+                            cch.contract_header_id = cctpsl.contract_header_id
+                        ) contract_number,
+                        cctpsl.contract_header_id
+                    FROM
+                        csh_write_off cwo,
+                        CSH_TRANSACTION_LINES CTL,
+                        csh_payment_requisition_refs cprr,
+                        con_cash_trx_pmt_schedule_lns cctpsl
+                    WHERE
+                        CTL.TRANSACTION_LINE_ID = CWO.CSH_TRANSACTION_LINE_ID
+                        --and  cwo.csh_write_off_amount >0
+                        AND
+                        cprr.write_off_id(+) = CWO.write_off_id AND
+                        DECODE(cwo.write_off_type, 'PAYMENT_EXPENSE_REPORT',
+                        (SELECT
+                            SUM(cwo1.csh_write_off_amount)
+                        FROM
+                            csh_write_off cwo1
+                        WHERE
+                            cwo.csh_transaction_line_id = cwo1.csh_transaction_line_id AND
+                            cwo.document_line_id        = cwo1.document_line_id AND
+                            cwo.document_header_id      = cwo1.document_header_id
+                        ), 'PAYMENT_PREPAYMENT', cwo.csh_write_off_amount - NVL(
+                        (SELECT
+                            SUM(l.transaction_amount)
+                        FROM
+                            csh_transaction_headers cth,
+                            csh_transaction_lines l,
+                            csh_transaction_lines l2
+                        WHERE
+                            cth.transaction_header_id = l.transaction_header_id AND
+                            cth.source_header_id      = l2.transaction_header_id AND
+                            l2.transaction_line_id    = cwo.source_csh_trx_line_id AND
+                            cth.returned_flag         = 'R' AND
+                            cth.reversed_flag        IS NULL
+                        ), 0) -
+                        (SELECT
+                            NVL(SUM(w2.csh_write_off_amount), 0)
+                        FROM
+                            csh_write_off w2
+                        WHERE
+                            w2.csh_transaction_line_id = cwo.source_csh_trx_line_id
+                        ))                             > 0 AND
+                        (
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                CSH_TRANSACTION_HEADERS CTH,
+                                CSH_TRANSACTION_LINES CTL
+                            WHERE
+                                CTH.TRANSACTION_HEADER_ID = CTL.TRANSACTION_HEADER_ID AND
+                                CTL.TRANSACTION_LINE_ID   = CWO.SOURCE_CSH_TRX_LINE_ID AND
+                                cth.reversed_flag        IS NULL AND
+                                cth.returned_flag        IN ('N', 'Y')
+                            ) OR
+                            (
+                                cwo.write_off_type          = 'PAYMENT_EXPENSE_REPORT' AND
+                                cwo.source_csh_trx_line_id IS NULL
+                            )
+                        )
+                        AND
+                        cctpsl.write_off_id(+) = CWO.write_off_id
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="document_header_id"/>
+        <bm:field name="write_off_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="WRITE_OFF_DATE"/>
+        <bm:field name="period_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PERIOD_NAME" required="true"/>
+        <bm:field name="write_off_type_hidden" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="WRITE_OFF_TYPE_HIDDEN" required="true"/>
+        <bm:field name="write_off_type" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="WRITE_OFF_TYPE"/>
+        <bm:field name="exp_report_number" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="EXP_REPORT_NUMBER"/>
+        <bm:field name="transaction_num" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="TRANSACTION_NUM"/>
+        <bm:field name="transaction_class" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="TRANSACTION_CLASS"/>
+        <bm:field name="csh_write_off_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="CSH_WRITE_OFF_AMOUNT"/>
+        <bm:field name="return_amount9" databaseType="NUMBER" datatype="java.lang.Double" physicalName="RETURN_AMOUNT9"/>
+        <bm:field name="return_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="return_amount"/>
+        <bm:field name="transaction_header_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="TRANSACTION_HEADER_ID" required="true"/>
+        <bm:field name="write_off_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="WRITE_OFF_ID" required="true"/>
+        <bm:field name="requisition_number" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="REQUISITION_NUMBER"/>
+        <bm:field name="payment_requisition_header_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PAYMENT_REQUISITION_HEADER_ID"/>
+        <bm:field name="line_number" databaseType="NUMBER" datatype="java.lang.Double" physicalName="LINE_NUMBER"/>
+        <bm:field name="contract_number" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CONTRACT_NUMBER"/>
+        <bm:field name="contract_header_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="CONTRACT_HEADER_ID"/>
+        <bm:field name="unwrite_off_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="UNWRITE_OFF_AMOUNT"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="transaction_header_id" dataType="java.lang.String" queryExpression="TRANSACTION_HEADER_ID = ${@transaction_header_id}"/>
+    </bm:query-fields>
+</bm:model>

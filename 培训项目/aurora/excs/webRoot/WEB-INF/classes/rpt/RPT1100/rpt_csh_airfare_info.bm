@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lenovo  
+    $Date: 2017-11-21 下午6:28:52  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    o.*,
+                    decode(o.handle_flag,'Y','已处理','未处理') handle_flag_desc
+                FROM
+                    (SELECT
+                        l.exp_report_line_id
+                        || '' exp_report_line_id,
+                        (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = l.employee_id
+                        ) employee_name,
+                        TO_CHAR(l.date_to, 'YYYY-MM-DD') date_to,
+                        TO_CHAR(h.report_date, 'YYYY-MM-DD') report_date,
+                        h.exp_report_number,
+                        l.description,
+                        l.report_amount
+                        || '' report_amount,
+                        '' pay_date,
+                        '' requisition_number,
+                        '' req_desc,
+                        '' req_amount,
+                        '' req_employee_name,
+                        (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = l.employee_id
+                        ) seq_employee_name,
+                        '' air_date,
+                        '' place,
+                        '' airfare_amount,
+                        '' csh_airfare_info_id,
+                        DECODE(cah.csh_airfare_handle_id, NULL, 'N', 'Y') handle_flag
+                    FROM
+                        exp_report_headers h,
+                        exp_report_lines l,
+                        csh_airfare_handle cah
+                    WHERE
+                        h.exp_report_header_id = l.exp_report_header_id AND
+                        l.expense_item_id      =
+                        (SELECT
+                            eei.expense_item_id
+                        FROM
+                            exp_expense_items eei
+                        WHERE
+                            eei.expense_item_code = 'FYT105'
+                        ) AND
+                        h.audit_flag              = 'Y' AND
+                        NVL(h.reversed_flag, 'N') = 'N' AND
+                        cah.biz_type(+)           = 'EXP_REPORT' AND
+                        cah.exp_report_line_id(+) = l.exp_report_line_id
+                    UNION ALL
+                    SELECT
+                        '' exp_report_line_id,
+                        '' employee_name,
+                        '' date_to,
+                        '' report_date,
+                        '' exp_report_number,
+                        '' description,
+                        '' report_amount,
+                        TO_CHAR(
+                        (SELECT
+                            cre.creation_date
+                        FROM
+                            csh_payment_requisition_refs cre
+                        WHERE
+                            cre.payment_requisition_line_id = cprl.payment_requisition_line_id
+                        ), 'YYYY-MM-DD') pay_date,
+                        cprh.requisition_number,
+                        cprl.description req_desc,
+                        cprl.amount
+                        || '' req_amount,
+                        (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = cai.employee_id
+                        ) req_employee_name,
+                        (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = cai.employee_id
+                        ) seq_employee_name,
+                        TO_CHAR(cai.air_date, 'YYYY-MM-DD') air_date,
+                        cai.place,
+                        cai.amount
+                        || '' airfare_amount,
+                        cai.csh_airfare_info_id
+                        || '' csh_airfare_info_id,
+                        DECODE(cah.csh_airfare_handle_id, NULL, 'N', 'Y') handle_flag
+                    FROM
+                        csh_airfare_info cai,
+                        csh_payment_requisition_hds cprh,
+                        csh_payment_requisition_lns cprl,
+                        csh_airfare_handle cah
+                    WHERE
+                        cai.payment_requisition_line_id    = cprl.payment_requisition_line_id AND
+                        cprh.payment_requisition_header_id = cprl.payment_requisition_header_id AND
+                        cprh.audit_flag                    = 'Y' AND
+                        NVL(cprh.reversed_flag, 'N')       = 'N' AND
+                        cah.biz_type(+)                    = 'PAYMENT_REQUISITION' AND
+                        cah.csh_airfare_info_id(+)         = cai.csh_airfare_info_id
+                    ) o
+                    #WHERE_CLAUSE#
+                ORDER BY
+                    o.seq_employee_name,
+                    o.req_employee_name
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    csh_airfare_import_pkg.insert_csh_airfare_handle(p_exp_report_line_id  => ${@exp_report_line_id},
+                                      p_csh_airfare_info_id => ${@csh_airfare_info_id},
+                                      p_user_id             => ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    csh_airfare_import_pkg.delete_csh_airfare_handle(p_exp_report_line_id  => ${@exp_report_line_id},
+                                      p_csh_airfare_info_id => ${@csh_airfare_info_id},
+                                      p_user_id             => ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="exp_report_number" queryExpression="o.exp_report_number like ${@exp_report_number}"/>
+        <bm:query-field name="requisition_number" queryExpression="o.requisition_number like ${@requisition_number}"/>
+        <bm:query-field name="handle_flag" queryExpression="o.handle_flag like ${@handle_flag}"/>
+        <bm:query-field name="employee_name" queryExpression="(o.employee_name like ${@employee_name} or o.req_employee_name = ${@employee_name})"/>
+    </bm:query-fields>
+</bm:model>

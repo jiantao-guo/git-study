@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+           SELECT v.* FROM ( select t.partner_id,
+		         decode (t.partner_category,'EMPLOYEE' ,
+	       (select employee_code  from  exp_employees ee where ee.employee_id=t.partner_id),
+	       'CUSTOMER',
+	       (select  CUSTOMER_CODE from ord_system_customers_vl vc where vc.CUSTOMER_ID=t.partner_id ),
+	       ( select  vv.VENDER_CODE from pur_system_venders_vl vv where vv.VENDER_ID=t.partner_id ))  P_PARTNER_NAME,
+	       decode (t.partner_category,'EMPLOYEE' ,
+	       (select name from  exp_employees ee where ee.employee_id=t.partner_id),
+	       'CUSTOMER',
+	       (select vc.DESCRIPTION from ord_system_customers_vl vc where vc.CUSTOMER_ID=t.partner_id ),
+	       ( select vv.DESCRIPTION from pur_system_venders_vl vv where vv.VENDER_ID=t.partner_id ))  PARTNER_PAYEE,
+	                t.partner_category,
+	                (select code_value_name
+	     from sys_code_values_vl b, sys_codes a
+	    where b.code_id = a.code_id
+	      and a.code = 'PAYMENT_OBJECT' 
+	      and b.code_value = t.partner_category) PARTNER_CATEGORY_DESC,
+	                t.currency_code,
+	                gld.currency_name,
+	                t.company_id,
+	                t.aging_amount 
+	           from csh_receivable_aging_tmp t,gld_currency_vl gld
+	          where t.outside_flag = 'F' and t.currency_code=gld.currency_code(+)
+	            and t.session_id = -${/session/@session_id}) v
+	        #WHERE_CLAUSE#
+        	]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+            	begin 
+					 csh_receivable_aging_query_pkg.csh_rcv_aging_amount(p_session_id 		  => ${/session/@session_id},
+										                                 p_currency_code      => ${@currency_code},
+										                                 p_aging_bucket_id    => ${@aging_bucket_id},
+										                                 p_aging_analyze_date => to_date(${@date},'RRRR-MM-DD'),
+										                                 p_partner_category   => ${@partner_category},
+										                                 p_company_id         => ${/session/@company_id},
+										                                 p_user_id            => ${/session/@user_id});
+				end;
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="partner_category" queryExpression="PARTNER_CATEGORY like  &apos;%&apos;||${@partner_category}||&apos;%&apos;"/>
+        <bm:query-field name="currency_code" queryExpression="CURRENCY_CODE like  &apos;%&apos;||${@currency_code}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

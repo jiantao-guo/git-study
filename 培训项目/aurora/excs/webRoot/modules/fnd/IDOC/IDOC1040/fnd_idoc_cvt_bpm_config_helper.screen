@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="key_info_query_link" model="fnd.IDOC.IDOC1040.bpm_key_info_query" modelaction="query"/>
+        <a:link id="fields_query_link" model="fnd.IDOC.IDOC1040.bpm_fields_query" modelaction="query"/>
+        <script><![CDATA[
+            var businessCategory, parentBusinessCategory, refTable, refField;
+            var fieldArray = [];
+            
+            function bpmConfigLineReset() {
+                var count = $('bpm_line_ds').getAll().length;
+                for (var i = count - 1;i >= 0;i--) {
+                    $('bpm_line_ds').remove($('bpm_line_ds').getAt(i));
+                }
+                fieldArray = [];
+            }
+            
+            function bpmConfigHelperReset() {
+                $('bpm_header_ds').reset();
+                bpmConfigLineReset();
+                businessCategory = '';
+                parentBusinessCategory = '';
+                refTable = '';
+                refField = '';
+            }
+            
+            function bpmConfigHelperSave() {
+                $('bpm_header_ds').submit();
+            }
+            
+            function bpmSubmitSuccess() {
+                if (tableRuleQuery) {
+                    tableRuleQuery();
+                }
+            }
+            
+            function bpmHeaderUpdate(dataSet, record, name, value, oldValue) {
+                if (name == 'group_id') {
+                    record.set('page_name', '');
+                    record.set('page_id', '');
+                    record.getMeta().getField('page_name').setLovPara('group_id', value);
+                } else if (name == 'page_id') {
+                    record.set('layout_desc', '');
+                    record.set('layout_id', '');
+                    record.getMeta().getField('layout_name').setLovPara('page_id', value);
+                } else if (name == 'layout_id') {
+                    bpmConfigLineReset();
+                    Aurora.request({
+                        url: $('key_info_query_link').getUrl(),
+                        para: {
+                            layout_id: value
+                        },
+                        success: function(resp) {
+                            if (resp && resp.result && resp.result.record) {
+                                businessCategory = resp.result.record['business_category'];
+                                parentBusinessCategory = resp.result.record['parent_business_category'];
+                                refTable = resp.result.record['ref_table'];
+                                refField = resp.result.record['ref_field'];
+            
+                                Aurora.request({
+                                    url: $('fields_query_link').getUrl(),
+                                    para: {
+                                        layout_id: value
+                                    },
+                                    success: function(resp) {
+                                        if (resp && resp.result && resp.result.record) {
+                                            if (resp.result.record.length) {
+                                                for (var i = 0;i < resp.result.record.length;i++) {
+                                                    fieldArray.push(resp.result.record[i]);
+                                                    $('bpm_line_ds').add(new Aurora.Record({
+                                                        field_desc: resp.result.record[i].desc,
+                                                        field_id: resp.result.record[i].field_id
+                                                    }));
+                                                }
+                                            } else {
+                                                fieldArray.push(resp.result.record);
+                                                $('bpm_line_ds').add(new Aurora.Record({
+                                                    field_desc: resp.result.record.desc,
+                                                    field_id: resp.result.record.field_id
+                                                }));
+                                            }
+                                        }
+                                    },
+                                    scope: this
+                                });
+                            }
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function initBpmHeader() {
+                if(!$('bpm_header_ds').getAll().length || $('bpm_header_ds').getAll().length == 0){
+                    $('bpm_header_ds').create();
+                }
+                var record = $('bpm_header_ds').getAt(0);
+                var groupId = record.get('group_id');
+                var pageId = record.get('page_id');
+                record.getMeta().getField('page_name').setLovPara('group_id', groupId);
+                record.getMeta().getField('layout_name').setLovPara('page_id', pageId);
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="bpm_header_ds" loadData="true" model="fnd.IDOC.IDOC1040.fnd_idoc_bpm_headers" submitUrl="fnd_idoc_cvt_bpm_config_helper_save.svc">
+                <a:fields>
+                    <a:field name="group_name" lovGridHeight="320" lovHeight="450" lovService="fnd.IDOC.IDOC1040.bpm_page_groups_for_lov" lovWidth="500" prompt="BPM_PAGE_GROUP_NAME" required="true">
+                        <a:mapping>
+                            <a:map from="group_desc" to="group_name"/>
+                            <a:map from="group_id" to="group_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="page_name" lovGridHeight="320" lovHeight="450" lovService="fnd.IDOC.IDOC1040.bpm_page_for_lov" lovWidth="500" prompt="BPM_PAGE_NAME" required="true">
+                        <a:mapping>
+                            <a:map from="page_desc" to="page_name"/>
+                            <a:map from="page_id" to="page_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="layout_name" lovGridHeight="320" lovHeight="450" lovService="fnd.IDOC.IDOC1040.bpm_page_layout_for_lov" lovWidth="500" prompt="BPM_LAYOUT_NAME" required="true">
+                        <a:mapping>
+                            <a:map from="layout_desc" to="layout_name"/>
+                            <a:map from="layout_id" to="layout_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="table_rule_id" defaultValue="${/parameter/@table_rule_id}"/>
+                    <a:field name="detail_id" defaultValue="${/parameter/@detail_id}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="bpmHeaderUpdate"/>
+                    <a:event name="submitsuccess" handler="bpmSubmitSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="bpm_line_ds" bindName="line" bindTarget="bpm_header_ds" loadData="true" model="fnd.IDOC.IDOC1040.fnd_idoc_bpm_lines" queryDataSet="bpm_header_ds" submitUrl="${/request/@context_path}/autocrud/db.fnd_idoc_core_pkg.delete_bpm_line/batch_update">
+                <a:fields>
+                    <a:field name="field_desc" prompt="BPM_PAGE_GROUP_FIELDS.DESC"/>
+                    <a:field name="field_id"/>
+                    <a:field name="mapping_value" lovHeight="700" lovUrl="fnd_idoc_cvt_mapping_value_editor.screen?table_rule_id=${/parameter/@table_rule_id}&amp;detail_id=${/parameter/@detail_id}&amp;segment_name=${/parameter/@segment_name}" lovWidth="1000" prompt="FND_IDOC_CVT_TAB_TRIG_PARAM.MAPPING_VALUE">
+                        <a:mapping>
+                            <a:map from="mapping_value" to="mapping_value"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="increase_keep_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="4" labelWidth="120" marginWidth="41" title="FND_IDOC_CVT_BPM_HELPER">
+                <a:textField name="rule_name" bindTarget="fnd_idoc_convert_rules_ds" prompt="FND_IDOC_CONVERT_RULES.RULE_NAME_ID" readOnly="true"/>
+                <a:textField name="idoc_type_name" bindTarget="fnd_idoc_convert_rules_ds" prompt="FND_IDOC_CONVERT_RULES.IDOC_TYPE_ID" readOnly="true"/>
+                <a:textField name="segment_type" bindTarget="idoc_segment_tree_ds" prompt="FND_IDOC_CONVERT_DETAIL.SEGMENT_TYPE" readOnly="true"/>
+                <a:lov name="group_name" bindTarget="bpm_header_ds"/>
+                <a:lov name="page_name" bindTarget="bpm_header_ds"/>
+                <a:lov name="layout_name" bindTarget="bpm_header_ds"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="bpmConfigHelperReset" text="HAP_RESET"/>
+                <a:button click="bpmConfigHelperSave" text="HAP_SAVE"/>
+            </a:hBox>
+            <a:grid id="bpm_line_grid" bindTarget="bpm_line_ds" marginHeight="189" marginWidth="43">
+                <a:toolBar>
+                    <a:label/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="field_desc" width="150"/>
+                    <a:column name="mapping_value" editor="bpm_config_helper_lov" width="250"/>
+                    <a:column name="increase_keep_flag" editor="bpm_config_helper_ck"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="bpm_config_helper_lov"/>
+                    <a:checkBox id="bpm_config_helper_ck"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        	initBpmHeader();
+        ]]></script>
+    </a:view>
+</a:screen>

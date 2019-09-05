@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:dataSets>
+            <!--a:dataSet id="ds">
+                <a:datas>
+                    <a:record description="test1" next_node="2" node_id="1" node_status="COMPLETE" rule_desc="x等于0" sequence_num="10"/>
+                    <a:record description="test1" next_node="3" node_id="1" node_status="COMPLETE" rule_desc="x大于0" sequence_num="10"/>
+                    <a:record description="test1" next_node="4" node_id="1" node_status="COMPLETE" rule_desc="x小于0" sequence_num="10"/>
+                    <a:record description="test1" next_node="5" node_id="1" node_status="COMPLETE" rule_desc="x不等于0" sequence_num="10"/>
+                    <a:record description="test2" next_node="3" node_id="2" sequence_num="20"/>
+                    <a:record description="test3" next_node="-1" node_id="3" node_status="RETURNED" sequence_num="30"/>
+                    <a:record description="test4" next_node="-1" node_id="4" sequence_num="30"/>
+                    <a:record description="test5test5test5" next_node="-1" node_id="5" sequence_num="30"/>
+                </a:datas>
+            </a:dataSet-->
+            <a:dataSet id="ds" loadData="true" model="wfl.WFL2010.wfl_workflow_chart"/>
+            <a:dataSet id="_graphics_nodes_ds"/>
+        </a:dataSets>
+        <a:graphic name="table_id" id="_graphics_" bindTarget="_graphics_nodes_ds" height="400" style="border:1px solid #000;background-color:#fff" width="600"><![CDATA[
+        ]]></a:graphic>
+        <script><![CDATA[
+    		$A.onReady(function(){
+    			var isRunning = false,
+    				SEQUENCE_NUM = 'sequence_num',
+    				DESCRIPTION = 'description',
+    				NEXT_NODE = 'next_node',
+    				NODE_ID = 'node_id',
+    				RULE = 'rule_desc',
+    				NODE_STATUS = 'node_status',
+    				NODE_STATUS_COMPLETE = 'COMPLETE',
+    				NODE_STATUS_FINISHED = 'FINISHED',
+    				NODE_STATUS_CURRENT = 'CURRENT',
+    				NODE_STATUS_REJECT = 'REJECT',
+    				NODE_STATUS_RETURNED = 'RETURNED',
+    				TEXT_PADDING = 5,//节点内边距
+    				H_PADDING = 50,//节点到网格线的水平间距
+    				V_PADDING = 40,//节点到网格线的垂直间距
+    				mathMax = Math.max,
+    				configs = {
+	    			    rect : {
+		    			    width:90,height:25,
+		    			    rx:2,ry:2,
+		    			    fillOpacity:1,fillColor:'#ffffff',
+		    			    strokeColor:'#808080',strokeWidth:1,strokeOpacity:1,
+		    			    x:5,y:5,shadow:true,
+		    			    titleColor:'black',titleX:30,titleY:5,titleSize:14
+		    			},
+		    			diamond : {
+		    			    width:180,height:40,
+		    			    fillOpacity:1,fillColor:'#ffffff',
+		    			    strokeColor:'#808080',strokeWidth:1,strokeOpacity:1,
+		    			    x:5,y:5,shadow:true,
+		    			    titleColor:'black',titleX:75,titleY:15,titleSize:14
+		    			},
+		    			line : {
+		    			    strokeColor:'#aaaaaa',strokeWidth:3,strokeOpacity:1,
+		    			    endArrow:'classic',
+		    			    titleColor:'black',titleX:30,titleY:15,titleSize:14
+		    			}
+	    			},
+	    			rect_config = configs.rect,
+	    			diamond_config = configs.diamond,
+	    			measureEl = Ext.get(Ext.DomHelper.append(Ext.getBody(),"<div style='visibility:hidden;font-size:"+rect_config.titleSize+"px'></div>")),
+    				node_ds = $('_graphics_nodes_ds'),
+    				graphics = $('_graphics_'),
+    				gridHeight = mathMax(rect_config.height,diamond_config.height)+ V_PADDING*2,
+    				gridWidth = mathMax(rect_config.width,diamond_config.width)+H_PADDING*2,
+    				columnSize = 0,
+    				rowSize = 0,
+    				minSeq = Number.MAX_VALUE,
+    				endSeq = 1,
+    				nodeMap = {},
+    				map = {},
+    				list=[],
+    				startNode = nodeMap['0'] = {
+	    			    node_id:0,
+	    			    description:'开始',
+	    			    seq:0,
+	    			    height : rect_config.height,
+	    			    width : rect_config.width,
+	    			    titlewidth : 30,
+	    			    type:'rect',
+	    			    nextNodes:[],
+	    			    parentRule:{}
+	    			},
+	    			endNode = nodeMap['-1'] = {
+	    			    node_id:-1,
+	    			    description:'结束',
+	    			    type:'rect',
+	    			    height : rect_config.height,
+	    			    width : rect_config.width,
+	    			    titlewidth : 30,
+	    			    nextNodes:[],
+	    			    parentRule:{}
+	    			};
+    			Ext.each($('ds').getAll(),function(r){
+    			    var id = r.get(NODE_ID),
+    			    	seq = Number(r.get(SEQUENCE_NUM)),
+    			    	_description = r.get(DESCRIPTION),
+    			    	titlewidth = $A.TextMetrics.measure(measureEl,_description).width,
+    			    	width = titlewidth+TEXT_PADDING*2,
+    			    	_next_id = r.get(NEXT_NODE),
+    			    	_node_status = r.get(NODE_STATUS),
+    			    	_node = nodeMap[id] = nodeMap[id]||{
+    			    	    node_id : id,
+    			    	    width : mathMax(rect_config.width,width),
+    			    	    titlewidth : titlewidth,
+    			    	    height : rect_config.height,
+    			    	    description:_description,
+    			    	    nodeStatus:_node_status,
+    			    	    seq:seq,
+    			    	    nextNodes:[],
+    			    	    parentRule:{},
+    			    	    type:'rect'
+    			    	};
+			    	_node.nextNodes.push({
+		    	    	id:_next_id,
+		    	    	rule:r.get(RULE)
+	    	    	});
+	    	    	if(_node_status == NODE_STATUS_FINISHED)endNode.nodeStatus=NODE_STATUS_COMPLETE;
+			    	minSeq = Math.min(seq,minSeq);
+			    	endSeq = mathMax(seq,endSeq)+10;
+			    	gridWidth = mathMax(gridWidth,width+H_PADDING*2);
+    			});
+    			endNode.seq = endSeq;
+    			Ext.iterate(nodeMap,function(key,item){
+    			    var seq = item.seq,
+    			    	_nextNodes = item.nextNodes,
+    			    	nid = item.node_id,
+    			    	newNode;
+    			    (map[seq] = map[seq]||[]).push(item);
+    			    if(_nextNodes.length>1){
+    			        newNode = {
+    			           description:'判断',
+    			           node_id:nid+'_d',
+    			           seq: ++seq,
+    			           type: 'diamond',
+    			           height : diamond_config.height,
+    			           width : diamond_config.width,
+    			           titlewidth : 30,
+    			           nextNodes:_nextNodes,
+    			           parentRule:item.parentRule
+    			        }
+    			        map[seq] = item.nextNodes = [newNode];
+    			        newNode.parentNodes=[item];
+    			    }
+    			    Ext.each(_nextNodes,function(obj,index){
+    			        var _node = nodeMap[obj.id],
+    			        	_item = newNode?newNode:item;
+    			        if(_node.nodeStatus && newNode)_item.nodeStatus = NODE_STATUS_COMPLETE;
+    			        _node.parentRule[_item.node_id]=obj.rule;
+    			        (_node.parentNodes = _node.parentNodes||[]).push(_item);
+    			        _nextNodes.splice(index,1,_node);
+    			    });
+    			});
+    			Ext.each(startNode.nextNodes = map[minSeq],function(item,index){
+    			    var _node = nodeMap[item.node_id];
+    			    if(_node.nodeStatus)startNode.nodeStatus = NODE_STATUS_COMPLETE;
+			        (_node.parentNodes = _node.parentNodes||[]).push(startNode);
+    			});
+    			Ext.iterate(map,function(key,item){
+    			   	rowSize++; //计算行数
+    				columnSize = mathMax(columnSize,item.length)//计算列数
+					list.push({
+				    	seq:key,
+				    	rs:item
+			    	});
+    			});
+    			list.sort(function(o1,o2){
+    			    return o1.seq - o2.seq;
+    			});
+    			var height = mathMax(rowSize*gridHeight,graphics.height),
+    				width =  mathMax(columnSize*gridWidth,graphics.width),
+    				group = [];
+    			graphics.setHeight(height);
+    			graphics.setWidth(width);
+    			Ext.each(list,function(item,i){
+    			    group[i]=[];
+    			    Ext.each(item.rs,function(r,j){
+    			        var type = r.type,x,y,
+    			        	_config = Ext.apply({},configs[type]);
+    			        r.groupX = j+(j%2==1?1:-1)+(columnSize%2==1?1:0);
+    			        r.groupY = i;
+    			        group[i][j]=r;
+    			        if(isRunning){
+    			            _config.fillColor=function(){
+	    			            switch(r.nodeStatus){
+	    			                case NODE_STATUS_FINISHED:
+	    			                case NODE_STATUS_COMPLETE:return '#00FF00';
+	    			                case NODE_STATUS_CURRENT:return 'yellow';
+	    			                case NODE_STATUS_RETURNED:return '#0000FF';
+	    			                case NODE_STATUS_REJECT:return '#FF0000';
+	    			                default:return '#FFFFFF'
+	    			            }
+    			            }();
+    			        }
+    			        _config.title = r.description||'';
+    			        _config.width = r.width;
+			            _config.titleX = (r.width - r.titlewidth)/2;
+    			        x = r.x = _config.x = width/2 - (columnSize%2==1?gridWidth/2:gridWidth) + gridWidth*Math.round(j/2)*(j%2==0?-1:1) + (gridWidth - r.width)/2;
+    			        y = r.y = _config.y = gridHeight*i + (gridHeight - r.height)/2;
+    			        node_ds.create({
+    			            config:Ext.util.JSON.encode(_config),
+    			            type:r.type
+    			        });
+    			    });
+    			});
+    			var completeLines = [];
+    			//draw line
+    			Ext.each(group,function(row){
+    			    Ext.each(row,function(r){
+		    			Ext.each(r.parentNodes,function(node){
+				        	var __config = Ext.apply({},configs.line);
+				        	__config.title = r.parentRule[node.node_id];
+				        	__config.points = calculatePoints(node,r,__config);
+				        	if(isRunning && r.nodeStatus && (node.nodeStatus==NODE_STATUS_COMPLETE||node.nodeStatus==NODE_STATUS_FINISHED)){
+				        	    __config.strokeColor='#00FF00';
+				        	}
+				        	var re = node_ds.create({
+					            config:Ext.util.JSON.encode(__config),
+					            type:'line'
+					        });
+					        if(isRunning && r.nodeStatus){
+					            if(r.nodeStatus == NODE_STATUS_RETURNED){
+					                var ___config = Ext.apply({},configs.line);
+					                ___config.points = calculatePoints(r,startNode,___config);
+					                ___config.strokeColor='#0000FF';
+					                completeLines.push(node_ds.create({
+							            config:Ext.util.JSON.encode(___config),
+							            type:'line'
+							        }));
+					            }
+					            if(node.nodeStatus){
+						            completeLines.push(re);
+						        }
+					        }
+				        });
+    			    });
+    			});
+    			isRunning && Ext.each(completeLines,function(line){
+    			    graphics.setTopCmp(graphics.id+'_'+line.id);
+    			});
+    			function calculatePoints(node1,node2,config){
+    		        var hasTitle = !!config.title,
+    		        	x1 = node1.x,
+    		        	y1 = node1.y,
+    		        	x2 = node2.x,
+    		        	y2 = node2.y,
+    		        	width1 = node1.width,
+    		        	height1 = node1.height,
+    		        	width2 = node2.width,
+    		        	height2 = node2.height,
+    		        	groupX1 = node1.groupX,
+    		        	groupX2 = node2.groupX,
+    		        	groupY1 = node1.groupY,
+    		        	groupY2 = node2.groupY,
+    		        	hasAnotherNode = false,
+    		        	px1,px2,px3,px4,py1,py2,py3,py4;
+    		        if(groupX1 === groupX2){
+    		            if(groupY2 - groupY1>1||groupY1-groupY2>1){
+    		                var g2 = groupY2>groupY1?groupY2:groupY1,
+    		                	g1 = groupY2>groupY1?groupY1:groupY2
+    		                for(var i=g2-1;i>g1;i--){
+    		                    if(group[i][groupX1]){
+    		                        hasAnotherNode = true;
+    		                        break;
+    		                    }
+    		                }
+    		                if(hasAnotherNode){
+    		                    if(groupY2>groupY1){
+	    		                    px1 = x1;
+	    		                    px2 = x1-H_PADDING;
+	    		                    px3 = x1-H_PADDING;
+	    		                    px4 = x2;
+    		                    }else{
+    		                        px1 = x1+width1;
+	    		                    px2 = x1+width1+H_PADDING;
+	    		                    px3 = x1+width1+H_PADDING;
+	    		                    px4 = x2+width2;
+    		                    }
+    		                    py1 = y1+height1/2;
+    		                    py2 = y1+height1/2;
+    		                    py3 = y2+height2/2;
+    		                    py4 = y2+height2/2;
+    		                    if(hasTitle){
+    		                        config.titleX = px2-px1;
+    		                        config.titleY = (py4-py1)/2;
+    		                    }
+    		                    return px1+','+py1+' '+px2+','+py2+' '+px3+','+py3+' '+px4+','+py4;
+    		                }
+    		            }
+    		            px1 = x1+width1/2;py1 = y1+height1;
+	                    px2 = x2+width2/2;py2 = y2;
+    		            if(hasTitle){
+	                        config.titleX = px2-px1;
+	                        config.titleY = (py2-py1)/2;
+	                    }
+	                    return px1+','+py1+' '+px2+','+py2;
+    		        }else if((groupX2%2===1&&groupX1%2===0)||(groupX2%2===1&&groupX1%2===1&&groupX2>groupX1)||(groupX2%2===0&&groupX1%2===0&&groupX2<groupX1)){
+    		            if(groupY1 === groupY2){
+    		                return (x1+width1)+','+(y1+height1/2)+' '+x2+','+(y1+height1/2);
+    		            }else{
+    		                if(groupX1===0){
+    		                    px1 = x1+width1;py1 = y1+height1/2;
+    		                    px2 = x2+width2/2;py2 = y1+height1/2;
+    		                    px3 = x2+width2/2;py3 = y2;
+    		                    if(hasTitle){
+			                        config.titleX = px2-px1;
+			                        config.titleY = (py3-py1)/2;
+			                    }
+    		                	return px1+','+py1+' '+px2+','+py2+' '+px3+','+py3;
+    		                }else{
+    		                    px1 = x1+width1/2;py1 = y1+height1;
+    		                    px2 = x1+width1/2;py2 = y2+height2/2;
+    		                    px3 = x2;py3 = y2+height2/2;
+    		                    if(hasTitle){
+			                        config.titleX = px2-px1;
+			                        config.titleY = (py3-py1)/2;
+			                    }
+    		            		return px1+','+py1+' '+px2+','+py2+' '+px3+','+py3;
+    		                }
+    		            }		
+    		        }else{
+    		            if(groupY1 === groupY2){
+    		                return x1+','+(y1+height1/2)+' '+(x2+width2)+','+(y1+height1/2);
+    		            }else{
+    		                if(groupX1===0){
+    		                    px1 = x1;py1 = y1+height1/2;
+    		                    px2 = x2+width2/2;py2 = y1+height1/2;
+    		                    px3 = x2+width2/2;py3 = y2;
+    		                    if(hasTitle){
+			                        config.titleX = px2-px1;
+			                        config.titleY = (py3-py1)/2;
+			                    }
+    		                	return px1+','+py1+' '+px2+','+py2+' '+px3+','+py3;
+    		                }else{
+    		            		return (x1+width1/2)+','+(y1+height1)+' '+(x1+width1/2)+','+(y2+height2/2)+' '+(x2+width2)+','+(y2+height2/2);
+    		                }
+    		            }
+    		        }
+    		    }
+    		})
+    	]]></script>
+    </a:view>
+</a:screen>

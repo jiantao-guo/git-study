@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="pageLink_job_log" url="${/request/@context_path}/modules/sch/SCH111/sch_concurrent_job_log.screen"/>
+        <a:link id="pageLink_view_programe" url="${/request/@context_path}/modules/sch/SCH111/sch_concurrent_job_programe.screen"/>
+        <a:link id="pageLink_job_create" url="${/request/@context_path}/modules/sch/SCH111/sch_concurrent_job_create.screen"/>
+        <a:link id="bmLink_jobStatusHandle" model="sch.SCH111.sch_concurrent_job" modelaction="update"/>
+        <a:link id="pageLink_jobParaUpdate" url="${/request/@context_path}/modules/sch/SCH111/sch_concurrent_job_para.screen"/>
+        <script><![CDATA[
+        
+        function hls_sch111_query() {
+            jobDs_refresh();
+        }
+        
+        function jobDs_refresh()
+        {
+            $('jobDs').query();
+        }
+        
+        function jobHandle(operation_type)
+        {
+            var record = $('jobDs').getCurrentRecord();
+            if (Ext.isEmpty(record)) {
+                Aurora.showMessage('${l:PROMPT}', '请至少选择一条数据!');
+                return;
+            }
+            
+            var msgConfig={SLEEP:'暂挂',WAKE:'恢复',DELETE:'删除'};
+            
+            if(record.get('cycle_flag')=='N')
+            {
+                if(operation_type=='SLEEP'||operation_type=='WAKE')
+                {
+                    Aurora.showMessage('${l:PROMPT}', '非周期性任务不能'+msgConfig[operation_type]);
+                    return;
+                }
+                if(record.get('job_status')=='WAITING' && operation_type=='DELETE')
+                {
+                    
+                }
+                else
+                {
+                    Aurora.showMessage('${l:PROMPT}', '非周期性任务只能在等待状态才能'+msgConfig[operation_type]);
+                	return;
+                }
+                
+            }
+            
+            var job_id=record.get('job_id');
+            
+            
+            Aurora.showConfirm('${l:PROMPT}', msgConfig[operation_type]+'是否确认？', function() 
+            {
+                Aurora.request(
+                {
+                    url: $('bmLink_jobStatusHandle').getUrl(),
+                    para: {
+                        job_id:job_id,
+                    	operation_type:operation_type
+                    },
+                    success: function() {
+                        Aurora.SideBar.show({
+	                        msg: '操作成功!',
+	                        duration: 2000
+	                    });
+                        jobDs_refresh();
+                    },
+                    scope: this
+                });
+            });
+        }
+        
+        function job_sleep()
+        {
+            jobHandle('SLEEP');
+        }
+        
+        function job_wake()
+        {
+            jobHandle('WAKE');
+        }
+        function job_stop()
+        {
+            jobHandle('DELETE');
+        }
+        
+        
+        function winOpen_job_para(job_id,cycle_flag,task_code,job_status)
+        {
+            // var maintain_type='';
+                
+            // if(cycle_flag=='Y' && (job_status != 'FINISH' || job_status != 'DELETE'))
+            // {
+                // maintain_type='UPDATE';
+            // }
+            // else
+            // {
+                // maintain_type='READONLY';
+            // }
+            
+            var maintain_type = 'READONLY';
+            
+            new Aurora.Window({
+                id: 'sch_concurrent_job_para',
+                url: $('pageLink_jobParaUpdate').getUrl(),
+                params:{
+                	job_id:job_id,
+                	task_code:task_code,
+                	maintain_type:maintain_type
+                },
+                title: '${l:SCH111.WIN_TITLE.JOB_PARA}',
+                width:600,
+                height:450
+            });
+        }
+        
+        function winOpen_job_log(job_id)
+        {
+            new Aurora.Window({
+                id: 'win_job_log',
+                url: $('pageLink_job_log').getUrl(),
+                params:{
+                	job_id:job_id
+                },
+                title: '${l:SCH111.WIN_TITLE.JOB_LOG}',
+                width:800,
+                height:550
+            });
+           
+        }
+        
+        function winClose_view_programe()
+        {
+            $('win_view_programe').close();
+        }
+        
+        function winOpen_view_programe(job_id)
+        {
+            new Aurora.Window({
+                id: 'win_view_programe',
+                url: $('pageLink_view_programe').getUrl(),
+                params:{
+                	job_id:job_id
+                },
+                title: '${l:SCH111.WIN_TITLE.VIEW_PROGRAME}',
+                width:700,
+                height:420
+            });
+        }
+        
+        function winClose_job_log()
+        {
+            $('win_job_log').close();
+        }
+        
+        function winOpen_job_create()
+        {
+            var win = new Aurora.Window({
+                id: 'sch_concurrent_job_create',
+                url: $('pageLink_job_create').getUrl(),
+                title: '${l:SCH111.SCH_CONCURRENT_JOB.JOB_CREATE}',
+                fullScreen: true
+            });
+            
+            win.on('close',function (){
+            	jobDs_refresh();
+            });
+        }
+        
+        
+        function render_jobDs_grid(value, record, name) {
+            if(name=='job_para')
+            {
+                if(!record.isNew){
+		            return '<a href="javascript:winOpen_job_para(' + record.get('job_id') + ',\''+ record.get('cycle_flag') +'\',\'' + record.get('task_code') +'\',\'' + record.get('job_status') + '\');">' + '${l:SCH111.WIN_TITLE.JOB_PARA}' + '</a>';
+	            }
+	            return '';
+            }
+            if(name=='job_status_name')
+            {
+                var status = record.get('job_status');
+                var statusColor=
+	            {
+	                RUNNING:'00FF00',
+	                FINISH:'',
+	                SCHEDULED:'00FF00',
+	                DELETE:'',
+	                ERROR:'FF0000',
+	                SLEEP:'FFFF00',
+	                WAITING:'FFFF00'
+	            };
+	            if(Ext.isEmpty(statusColor[status]))
+	            {
+	                return value;
+	            }
+	            return "<div style='background-color:#"+statusColor[status]+"'>" + value + "</div>";
+            }
+            else if(name=='job_log')
+            {
+                if(!record.isNew){
+		            return '<a href="javascript:winOpen_job_log(' + record.get('job_id') + ');">' + '${l:SCH111.WIN_TITLE.JOB_LOG}' + '</a>';
+	            }
+	            return '';
+            }
+            else if(name=='view_programe')
+            {
+                if(!record.isNew){
+		            return '<a href="javascript:winOpen_view_programe(' + record.get('job_id') + ');">' + '${l:SCH111.WIN_TITLE.VIEW_PROGRAME}' + '</a>';
+	            }
+	            return '';
+            }
+            
+        }
+        function resetFunction() {
+                $('para_jobDs').reset();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="checkBoxValueDs">
+                <a:datas>
+                    <a:record code_value="ALL" code_value_name="全部"/>
+                    <a:record code_value="Y" code_value_name="是"/>
+                    <a:record code_value="N" code_value_name="否"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="jobStatusDs" lookupCode="SCH_JOB_STATUS"/>
+            <a:dataSet id="para_jobDs" autoCreate="true" model="sch.SCH111.sch_concurrent_job">
+                <a:fields>
+                    <a:field name="cycle_flag_desc" displayField="code_value_name" options="checkBoxValueDs" prompt="SCH111.SCH_CONCURRENT_JOB.CYCLE_FLAG" returnField="cycle_flag" valueField="code_value"/>
+                    <a:field name="task_name" autoComplete="true" autoCompleteField="task_code_name" lovGridHeight="350" lovHeight="500" lovService="sch.SCH111.sch_task_for_lov" lovWidth="500" title="选择任务">
+                        <a:mapping>
+                            <a:map from="task_code" to="task_code"/>
+                            <a:map from="task_name" to="task_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="schedule_name" autoComplete="true" autoCompleteField="schedule_name_desc" lovGridHeight="350" lovHeight="500" lovService="sch.SCH111.sch_schedule_for_lov" lovWidth="500" title="选择任务">
+                        <a:mapping>
+                            <a:map from="schedule_name" to="schedule_code"/>
+                            <a:map from="short_desc" to="schedule_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="job_status_name" displayField="code_value_name" options="jobStatusDs" returnField="job_status" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="jobDs" autoPageSize="true" autoQuery="true" model="sch.SCH111.sch_concurrent_job" queryDataSet="para_jobDs" selectable="true" selectionModel="single">
+                <a:fields>
+                    <a:field name="what" readOnly="true"/>
+                    <a:field name="cycle_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="create_sub_job_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="task_code" required="true"/>
+                    <a:field name="task_name" required="true"/>
+                    <a:field name="procedure_name" required="true"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="resetFunction" text="HAP_RESET" width="80"/>
+                <a:gridButton click="winOpen_job_create" text="SCH111.SCH_CONCURRENT_JOB.JOB_CREATE" width="80"/>
+                <a:gridButton click="job_sleep" text="SCH111.SCH_CONCURRENT_JOB.JOB_SLEEP" width="80"/>
+                <a:gridButton click="job_wake" text="SCH111.SCH_CONCURRENT_JOB.JOB_WAKE" width="80"/>
+                <a:gridButton click="job_stop" text="SCH111.SCH_CONCURRENT_JOB.JOB_STOP" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="para_jobDs" resultTarget="jobDs" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:numberField name="job_id" allowDecimals="false" allowNegative="false" bindTarget="para_jobDs"/>
+                    <a:lov name="task_name" bindTarget="para_jobDs"/>
+                    <a:lov name="schedule_name" bindTarget="para_jobDs"/>
+                </a:formToolBar>
+                <a:formBody column="4" labelWidth="100">
+                    <a:comboBox name="cycle_flag_desc" bindTarget="para_jobDs"/>
+                    <a:datePicker name="job_start_date" bindTarget="para_jobDs"/>
+                    <a:numberField name="parent_job_id" allowDecimals="false" allowNegative="false" bindTarget="para_jobDs"/>
+                    <a:textField name="description" bindTarget="para_jobDs"/>
+                    <a:comboBox name="job_status_name" bindTarget="para_jobDs"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:tabPanel marginHeight="123" marginWidth="28">
+                <a:tabs>
+                    <a:tab prompt="基本信息" width="100">
+                        <a:grid id="jobDs_grid" bindTarget="jobDs" marginHeight="160" navBar="true" style="margin-left:5px;margin-top:5px;">
+                            <a:columns>
+                                <a:column name="job_id" align="right" width="60"/>
+                                <a:column name="parent_job_id" align="right" width="60"/>
+                                <a:column name="description" autoAdjust="false" showTitle="true" width="230"/>
+                                <a:column name="job_status_name" align="center" autoAdjust="false" renderer="render_jobDs_grid" resizable="false" width="60"/>
+                                <a:column name="task_name" autoAdjust="false" showTitle="true" width="200"/>
+                                <a:column name="schedule_name" autoAdjust="false" showTitle="true" width="150"/>
+                                <a:column name="job_start_date" width="130"/>
+                                <a:column name="job_end_date" width="130"/>
+                                <a:column name="run_times" align="right" width="60"/>
+                                <a:column name="error_times" align="right" width="60"/>
+                                <a:column name="job_log" align="center" prompt="SCH111.WIN_TITLE.JOB_LOG" renderer="render_jobDs_grid" width="50"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="其他信息" width="100">
+                        <a:grid id="jobDs_grid2" bindTarget="jobDs" marginHeight="160" navBar="true" style="margin-left:5px;margin-top:5px;">
+                            <a:columns>
+                                <a:column name="job_id" align="right" width="60"/>
+                                <a:column name="parent_job_id" align="right" width="60"/>
+                                <a:column name="description" autoAdjust="false" showTitle="true" width="230"/>
+                                <a:column name="job_status_name" align="center" autoAdjust="false" renderer="render_jobDs_grid" resizable="false" width="60"/>
+                                <a:column name="cycle_flag" width="50"/>
+                                <a:column name="job_last_run_time" width="130"/>
+                                <a:column name="job_next_run_time" width="130"/>
+                                <a:column name="job_log" align="center" prompt="SCH111.WIN_TITLE.JOB_LOG" renderer="render_jobDs_grid" width="50"/>
+                                <a:column name="view_programe" align="center" prompt="SCH111.WIN_TITLE.VIEW_PROGRAME" renderer="render_jobDs_grid" width="50"/>
+                                <a:column name="job_para" align="center" prompt="SCH111.WIN_TITLE.JOB_PARA" renderer="render_jobDs_grid" width="50"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+
+            function cshPrepayPostInitSize() {
+            
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                var vh = $A.getViewportHeight();
+                //留白宽度
+                var marginWidth = 35;
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = autoWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置组件的自适应宽度
+                
+                $('jobDs_grid').setWidth(autoWidth + 4 - 17);
+                $('jobDs_grid2').setWidth(autoWidth + 4 - 17);
+            }
+            //Ext.fly(window).on('resize', cshPrepayPostInitSize);
+            cshPrepayPostInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

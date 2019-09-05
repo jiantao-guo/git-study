@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+		    begin
+			    delete from acp_acp_requisition_lns where acp_requisition_line_id=${@acp_requisition_line_id};
+			end;
+			]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+          SELECT V.* ,
+		        DECODE(ACP_REQUISITION_LINE_TYPE,
+					  'ACP_INVOICE',
+					  REQUISITED_AMOUNT - REQUISITED_PAYMENT_AMOUNT,
+					  'ACR_INVOICE',
+					  REQUISITED_AMOUNT - REQUISITED_PAYMENT_AMOUNT,					  
+					  NULL) REQUISITED_UNPAYMENT_AMOUNT
+         
+      FROM (SELECT CPRL.ACP_REQUISITION_HEADER_ID, 
+             CPRL.ACP_REQUISITION_LINE_ID,
+             CPRL.ACP_REQUISITION_LINE_TYPE, 
+             (SELECT  B.CODE_VALUE_NAME 
+			  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+			 WHERE A.CODE_ID = B.CODE_ID
+			   AND A.CODE = 'ACP_REQ_DOC_CATEGORY'
+			   AND B.CODE_VALUE = CPRL.ACP_REQUISITION_LINE_TYPE) REF_DOCUMENT_TYPE_DESC,
+             CPRL.AMOUNT,
+             CPRL.LINE_DESCRIPTION,
+             CPRL.REF_DOCUMENT_ID,
+            (select vv.invoice_number from ( SELECT V.*, INVOICE_REQ_AMOUNT - NEED_PAYMENT_AMOUNT P_REQUISITED_UNPAYMENT_AMOUNT
+				  FROM (  select ACP.INVOICE_TYPE,
+              ACP.INVOICE_ID,
+              ACP.INVOICE_NUMBER,
+              ACP.INVOICE_REQ_AMOUNT,
+              ACP.NEED_PAYMENT_AMOUNT
+         from acp_req_acp_info_vl ACP 
+       UNION 
+       SELECT ACR.INVOICE_TYPE,
+              ACR.INVOICE_ID,
+              ACR.INVOICE_NUMBER,
+              ACR.INVOICE_REQ_AMOUNT,
+              ACR.NEED_PAYMENT_AMOUNT
+        FROM acp_req_acr_info_vl ACR) V ) vv where vv.invoice_id=cprl.ref_document_id and vv.invoice_type=cprl.acp_requisition_line_type) REF_DOCUMENT_ID_DISPLAY,
+             
+              DECODE(CPRL.ACP_REQUISITION_LINE_TYPE,
+                'ACP_INVOICE',
+                (select sum(acp.NEED_PAYMENT_AMOUNT) 
+                  from acp_req_acp_info_vl acp
+                 where acp.INVOICE_ID = cprl.REF_DOCUMENT_ID),
+                'ACR_INVOICE',
+                (select sum(acr.NEED_PAYMENT_AMOUNT)
+                   from acp_req_acr_info_vl acr
+                  where acr.INVOICE_ID = cprl.REF_DOCUMENT_ID ),
+                NULL) NEED_PAYMENT_AMOUNT, 
+                
+              DECODE(CPRL.ACP_REQUISITION_LINE_TYPE,
+                'ACP_INVOICE',
+                (select sum(acp.invoice_req_amount) 
+                  from acp_req_acp_info_vl acp
+                 where acp.INVOICE_ID = cprl.REF_DOCUMENT_ID),
+                'ACR_INVOICE',
+                (select sum(acr.invoice_req_amount)
+                   from acp_req_acr_info_vl acr
+                  where acr.INVOICE_ID = cprl.REF_DOCUMENT_ID ),
+                NULL) REQUISITED_AMOUNT,
+                
+             DECODE(CPRL.ACP_REQUISITION_LINE_TYPE,
+							  'ACP_INVOICE',
+							  (SELECT NVL(SUM(APRR.AMOUNT), 0)
+								 FROM ACP_ACP_REQUISITION_LNS  APRL2,
+									  ACP_ACP_REQUISITION_REFS  APRR,
+									  CSH_TRANSACTION_LINES        CTL,
+									  CSH_TRANSACTION_HEADERS      CTH
+								WHERE APRL2.REF_DOCUMENT_ID = CPRL.REF_DOCUMENT_ID
+                                  AND APRL2.ACP_REQUISITION_LINE_TYPE ='ACP_INVOICE' 
+								   AND APRL2.ACP_REQUISITION_LINE_ID =
+									  APRR.ACP_REQUISITION_LINE_ID
+								  AND APRR.CSH_TRANSACTION_LINE_ID =
+									  CTL.TRANSACTION_LINE_ID
+								  AND CTL.TRANSACTION_HEADER_ID =
+									  CTH.TRANSACTION_HEADER_ID
+								  AND CTH.POSTED_FLAG = 'Y'),
+                    'ACR_INVOICE',
+							  (SELECT NVL(SUM(APRR.AMOUNT), 0)
+								 FROM ACP_ACP_REQUISITION_LNS  APRL2,
+									  ACP_ACP_REQUISITION_REFS  APRR,
+									  CSH_TRANSACTION_LINES        CTL,
+									  CSH_TRANSACTION_HEADERS      CTH
+								WHERE APRL2.REF_DOCUMENT_ID = CPRL.REF_DOCUMENT_ID
+                                   AND APRL2.ACP_REQUISITION_LINE_TYPE ='ACR_INVOICE' 
+								   AND APRL2.ACP_REQUISITION_LINE_ID =
+									  APRR.ACP_REQUISITION_LINE_ID
+								  AND APRR.CSH_TRANSACTION_LINE_ID =
+									  CTL.TRANSACTION_LINE_ID
+								  AND CTL.TRANSACTION_HEADER_ID =
+									  CTH.TRANSACTION_HEADER_ID
+								  AND CTH.POSTED_FLAG = 'Y'),
+							  NULL) REQUISITED_PAYMENT_AMOUNT,
+               
+             (SELECT  NAME
+                                    FROM (SELECT CEV.EMPLOYEE_ID id,
+                                                 CEV.COMPANY_ID,
+                                                 CEV.EMPLOYEE_CODE || '-' || CEV.NAME NAME,
+                                                 CEV.EMPLOYEE_CODE,
+                                                 'EMPLOYEE' PARTNER_CATEGORY
+                                            FROM EXP_COMPANY_EMPLOYEES_V CEV
+                                           WHERE CEV.EMPLOYEE_ENABLED_FLAG = 'Y'                                             
+                                           UNION
+                                          SELECT SVV.VENDER_ID,
+                                                 CV.COMPANY_ID ,
+                                                 SVV.VENDER_CODE || '-' || SVV.DESCRIPTION,
+                                                 SVV.VENDER_CODE,
+                                                 'VENDER' PARTNER_CATEGORY
+                                            FROM PUR_COMPANY_VENDERS CV, PUR_SYSTEM_VENDERS_VL SVV
+                                           WHERE CV.VENDER_ID = SVV.VENDER_ID
+                                             AND CV.ENABLED_FLAG = 'Y'
+                                           UNION
+                                          SELECT CV.CUSTOMER_ID,
+                                                 CC.COMPANY_ID,
+                                                 CV.CUSTOMER_CODE || '-' || CV.DESCRIPTION,
+                                                 CV.CUSTOMER_CODE,
+                                                 'CUSTOMER' PARTNER_CATEGORY
+                                            FROM ORD_COMPANY_CUSTOMERS CC, ORD_SYSTEM_CUSTOMERS_VL CV
+                                           WHERE CC.CUSTOMER_ID = CV.CUSTOMER_ID
+                                             AND CC.ENABLED_FLAG = 'Y') CAT
+                                             
+                                           where PARTNER_CATEGORY = CPRL.PARTNER_CATEGORY
+                                             AND   ID = CPRL.PARTNER_ID
+                                             and  CPRL.COMPANY_ID = COMPANY_ID
+                                             )  P_PARTNER_NAME,              
+               
+           CPRL.COMPANY_ID payment_com_id,
+           CPRL.PARTNER_CATEGORY,
+           (SELECT  B.CODE_VALUE_NAME 
+        FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+       WHERE A.CODE_ID = B.CODE_ID
+         AND A.CODE = 'PAYMENT_OBJECT'
+         and B.CODE_VALUE = CPRL.PARTNER_CATEGORY) PARTNER_CATEGORY_DISPLAY,
+           CPRL.PARTNER_ID,
+           CPRL.ACCOUNT_NAME,
+           CPRL.ACCOUNT_NUMBER,
+           CPRL.BANK_CODE,
+           CPRL.BANK_NAME,
+           CPRL.BANK_LOCATION_CODE,
+           CPRL.BANK_LOCATION_NAME,
+           CPRL.PROVINCE_CODE,
+           CPRL.PROVINCE_NAME,
+           CPRL.CITY_CODE,
+           CPRL.CITY_NAME,
+           CPRL.REF_DOCUMENT_LINE_ID,
+           CPRL.gather_flag,
+            (SELECT
+                                b.code_value_name
+                            FROM
+                                sys_codes a,
+                                sys_code_values_vl b
+                            WHERE
+                                a.code_id       = b.code_id AND
+                                a.code          ='GATHER_FLAG' AND
+                                b.code_value = CPRL.gather_flag
+                            )gather_flag_desc,
+           (select e.exp_report_number
+			  from exp_report_headers e
+			 where e.exp_report_header_id =
+			       (select s.exp_report_header_id
+			          from exp_report_pmt_schedules s
+			         where s.payment_schedule_line_id = CPRL.REF_DOCUMENT_LINE_ID)) document_number,
+			CPRL.PAYMENT_METHOD_ID,
+			(select h.description from csh_payment_methods_vl h where h.payment_method_id =CPRL.PAYMENT_METHOD_ID)PAYMENT_METHOD,
+           (select fvc.company_short_name
+            from fnd_companies_vl fvc ,
+                 csh_doc_payment_company cdpc
+           where fvc.company_id = cdpc.payment_company_id
+           and cdpc.document_type = 'ACP_REQUISITION'
+           and cdpc.document_id = CPRL.acp_requisition_header_id
+           and cdpc.document_line_id = CPRL.acp_requisition_line_id) company_short_name,
+           
+           CPRL.CSH_TRANSACTION_CLASS_CODE,
+           
+           (SELECT  A.DESCRIPTION  CLS_DES
+             FROM CSH_TRANSACTION_CLASSES_VL A
+            WHERE A.CSH_TRANSACTION_CLASS_CODE = CPRL.CSH_TRANSACTION_CLASS_CODE) CLS_DES
+         
+          FROM ACP_ACP_REQUISITION_LNS CPRL) V
+          
+
+
+		#WHERE_CLAUSE# ORDER BY ACP_REQUISITION_LINE_ID
+		]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="acp_requisition_header_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="ACP_REQUISITION_HEADER_ID"/>
+        <bm:field name="acp_requisition_line_id" databaseType="NUMBER" datatype="java.lang.Double"/>
+        <bm:field name="csh_transaction_class_code" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="cls_des" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="ref_document_id" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="ref_document_id_display" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="acp_requisition_line_type" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="ref_document_type_desc" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="amount"/>
+        <bm:field name="line_description" databaseType="varchar2" datatype="java.lang.String" physicalName="LINE_DESCRIPTION"/>
+        <bm:field name="partner_category" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="partner_category_display" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="p_partner_name" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="partner_id" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="need_payment_amount" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="requisited_amount" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="requisited_unpayment_amount" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="company_short_name" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="payment_com_id" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="document_number"/>
+        <bm:field name="account_name" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="account_number" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="bank_code" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="bank_name" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="bank_location_code" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="bank_location_name" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="province_code" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="province_name" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="city_code" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="city_name" databaseType="varchar2" datatype="java.lang.String"/>
+        <bm:field name="gather_flag"/>
+        <bm:field name="gather_flag_desc"/>
+        <bm:field name="payment_method_id"/>
+        <bm:field name="payment_method"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="acp_requisition_header_id" queryOperator="="/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mapper>
+<query>
+	
+	<!--待办事项 -->
+	<select id="wfl_todo" page="true"><![CDATA[
+	select o1.* from (
+		SELECT o.document_number attr_1,
+       (SELECT ee.name
+          FROM exp_employees ee
+         WHERE ee.employee_id = o.employee_id) attr_2,
+       
+       o.apply_date_view attr_3,
+       to_char(o.instance_amount, 'fm99,999,999,999,999,990.00') attr_4,
+       o.node_name attr_5,
+	  decode(o.workflow_category,
+                      'EXP_REPORT',
+                      (SELECT (SELECT tv.description
+                              FROM exp_expense_report_types_vl tv
+                             WHERE tv.expense_report_type_id = h.exp_report_type_id)
+                         FROM exp_report_headers h
+                        WHERE h.exp_report_number = o.document_number),
+                      'PAYMENT_REQUISITION',
+                      (SELECT (SELECT cprt.description
+                        FROM csh_pay_req_types_vl cprt
+                        WHERE cprt.type_id = rh.payment_req_type_id)
+                         FROM csh_payment_requisition_hds rh
+                        WHERE rh.requisition_number = o.document_number),
+                      'BUDGET_JOURNAL',
+                      (SELECT (select bjt.description
+                               from bgt_journal_types_vl bjt
+                              where bjt.bgt_journal_type_id =  bjh.bgt_journal_type_id)
+                         FROM bgt_journal_headers bjh
+                        WHERE bjh.budget_journal_number = o.document_number),
+					  'EXP_REQUISITION',
+					 (select (SELECT description
+                    FROM exp_expense_req_types_vl
+                   WHERE expense_requisition_type_id = eh.exp_requisition_type_id) 
+           from exp_requisition_headers eh
+					  where eh.exp_requisition_number = o.document_number),
+				     'ACP_REQUISITION',
+					 (select (SELECT vv.description
+                  FROM acp_sys_acp_req_types_vl vv
+                 WHERE vv.acp_req_type_id = ah.acp_req_type_id)
+            from acp_acp_requisition_hds ah
+					  where ah.requisition_number = o.document_number),
+					 'WORK_ORDER',
+					 (select (select t.work_order_type_desc
+                               from gld_sob_work_order_types t
+                              where t.work_order_type_id = gh.work_order_type_id)
+             from gld_work_order_headers gh
+					  where gh.work_order_number = o.document_number)) attr_6,
+       decode(o.workflow_category,'CP_ADJUST',1,2) order_seq,
+       o.record_id attr_7,
+       o.instance_id attr_8,
+       o.node_id attr_9
+  FROM (SELECT t1.document_number,
+               decode(ww.workflow_category,
+                      'EXP_REPORT',
+                      (SELECT h.employee_id
+                         FROM exp_report_headers h
+                        WHERE h.exp_report_number = t1.document_number),
+                      'PAYMENT_REQUISITION',
+                      (SELECT rh.employee_id
+                         FROM csh_payment_requisition_hds rh
+                        WHERE rh.requisition_number = t1.document_number),
+                      'BUDGET_JOURNAL',
+                      (SELECT bjh.employee_id
+                         FROM bgt_journal_headers bjh
+                        WHERE bjh.budget_journal_number = t1.document_number),
+                      'CP_ADJUST',
+                      (SELECT ci.employee_id
+                         FROM ca_capital_adjust_info ci
+                        WHERE ci.adjust_number = t1.document_number),
+					  'EXP_REQUISITION',
+					 (select eh.employee_id from exp_requisition_headers eh
+					  where eh.exp_requisition_number = t1.document_number),
+				     'ACP_REQUISITION',
+					 (select ah.employee_id from acp_acp_requisition_hds ah
+					  where ah.requisition_number = t1.document_number),
+					 'WORK_ORDER',
+					 (select gh.employee_id from gld_work_order_headers gh
+					  where gh.work_order_number = t1.document_number)) employee_id,
+               (SELECT wwn.name
+                  FROM wfl_workflow_node_vl wwn
+                 WHERE wwn.node_id = r.node_id) AS node_name,
+               to_char(t1.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+               t1.instance_amount,
+               ww.workflow_category,
+               r.record_id,
+               t1.instance_id,
+               r.node_id
+          FROM wfl_workflow_instance t1
+         INNER JOIN wfl_instance_node_recipient r
+            ON t1.instance_id = r.instance_id
+         INNER JOIN wfl_workflow ww
+            ON t1.workflow_id = ww.workflow_id
+         WHERE r.user_id = (SELECT su.user_id
+                              FROM sys_user su
+                             WHERE su.user_name = upper(${@param_1}))
+	       AND (${@param_2} IS NULL OR t1.instance_amount >= ${@param_2})
+           AND (${@param_3} IS NULL OR t1.instance_amount <= ${@param_3} )
+           AND ww.workflow_category IN ('EXP_REPORT',
+                                        'PAYMENT_REQUISITION',
+                                        'BUDGET_JOURNAL',
+                                        'CP_ADJUST',
+										'EXP_REQUISITION',
+									    'ACP_REQUISITION',
+										'WORK_ORDER')) o) o1
+	       WHERE o1.attr_6 = nvl(${@param_4}, o1.attr_6)
+   			AND o1.attr_2 LIKE '%' || nvl(${@param_5}, o1.attr_2) || '%'
+			AND (${@param_6} IS NULL OR substr(o1.attr_3,1,10) >= ${@param_6})
+			AND (${@param_7} IS NULL OR substr(o1.attr_3,1,10) <= ${@param_7})
+			AND sys_parameter_pkg.value('WFL_OA_ENABLE') = 'Y'
+           order by o1.order_seq,o1.attr_3 desc
+       ]]>
+	</select>
+	
+	
+	<!--已办事项 -->
+	<select id="wfl_done" page="true"><![CDATA[
+	SELECT o1.*
+  	FROM (SELECT o.document_number attr_1,
+				   (SELECT ee.name
+					  FROM exp_employees ee
+					 WHERE ee.employee_id = o.employee_id) attr_2,
+				   
+				   o.apply_date_view attr_3,
+				   to_char(o.instance_amount, 'fm99,999,999,999,999,990.00') attr_4,
+				   o.node_name attr_5,
+				    decode(o.workflow_category,
+                      'EXP_REPORT',
+                      (SELECT (SELECT tv.description
+                              FROM exp_expense_report_types_vl tv
+                             WHERE tv.expense_report_type_id = h.exp_report_type_id)
+                         FROM exp_report_headers h
+                        WHERE h.exp_report_number = o.document_number),
+                      'PAYMENT_REQUISITION',
+                      (SELECT (SELECT cprt.description
+                        FROM csh_pay_req_types_vl cprt
+                        WHERE cprt.type_id = rh.payment_req_type_id)
+                         FROM csh_payment_requisition_hds rh
+                        WHERE rh.requisition_number = o.document_number),
+                      'BUDGET_JOURNAL',
+                      (SELECT (select bjt.description
+                               from bgt_journal_types_vl bjt
+                              where bjt.bgt_journal_type_id =  bjh.bgt_journal_type_id)
+                         FROM bgt_journal_headers bjh
+                        WHERE bjh.budget_journal_number = o.document_number),
+					  'EXP_REQUISITION',
+					 (select (SELECT description
+                    FROM exp_expense_req_types_vl
+                   WHERE expense_requisition_type_id = eh.exp_requisition_type_id) 
+           from exp_requisition_headers eh
+					  where eh.exp_requisition_number = o.document_number),
+				     'ACP_REQUISITION',
+					 (select (SELECT vv.description
+                  FROM acp_sys_acp_req_types_vl vv
+                 WHERE vv.acp_req_type_id = ah.acp_req_type_id)
+            from acp_acp_requisition_hds ah
+					  where ah.requisition_number = o.document_number),
+					 'WORK_ORDER',
+					 (select (select t.work_order_type_desc
+                               from gld_sob_work_order_types t
+                              where t.work_order_type_id = gh.work_order_type_id)
+             from gld_work_order_headers gh
+					  where gh.work_order_number = o.document_number)) attr_6,
+				   o.instance_id attr_8,
+				   decode(o.workflow_category, 'CP_ADJUST', 1, 2) order_seq
+			  FROM (SELECT a.document_number,
+						   ww.workflow_category,
+						   decode(ww.workflow_category,
+								  'EXP_REPORT',
+								  (SELECT h.employee_id
+									 FROM exp_report_headers h
+									WHERE h.exp_report_number = a.document_number),
+								  'PAYMENT_REQUISITION',
+								  (SELECT rh.employee_id
+									 FROM csh_payment_requisition_hds rh
+									WHERE rh.requisition_number = a.document_number),
+								  'BUDGET_JOURNAL',
+								  (SELECT bjh.employee_id
+									 FROM bgt_journal_headers bjh
+									WHERE bjh.budget_journal_number =
+										  a.document_number),
+								  'CP_ADJUST',
+								  (SELECT ci.employee_id
+									 FROM ca_capital_adjust_info ci
+									WHERE ci.adjust_number = a.document_number),
+								  'EXP_REQUISITION',
+								 (select eh.employee_id from exp_requisition_headers eh
+								  where eh.exp_requisition_number = a.document_number),
+								 'ACP_REQUISITION',
+								 (select ah.employee_id from acp_acp_requisition_hds ah
+								  where ah.requisition_number = a.document_number),
+								 'WORK_ORDER',
+								 (select gh.employee_id from gld_work_order_headers gh
+								  where gh.work_order_number = a.document_number)) employee_id,
+						   (SELECT wwn.name
+							  FROM wfl_workflow_node_vl wwn, wfl_approve_record wa
+							 WHERE wwn.node_id = wa.node_id
+							   AND wa.instance_id = a.instance_id
+							   AND rownum = 1) AS node_name,
+						   to_char(a.creation_date, 'yyyy-mm-dd hh24:mi') AS apply_date_view,
+						   a.instance_amount,
+						   a.instance_id
+					  FROM wfl_workflow_instance a, wfl_workflow_vl ww
+					 WHERE a.workflow_id = ww.workflow_id
+					   AND EXISTS
+					 (SELECT 1
+							  FROM wfl_approve_record war
+							 WHERE war.instance_id = a.instance_id
+							   AND war.created_by =
+								   (SELECT su.user_id
+									  FROM sys_user su
+									 WHERE su.user_name = upper(${@param_1})))
+					   AND (${@param_2} IS NULL OR
+						   a.instance_amount >= ${@param_2})
+					   AND (${@param_3} IS NULL OR
+						   a.instance_amount <= ${@param_3})
+					   AND ww.workflow_category IN
+						   ('EXP_REPORT',
+                                        'PAYMENT_REQUISITION',
+                                        'BUDGET_JOURNAL',
+                                        'CP_ADJUST',
+										'EXP_REQUISITION',
+									    'ACP_REQUISITION',
+										'WORK_ORDER')) o) o1
+	 WHERE o1.attr_6 = nvl(${@param_4}, o1.attr_6)
+	   AND o1.attr_2 LIKE '%' || nvl(${@param_5}, o1.attr_2) || '%'
+	   AND (${@param_6} IS NULL OR substr(o1.attr_3, 1, 10) >= ${@param_6})
+	   AND (${@param_7} IS NULL OR substr(o1.attr_3, 1, 10) <= ${@param_7})
+	   AND sys_parameter_pkg.value('WFL_OA_ENABLE') = 'Y'
+	 ORDER BY o1.order_seq, o1.attr_3
+
+       ]]>
+	</select>
+	
+	<!--审批记录 -->
+	<select id="wfl_approve_record" page="true"><![CDATA[
+		SELECT (SELECT NAME FROM wfl_workflow_node_vl WHERE node_id = a.node_id) AS attr_1,
+	       a.user_name attr_2,
+	       a.action_title attr_3,
+	       to_char(a.creation_date, 'yyyy-mm-dd hh24:mi') AS attr_4,
+	       a.comment_text attr_5
+	  FROM wfl_approve_record_v a
+	 WHERE instance_id =  ${@param_1}
+	 ORDER BY a.creation_date
+	       ]]>
+	</select>
+	
+	<!--员工列表 -->
+	<select id="wfl_employees" page="true"><![CDATA[
+		SELECT  t1.employee_code attr_1, t1.employee_name attr_2, t1.employee_id attr_3
+			  FROM wfl_users_all_v t1
+			  where (${@param_1} is null or t1.employee_name like '%' || ${@param_1} ||'%')
+			   group by t1.employee_code ,
+       t1.employee_name ,
+       t1.employee_id  
+	       ]]>
+	</select>
+	
+	<!--验证待办是否有效 -->
+	<select id="check_approve_record" page="false"><![CDATA[
+		SELECT t.column_value attr_1,
+    	cux_mobile_wfl_pkg.check_record(t.column_value) attr_2
+		FROM TABLE(sys_sql_util_pkg.split(${@param_1}, ',')) t
+	       ]]>
+	</select>
+	
+	<!--获取token -->
+	<select id="get_token" page="false"><![CDATA[
+		select  hec_to_oa_interface_pkg.get_token(${@param_1}) attr_1 from dual
+	       ]]>
+	</select>
+	
+</query>	
+</mapper>

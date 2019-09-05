@@ -1,0 +1,468 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: qc  
+    $Date: 2013-9-25 下午5:18:54  
+    $Revision: 1.0  
+    $Purpose: 自动对账
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="capital.checkManage.checkManage1090.balance_adjustment_base_id" rootPath="sid"/>
+        <a:model-query defaultWhereClause="company_id=${/session/@company_id}" fetchAll="true" model="capital.public.get_user_company" rootPath="usercompany"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="balance_regulate_status_link" model="capital.checkManage.checkManage1090.get_balance_regulate_status" modelaction="query"/>
+        <a:link id="get_group_id_link" model="capital.checkManage.checkManage1090.get_group_id" modelaction="query"/>
+        <a:link id="create_check_number_link" model="capital.checkManage.checkManage1090.auto_check" modelaction="execute"/>
+        <a:link id="check_result_link" model="capital.checkManage.checkManage1090.get_check_result" modelaction="query"/>
+        <a:link id="check_right_link" model="capital.checkManage.checkManage1090.get_account_right" modelaction="query"/>
+        <a:link id="sid_link" model="capital.checkManage.checkManage1090.balance_adjustment_base_id" modelaction="query"/>
+        <a:link id="auto_check_link" model="capital.checkManage.checkManage1090.auto_check" modelaction="update"/>
+        <a:link id="syn_bank_deposit_link" model="capital.checkManage.checkManage1090.syn_bank_deposit" modelaction="update"/>
+        <a:link id="manual_check_link" model="db.capital_pkg.checkManage_pkg.auto_account_bank_pkg.insert_auto_account_bank_headers" modelaction="execute"/>
+        <a:link id="revocation_check_link" model="db.capital_pkg.checkManage_pkg.auto_account_bank_pkg.insert_auto_account_bank_headers" modelaction="insert"/>
+        <script src="${/request/@context_path}/javascripts/util.js" type="text/javascript"/>
+        <a:link id="syn_account_check_link" url="${/request/@context_path}/modules/capital/checkManage/checkManage1090/syn_account_check_window.screen"/>
+        <a:link id="generate_bank_deposit_link" model="db.capital_pkg.checkManage_pkg.auto_account_bank_pkg.insert_cashier_balance_adjustment_base" modelaction="execute"/>
+        <script><![CDATA[
+            function resetFunction() {
+                $('bank_list_query_ds').reset();
+            }
+            
+            function hfmQueryFunction() {
+                $('hfm_list_result_ds').query();
+            }
+            
+            function queryFunction() {
+                $('bank_list_result_ds').query();
+                $('hfm_list_result_ds').query();
+            }
+            
+            function syncFunction() {
+                var queryRecord = $('bank_list_query_ds').getCurrentRecord();
+                Aurora.request({
+                    url: $('syn_bank_deposit_link').getUrl(),
+                    para: queryRecord.data,
+                    lockMessage: '正在查询,请稍后...',
+                    success: function(args) {
+                        $('bank_list_result_ds').query();
+                        $('hfm_list_result_ds').query();
+                    },
+                    scope: this
+                });
+            }
+            
+            function bandAccountFunction() {
+                var record = $('bank_list_query_ds').getAt(0);
+                var organ = record.get('organ');
+                var organ_cn = record.get('organ_cn');
+                if (organ_cn) {
+                    record.getField('bank_account').setLovPara('open_organ', organ);
+                } else {
+                    record.set('organ', null);
+                    record.getField('bank_account').setLovPara('open_organ', null);
+                }
+            
+            }
+            
+            //自动对账
+            
+            function autorightFunction() {
+                new Aurora.Window({
+                    id: 'windowId',
+                    url: $('syn_account_check_link').getUrl(),
+                    title: '自动对账',
+                    height: 220,
+                    width: 550
+                });
+            }
+            // 自动对账
+            
+            function autorightFunction1(check_type, desc, day_check, days, other_account_flag) {
+                if (!$('bank_list_query_ds').validate()) {
+                    return;
+                }
+                var queryRecord = $('bank_list_query_ds').getCurrentRecord();
+                Aurora.request({
+                    para: {
+                        bank_account: queryRecord.get('bank_account'),
+                        period: queryRecord.get('period'),
+                        check_type: check_type,
+                        desc: desc,
+                        day_check: day_check,
+                        days: days,
+                        other_account_flag: other_account_flag
+                    },
+                    lockMessage: '正在对账',
+                    url: $('auto_check_link').getUrl(),
+                    success: function() {
+                        Aurora.showMessage("${l:PROMPT}", "对账成功!");
+                        queryFunction();
+                    },
+                    scope: this
+                });
+            
+            }
+            
+            //获取组ID
+            
+            function getGroupId() {
+                var group_id;
+                Aurora.request({
+                    url: $('get_group_id_link').getUrl(),
+                    sync: true,
+                    success: function(args) {
+                        if (args.result.record) {
+                            if (args.result.record.group_id) {
+                                group_id = args.result.record.group_id;
+                            }
+                        }
+                    },
+                    scope: this
+                });
+                return group_id;
+            }
+            
+            function manualCheckFun() {
+                // ********************** 人工调节  *******************
+                var hfm_ids = "";
+                var bank_ids = "";
+            
+                var hfm_datas = $('hfm_list_result_ds').getJsonData(true);
+                var bank_datas = $('bank_list_result_ds').getJsonData(true);
+            
+                for (var i = 0;i < hfm_datas.length;i++) {
+                    if (i != 0) {
+                        hfm_ids += ',';
+                    }
+                    hfm_ids += hfm_datas[i].cp_bank_deposit_details_id;
+                }
+            
+                for (var i = 0;i < bank_datas.length;i++) {
+                    if (i != 0) {
+                        bank_ids += ',';
+                    }
+                    bank_ids += bank_datas[i].bcdl_his_id;
+                }
+            
+                Aurora.request({
+                    para: {
+                        hfm_ids: hfm_ids,
+                        bank_ids: bank_ids
+                    },
+                    url: $('manual_check_link').getUrl(),
+                    success: function() {
+                        Aurora.showMessage("${l:PROMPT}", "人工调节成功!");
+                        $('bank_list_result_ds').query();
+                        $('hfm_list_result_ds').query();
+                    },
+                    scope: this
+                });
+            }
+            
+            //是否有重复的group_id
+            
+            function is_contain_group_id(arr, group_id) {
+                var is_contain = false;
+                for (var i = 0;i < arr.length;i++) {
+                    if (arr[i].group_id === group_id) {
+                        is_contain = true;
+                        break;
+                    }
+                }
+                return is_contain;
+            }
+            
+            function revocationFunction() {
+                // ********************** 撤销对账 *******************
+                var hfm_ids = "";
+                var bank_ids = "";
+            
+                var hfm_datas = $('hfm_list_result_ds').getJsonData(true);
+                var bank_datas = $('bank_list_result_ds').getJsonData(true);
+            
+                for (var i = 0;i < hfm_datas.length;i++) {
+                    if (i != 0) {
+                        hfm_ids += ',';
+                    }
+                    hfm_ids += hfm_datas[i].cp_bank_deposit_details_id;
+                }
+            
+                for (var i = 0;i < bank_datas.length;i++) {
+                    if (i != 0) {
+                        bank_ids += ',';
+                    }
+                    bank_ids += bank_datas[i].bcdl_his_id;
+                }
+            
+                Aurora.request({
+                    para: {
+                        hfm_ids: hfm_ids,
+                        bank_ids: bank_ids
+                    },
+                    url: $('revocation_check_link').getUrl(),
+                    success: function() {
+                        Aurora.showMessage("${l:PROMPT}", "已撤销!");
+                        $('bank_list_result_ds').query();
+                        $('hfm_list_result_ds').query();
+                    },
+                    scope: this
+                });
+            }
+            
+            
+            // 生成调节表
+            
+            function geneDataFunction() {
+                var validator = $('bank_list_query_ds').validate();
+                var queryRecord = $('bank_list_query_ds').getCurrentRecord();
+                if (validator) {
+                    Aurora.request({
+                        url: $('generate_bank_deposit_link').getUrl(),
+                        lockMessage: '正在操作,请稍后...',
+                        para: {
+                            'bank_account': queryRecord.get('bank_account'),
+                            'period': queryRecord.get('period')
+                        },
+                        success: function(args) {
+                            Aurora.showMessage("${l:PROMPT}", "生成余额调节表成功!");
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function numberFormat(value, record, name) {
+                return value.toFixed(2);
+            }
+            
+            var bank_total_record = 0;
+            var bank_total_debit = 0;
+            var bank_total_credit = 0;
+            
+            
+            function bankGridSelectHandler(ds, record) {
+                //选中事件
+                bank_total_record++;
+                bank_total_debit = fixMath(bank_total_debit, new Number(record.get('debit_amount')), '+');
+                bank_total_credit = fixMath(bank_total_credit, new Number(record.get('credit_amount')), '+');
+                show_bank();
+            }
+            
+            
+            function bankGridUnSelectHandler(ds, record) {
+                //取消选中事件
+                bank_total_record--;
+                bank_total_debit = fixMath(bank_total_debit, new Number(record.get('debit_amount')), '-');
+                bank_total_credit = fixMath(bank_total_credit, new Number(record.get('credit_amount')), '-');
+                show_bank();
+            }
+            
+            
+            function show_bank() {
+                var show_s = '<font color="blue">笔数:<font color="red">' + bank_total_record + '</font>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;借方总金额:<font color="red">' + bank_total_debit + '</font>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;贷方总金额:<font color="red">' + bank_total_credit + '</font></font>';
+                document.getElementById('bank_total').innerHTML = show_s;
+            }
+            
+            var hfm_total_record = 0;
+            var hfm_total_debit = 0;
+            var hfm_total_credit = 0;
+            
+            
+            function hfmGridSelectHandler(ds, record) {
+                //选中事件
+                hfm_total_record++;
+                hfm_total_debit = fixMath(hfm_total_debit, new Number(record.get('debit_amount')), '+');
+                hfm_total_credit = fixMath(hfm_total_credit, new Number(record.get('credit_amount')), '+');
+                show_hfm();
+            }
+            
+            
+            function hfmGridUnSelectHandler(ds, record) {
+                //取消选中事件
+                hfm_total_record--;
+                if (new Number(record.get('debit_amount')) > 0) {
+                    hfm_total_debit = fixMath(hfm_total_debit, new Number(record.get('debit_amount')), '-');
+                } else {
+                    hfm_total_debit = fixMath(hfm_total_debit, (new Number(record.get('debit_amount'))) * -1, '+');
+                }
+            
+                if (new Number(record.get('credit_amount')) > 0) {
+                    hfm_total_credit = fixMath(hfm_total_credit, new Number(record.get('credit_amount')), '-');
+                } else {
+                    hfm_total_credit = fixMath(hfm_total_credit, (new Number(record.get('credit_amount'))) * -1, '+');
+                }
+            
+            
+                show_hfm();
+            }
+            
+            function show_hfm() {
+                var show_s = '<font color="blue">笔数:<font color="red">' + hfm_total_record + '</font>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;借方总金额:<font color="red">' + hfm_total_debit + '</font>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;贷方总金额:<font color="red">' + hfm_total_credit + '</font></font>';
+                document.getElementById('hfm_total').innerHTML = show_s;
+            }
+            
+            function header_ds_update(ds, record, name, value, oldvalue) {
+                if (name == 'bank_account') {
+                    if (value) {
+                        record.getMeta().getField('period').setReadOnly(false);
+                        record.getMeta().getField('period').setLovPara('bank_account', value);
+                    } else {
+                        record.getMeta().getField('period').setReadOnly(true);
+                    }
+                }
+            }
+            
+            function bankGridLoadHandler(ds) {
+                bank_total_record = 0;
+                bank_total_debit = 0;
+                bank_total_credit = 0;
+                show_bank();
+            }
+            
+            function hfmGridLoadHandler(ds) {
+                hfm_total_record = 0;
+                hfm_total_debit = 0;
+                hfm_total_credit = 0;
+                show_hfm();
+            }
+            
+            function createFunction() {
+                if (!$('bank_list_query_ds').validate()) {
+                    return;
+                }
+                var queryRecord = $('bank_list_query_ds').getCurrentRecord();
+                Aurora.showConfirm('提示', '确认生成回单编号？', function() {
+                    Aurora.request({
+                        url: $('create_check_number_link').getUrl(),
+                        lockMessage: '正在操作,请稍后...',
+                        para: queryRecord.data,
+                        success: function(args) {
+                            queryFunction();
+                        },
+                        scope: this
+                    });
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="account_status_ds" lookupCode="CHECK_STATUS"/>
+            <a:dataSet id="currency_name_ds" loadData="true" model="exp.exp_currency_code"/>
+            <!--银行交易查询条件dataSet-->
+            <a:dataSet id="bank_list_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="adjustment_base_id" defaultValue="${/model/sid/record/@adjustment_base_id}"/>
+                    <a:field name="organ" defaultValue="${/model/usercompany/record/@company_code}"/>
+                    <a:field name="organ_cn" autoComplete="true" autoCompleteField="orgn_cn" defaultValue="${/model/usercompany/record/@company_short_name}" lovGridHeight="300" lovHeight="450" lovService="exp.EXP3050.exp_employee_s_query_company_lov?total_company=${/session/@company_id}" lovWidth="600" title="FND_COMPANIES.QUERY">
+                        <a:mapping>
+                            <a:map from="company_code" to="organ"/>
+                            <a:map from="company_short_name" to="organ_cn"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bank_account" autoComplete="true" autoCompleteField="bank_account" lovGridHeight="300" lovHeight="450" lovService="capital.capitalManage.CPMANAGE0030.bank_account_list?open_organ=${/model/usercompany/record/@company_code}" lovWidth="600" required="true" title="银行账号查询">
+                        <a:mapping>
+                            <a:map from="bank_account" to="bank_account"/>
+                            <a:map from="open_organ" to="open_organ"/>
+                            <a:map from="open_bank" to="open_bank"/>
+                            <a:map from="account_use" to="account_use"/>
+                            <a:map from="currency" to="currency"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency" defaultValue="CNY"/>
+                    <a:field name="currency_name" defaultValue="人民币" displayField="currency_name" options="currency_name_ds" required="true" returnField="currency" valueField="currency_code"/>
+                    <a:field name="period" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovLabelWidth="120" lovService="gl.GL2010.gld_period_status_lov" lovWidth="500" readOnly="true" required="true" title="期间查询">
+                        <a:mapping>
+                            <a:map from="period_name" to="period"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="status" defaultValue="N"/>
+                    <a:field name="status_cn" defaultValue="未对账" displayField="code_value_name" options="account_status_ds" prompt="对账状态" returnField="status" valueField="code_value"/>
+                    <a:field name="flag1"/>
+                    <a:field name="flag2"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="header_ds_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="bank_list_result_ds" autoQuery="false" fetchAll="true" model="capital.checkManage.checkManage1090.get_bank_list" queryDataSet="bank_list_query_ds" selectable="true">
+                <a:events>
+                    <a:event name="select" handler="bankGridSelectHandler"/>
+                    <a:event name="unselect" handler="bankGridUnSelectHandler"/>
+                    <a:event name="load" handler="bankGridLoadHandler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="hfm_list_result_ds" autoQuery="false" fetchAll="true" model="capital.checkManage.checkManage1090.auto_account_bank_list" pageSize="1000" queryDataSet="bank_list_query_ds" selectable="true">
+                <a:events>
+                    <a:event name="select" handler="hfmGridSelectHandler"/>
+                    <a:event name="unselect" handler="hfmGridUnSelectHandler"/>
+                    <a:event name="load" handler="hfmGridLoadHandler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="syncFunction" text="同步企业账"/>
+                <a:toolbarButton click="queryFunction" text="HAP_QUERY"/>
+                <a:toolbarButton click="resetFunction" text="HAP_RESET"/>
+                <a:toolbarButton id="btn_auto" click="autorightFunction" text="自动对账"/>
+                <a:toolbarButton id="btn_hand" click="manualCheckFun" text="人工调节"/>
+                <a:toolbarButton id="btn_cancel" click="revocationFunction" text="撤销对账"/>
+                <a:toolbarButton id="btn_generate" click="geneDataFunction" text="生成调节表"/>
+                <!-- <a:toolbarButton id="btn_create" click="createFunction" text="生成回单编号"/>
+                <a:gridButton bind="bank_list_grid_id" text="导出回单" type="excel"/>
+                <a:gridButton bind="hfm_list_grid_id" text="导出凭证" type="excel"/> -->
+            </a:screenTopToolbar>
+            <a:form column="5" marginWidth="100" title=" ">
+                <a:lov name="organ_cn" bindTarget="bank_list_query_ds" prompt="公司" readOnly="true"/>
+                <a:lov name="bank_account" bindTarget="bank_list_query_ds" prompt="银行账号">
+                    <a:events>
+                        <a:event name="focus" handler="bandAccountFunction"/>
+                        <a:event name="beforetriggerclick" handler="bandAccountFunction"/>
+                    </a:events>
+                </a:lov>
+                <a:comboBox name="currency_name" bindTarget="bank_list_query_ds" prompt="币种"/>
+                <a:lov name="period" bindTarget="bank_list_query_ds" prompt="期间"/>
+                <a:comboBox name="status_cn" bindTarget="bank_list_query_ds" prompt="对账状态"/>
+            </a:form>
+            <a:hBox style="width:98%">
+                <a:grid id="bank_list_grid_id" bindTarget="bank_list_result_ds" marginHeight="150" navBar="true" width="750">
+                    <a:columns>
+                        <!-- <a:column name="check_number" align="center" prompt="回单编号" sortable="true" width="70"/> -->
+                        <a:column name="summary" align="center" prompt="摘要" sortable="true" width="250"/>
+                        <a:column name="other_account_name" align="center" prompt="对方户名" sortable="true" width="80"/>
+                        <!-- <a:column name="trade_number" align="center" prompt="交易序号" sortable="true" width="70"/> -->
+                        <a:column name="debit_amount" align="right" prompt="借方金额" renderer="Aurora.formatMoney" sortable="true" width="70"/>
+                        <a:column name="credit_amount" align="right" prompt="贷方金额" renderer="Aurora.formatMoney" sortable="true" width="70"/>
+                        <a:column name="since_amount" align="right" prompt="余额" renderer="Aurora.formatMoney" sortable="true" width="70"/>
+                        <!-- <a:column name="use" align="center" prompt="用途" sortable="true" width="80"/> -->
+                        <a:column name="account_date" align="center" prompt="支付日期" sortable="true" width="60"/>
+                        <a:column name="currency_name" align="center" prompt="币种" sortable="true" width="60"/>
+                        <!-- <a:column name="account_status_cn" align="center" prompt="状态" sortable="true" width="70"/> -->
+                    </a:columns>
+                </a:grid>
+                <a:grid id="hfm_list_grid_id" bindTarget="hfm_list_result_ds" marginHeight="150" navBar="true" width="750">
+                    <a:columns>
+                        <a:column name="source" align="center" prompt="来源" sortable="true" width="70"/>
+                        <!-- <a:column name="check_status_cn" align="center" prompt="状态" sortable="true" width="50"/> -->
+                        <a:column name="bill_number" align="center" prompt="凭证编号" sortable="true" width="110"/>
+                        <a:column name="pay_date" align="center" prompt="凭证日期" sortable="true" width="80"/>
+                        <!-- <a:column name="other_name" align="center" prompt="对方名称" sortable="true" width="100"/> -->
+                        <a:column name="debit_amount" align="right" prompt="借方金额" renderer="Aurora.formatMoney" sortable="true" width="70"/>
+                        <a:column name="credit_amount" align="right" prompt="贷方金额" renderer="Aurora.formatMoney" sortable="true" width="70"/>
+                        <a:column name="summary" align="center" prompt="摘要" sortable="true" width="250"/>
+                        <!-- <a:column name="check_number" align="center" prompt="回单编号" sortable="true" width="70"/> -->
+                        <a:column name="currency_name" align="center" prompt="币种" sortable="true" width="60"/>
+                    </a:columns>
+                </a:grid>
+            </a:hBox>
+            <a:hBox style="width:98%">
+                <span style="width:620">
+                    <h1 id="bank_total"/>
+                </span>
+                <span style="width:620">
+                    <h1 id="hfm_total"/>
+                </span>
+            </a:hBox>
+        </a:screenBody>
+    </a:view>
+</a:screen>

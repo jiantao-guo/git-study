@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="requisition_date desc">
+    <bm:operations>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+    			
+    				begin
+						csh_doc_payment_company_pkg.update_csh_doc_payment_company
+						(
+						  'PAYMENT_REQUISITION',
+						  ${@csh_head_id},
+						  ${@csh_line_id},
+						  ${@payment_company_id},
+						  ${@unit_id},
+						  ${/session/@user_id}    
+						);
+					end;
+    			
+    		]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select * from (
+		select hds.requisition_number csh_payment_number,
+				hds.payment_req_type_id,
+				(select t.name from exp_employees t where t.employee_id = hds.employee_id) employee_name,
+		       (select name from exp_employees where employee_id = hds.employee_id) employee_nname,
+		       to_char(hds.requisition_date, 'yyyy-mm-dd') requisition_date,
+		       (select t.description  from csh_pay_req_types_vl t where t.type_id = hds.payment_req_type_id) csh_pay_req_type,
+		       hds.requisition_date requisition_date1,
+		       hds.currency_code,
+               gld.currency_name,
+		      (select  b.code_value_name
+					  from sys_codes_vl a, sys_code_values_vl b
+					 where a.code_id = b.code_id
+					   and a.code = 'PAYMENT_OBJECT'
+					   and b.code_value=
+		       ln.partner_category )payee_category,
+		       ln.partner_category,
+		       ln.partner_id payee_id,
+		       decode(ln.partner_category,
+		              'EMPLOYEE',
+		              (select name || '-' || employee_code
+		                 from exp_employees ee
+		                where ee.employee_id = ln.partner_id),
+		              'CUSTOMER',
+		              (select vc.description || '-' || vc.customer_code
+		                 from ord_system_customers_vl vc
+		                where vc.customer_id = ln.partner_id),
+		              (select vv.description || '-' || vv.vender_code
+		                 from pur_system_venders_vl vv
+		                where vv.vender_id = ln.partner_id)) payee_code,
+		       (select b.code_value_name
+								  from sys_codes_vl a, sys_code_values_vl b
+								 where a.code_id = b.code_id
+								   and a.code = 'PAYMENT_REQ_DOC_CATEGORY'
+								   and b.code_value = ln.payment_requisition_line_type) document_type1,
+		       ed.exp_requisition_number document_number,
+		       (select cch.contract_number
+		          from con_contract_headers cch, con_document_flows s
+		         where contract_header_id = s.document_id
+		           and s.document_type = 'CON_CONTRACT'
+		           and s.source_document_type = 'EXP_REQUISITION_HEADERS'
+		           and s.source_document_id = ed.exp_requisition_header_id) contract_number,
+		       hds.payment_method_id payment_type,
+		       hds.description,
+		       ed.exp_requisition_header_id req_head_id,
+		       hds.payment_requisition_header_id csh_head_id,
+		       ln.payment_requisition_line_id csh_line_id,
+		       ln.amount,
+		      ( select v.description from csh_transaction_classes_vl  v where v.csh_transaction_class_code=
+		          ln.csh_transaction_class_code )transaction_class,
+		          ln.csh_transaction_class_code,
+		       (select code_value_name
+		          from sys_code_values_vl b, sys_codes a
+		         where b.code_id = a.code_id
+		           and a.code = 'PAYMENT_REQUISITION_STATUS'
+		           and b.code_value = hds.status) statusment,
+		       hds.position_id,
+		       (select eopv.description
+		          from exp_org_position_vl eopv
+		         where eopv.position_id = hds.position_id) position_id_display,
+		       (select cch.contract_number
+		          from con_contract_headers cch
+		         where cch.contract_header_id = cdf.document_id) contract_header_code,
+		       cdf.document_id contract_header_id,
+		       (select cps.payment_schedule_line_number
+		          from con_payment_schedules cps
+		         where cps.payment_schedule_line_id = cdf.document_line_id) payment_schedule_line_code,
+		       cdf.document_line_id ,
+		       cdpc.payment_company_id,  
+		       cdpc.payment_status,
+		       decode(cdpc.payment_status, 'ALLOWED', 'PENDING', 'PENDING', 'ALLOWED') payment_status1,
+		       'PAYMENT_REQUISITION' document_type,
+		       hds.payment_requisition_header_id exp_report_header_id,
+		       ln.payment_requisition_line_id payment_schedule_line_id,
+		        cdpc.payment_operation_unit_id  unit_id,
+		       hds.payment_method_id,
+			   (select m.description from csh_payment_methods_vl m where m.payment_method_id = hds.payment_method_id) payment_method
+		  from csh_payment_requisition_hds hds,
+		       csh_payment_requisition_lns ln,
+		       exp_requisition_headers     ed,
+		       con_document_flows          cdf,
+		       csh_doc_payment_company     cdpc,
+		       gld_currency_vl gld
+		 where ln.ref_document_id = ed.exp_requisition_header_id(+)
+		   and  sys_user_secure_exit_pkg.csh_req_payment_confirm( hds.payment_requisition_header_id,${/session/@session_id})='Y'
+		   and ln.payment_requisition_header_id = cdf.source_document_id(+)
+		   and ln.payment_requisition_line_id = cdf.source_document_line_id(+)
+		   and cdf.document_type(+) = 'CON_CONTRACT'
+		   and cdf.source_document_type(+) = 'CSH_PAYMENT_REQUISITION_LNS'
+		   and ln.payment_requisition_header_id = hds.payment_requisition_header_id
+		   and  hds.company_id=${/session/@company_id}
+		   and  hds.status='APPROVED'
+		   and  ln.payment_requisition_line_id=cdpc.document_line_id
+		   and  cdpc.document_type='PAYMENT_REQUISITION'
+		   and  cdpc.payment_status != 'PAID' and hds.currency_code=gld.currency_code(+) )
+		#WHERE_CLAUSE# 
+		#ORDER_BY_CLAUSE#
+		]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@session_id"/>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="csh_pay_req_type_id" queryExpression="payment_req_type_id = ${@csh_pay_req_type_id}"/>
+        <bm:query-field name="exp_report_number" dataType="java.lang.String" queryExpression="csh_payment_number like ${@exp_report_number}"/>
+        <bm:query-field name="partner_category" dataType="java.lang.String" queryExpression="partner_category =${@partner_category}"/>
+        <bm:query-field name="payee_id" dataType="java.lang.Long" queryExpression="payee_id=${@payee_id}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="currency_code=${@currency_code}"/>
+        <bm:query-field name="schedule_due_date_from" dataType="java.sql.Date" queryExpression="requisition_date1 &gt;=${@schedule_due_date_from}"/>
+        <bm:query-field name="schedule_due_date_to" dataType="java.sql.Date" queryExpression="requisition_date1&lt;=${@schedule_due_date_to}"/>
+        <bm:query-field name="contract_number" dataType="java.lang.String" queryExpression="contract_header_code like  ${@contract_number}"/>
+        <bm:query-field name="exp_report_type_id" dataType="java.lang.String" queryExpression="csh_transaction_class_code =${@exp_report_type_id}"/>
+        <bm:query-field name="payment_method_id" dataType="java.lang.Long" queryExpression="payment_method_id = ${@payment_method_id}"/>
+    </bm:query-fields>
+</bm:model>

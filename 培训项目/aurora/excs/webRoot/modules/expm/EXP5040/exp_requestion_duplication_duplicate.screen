@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultwhereclause="t1.ENABLED_FLAG =&apos;Y&apos;" fetchAll="true" model="gld.gld_exchangerate_types_vl" rootPath="exchangerate_types"/>
+        <a:model-query fetchAll="true" model="expm.exp_rate_quotation" rootPath="rate_quotation"/>
+        <a:model-query model="expm.get_company_currency_code" rootPath="company_currency_code"/>
+        <a:model-query model="expm.get_exchange_rate_type" rootPath="exchange_rate_type"/>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+    		Aurora.onReady(function(){
+    			$('input_ds').getAt(0).set('journal_date',new Date());
+    			doSelect();
+    		});
+    		function doEdit(record,name){    			
+    			if(name=='exchange_rate_type_display'){
+    				if(record.get('currency_code')=='${/model/company_currency_code/record/@company_currency_code}'){
+    					return '';
+    				}else{
+    					return 'edit_cbx';
+    				}
+    			}else if(name=='exchange_rate_quotation_display'){
+    				if(record.get('exchange_rate_type')=='MANUAL'){
+    					return 'edit_cbx';
+    				}else{
+    					return '';
+    				}
+    			}else{
+    				if(record.get('exchange_rate_type')=='MANUAL'){
+    					return 'edit_tf';
+    				}else{
+    					return '';
+    				}
+    			}
+    		}
+    		function doSelect(datePicker,date){    			
+    			var p_date=new Date();
+    			if(date!=null){
+    				p_date=Aurora.formatDate(date);
+    			}else{
+    				p_date=Aurora.formatDate(p_date);
+    			}
+    			Aurora.request({
+    				url:/*${/request/@context_path}/autocrud/expm.gld_get_period_name/query*/$('gld_get_period_name_link').getUrl(),
+    				para:{p_date:p_date},
+    				success:periodName,
+    				scope:this
+    			});
+    		}
+    		function periodName(args){     			
+    			var record=args.result.record;    			  			   			
+    			var period_name='';
+    			if(record.length){
+    				period_name=record[0].period_name;
+    			}else{
+    				period_name=record.period_name;
+    			}
+    			$('period_name').setValue(period_name);
+    			if(period_name){
+    				var records=$('requestion_duplication_duplicate_ds').getAll();
+    				for(var i=0,l=records.length;i<l;i++){
+    					changeraterecord(records[i]);
+    				}
+    			}else{
+    				Aurora.showWarningMessage('','${l:EXP_REPORT_ACCOUNTS.CHECK1}',null,200,100);
+    			}
+    		}
+    		function closeFunction(){  			   		
+    			$('exp_requestion_duplication_duplicate_screen').close();
+    		}
+    		function okFunction(){
+    			var period=$('period_name').getValue();
+    			if(!period){
+    				doSelect();
+    			}else{
+    				if($('input_ds').validate()){    					
+    					var records=$('requestion_duplication_duplicate_ds').getAll();   					
+						var journal_date =  $('input_ds').getAt(0).get('journal_date'); 
+						journal_date=Aurora.formatDate(journal_date);
+						var period_name = $('input_ds').getAt(0).get('period_name');
+						var param = new Object();
+						var datas=[];
+						for(var i=0,l=records.length;i<l;i++){
+							var data=records[i].data;														
+							datas.push(data);
+						}
+						param['lines']=datas;
+						param['requisition_date']=journal_date;
+						param['period_name']=period_name;
+																		
+						Aurora.request({
+							url:/*${/request/@context_path}/modules/expm/exp_requestion_duplication_duplicate_control.svc*/$('exp_requestion_duplication_duplicate_control_link').getUrl(),
+							para:param,
+							success:reflush,
+							scope:this
+						});
+    				}
+    			}
+    		}
+    		function reflush() {
+                Aurora.showMessage('${l:PROMPT}', '${l:EXP5040_DUPLICATE_SUCCESS}', function() {
+                    if (doQuery && typeof(doQuery) == 'function') {
+                        doQuery();
+                    }
+                });
+                closeFunction();
+            }
+    		function doUpdate(dataSet,record,field,value,oldvalue){    			 
+				if (field=='currency_code' ||field=='exchange_rate_type'){					   
+					var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}' ;
+					var  cur_code =record.get('currency_code');
+					record.set('exchange_rate','');
+					if (f_cur_code==cur_code){					   
+						record.set('exchange_rate',1);
+						record.set('exchange_rate_type',''); 
+						record.set('exchange_rate_quotation','');
+					}else{	
+										   					      
+					    if (record.get('exchange_rate_type')){
+					    }else{					        					        
+							record.set('exchange_rate_type','${/model/exchange_rate_type/record/@value_code}');
+						}	
+						var from_currency = f_cur_code;
+			            var to_currency = cur_code;
+			            var exchange_rate_type =record.get('exchange_rate_type');	
+			            var exchange_date='';
+			            var exchange_period_name = '';
+			            if($('input_ds').getAt(0)){		                
+				            exchange_date =  $('input_ds').getAt(0).get('journal_date');
+				            exchange_date=Aurora.formatDate(exchange_date);
+				            exchange_period_name = $('input_ds').getAt(0).get('period_name');
+			            }			            
+			            Aurora.request({
+			            	url:/*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/$('get_exchange_rate_link_6').getUrl(),
+			            	para:{"from_currency": from_currency,"to_currency": to_currency ,"exchange_rate_type": exchange_rate_type ,"exchange_date": exchange_date,"exchange_period_name":exchange_period_name},
+			            	success:callchange,
+			            	scope:this
+			            });		            
+					}					  
+				}			
+    		}
+    		function callchange(res){                        	
+            	
+            	var pluscols = res.result.record;            	
+               	if (pluscols.exchange_rate ){                   
+	                $('requestion_duplication_duplicate_ds').getAt(0).set('exchange_rate',pluscols.exchange_rate);
+	                var exchange_rate_quotation=pluscols.exchange_rate_quotation;
+	                var exchange_rate_quotation_display='';
+	                var ds=$('rate_quotation_ds');
+	                var records=ds.getAll();
+	                for(var i=0,l=records.length;i<l;i++){
+	                	if(exchange_rate_quotation==records[i].get('code_value')){
+	                		exchange_rate_quotation_display=records[i].get('code_value_name');
+	                		break;
+	                	}
+	                }
+	                $('requestion_duplication_duplicate_ds').getAt(0).set('exchange_rate_quotation',pluscols.exchange_rate_quotation);
+	                $('requestion_duplication_duplicate_ds').getAt(0).set('exchange_rate_quotation_display',exchange_rate_quotation_display);	                                        
+	            }else{                                          
+	                if ($('requestion_duplication_duplicate_ds').getAt(0).get('exchange_rate_type')!='MANUAL'){                    
+						Aurora.showWarningMessage('','${l:BGT_JOURNAL_ADD_SELECT.CHECK1}',null,200,100);
+					}
+	            }                                                    
+            }	
+    		function changeraterecord(record){
+                //                
+                var store=$('requestion_duplication_duplicate_ds');				
+				var red = store.findById(record.id);
+                var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}' ;
+				var  cur_code =record.get('CURRENCY_CODE');
+				if (f_cur_code==cur_code){					  
+					record.set('exchange_rate',1);
+					record.set('exchange_rate_type',''); 
+					record.set('exchange_rate_quotation','');
+				}else{   
+					var from_currency = f_cur_code;
+					var to_currency = cur_code;
+					var exchange_rate_type =record.get('exchange_rate_type');
+					var exchange_date =  $('input_ds').getAt(0).get('journal_date'); 
+					var exchange_period_name = $('input_ds').getAt(0).get('period_name');
+					exchange_date = Aurora.formatDate(exchange_date);
+					Aurora.request({
+						url: /*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/$('get_exchange_rate_link_6').getUrl(),						
+						para:{"from_currency": from_currency,"to_currency": to_currency ,"exchange_rate_type": exchange_rate_type ,"exchange_date": exchange_date,"exchange_period_name":exchange_period_name},
+						success: function(args){							
+			            	var pluscols = args.result.record;							    
+					        if(pluscols.length){
+					        	if (pluscols[0].exchange_rate ){		                   
+						        	red.set('exchange_rate',pluscols[0].exchange_rate);
+						            red.set('exchange_rate_quotation',pluscols[0].exchange_rate_quotation);
+						        }else{   		                   		                   
+						            if (red.get('exchange_rate_type')!='MANUAL'){		                       
+										Aurora.showWarningMessage('','${l:BGT_JOURNAL_ADD_SELECT.CHECK1}',null,200,100);
+									}
+						        }
+					        }else{
+					        	if (pluscols.exchange_rate ){		                   
+						        	red.set('exchange_rate',pluscols.exchange_rate);
+						            red.set('exchange_rate_quotation',pluscols.exchange_rate_quotation);
+						        }else{   		                   		                   
+						            if (red.get('exchange_rate_type')!='MANUAL'){		                       
+										Aurora.showWarningMessage('','${l:BGT_JOURNAL_ADD_SELECT.CHECK1}',null,200,100);
+									}
+						        }
+					        }
+						},
+						scope:this
+					});
+				}
+            }
+            
+    	]]></script>
+        <a:dataSets>
+            <a:dataSet id="exchangerate_types_ds">
+                <a:datas dataSource="/model/exchangerate_types"/>
+            </a:dataSet>
+            <a:dataSet id="rate_quotation_ds">
+                <a:datas dataSource="/model/rate_quotation"/>
+            </a:dataSet>
+            <a:dataSet id="input_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="journal_date" required="true"/>
+                    <a:field name="period_name" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="requestion_duplication_duplicate_ds" autoPageSize="true" autoQuery="true" model="expm.EXP5040.exp_requestion_duplication_duplicate_query" selectable="true">
+                <a:fields>
+                    <a:field name="exchange_rate_type_display" displayField="type_name" options="exchangerate_types_ds" returnField="exchange_rate_type" valueField="rate_method_code"/>
+                    <a:field name="exchange_rate_quotation_display" displayField="code_value_name" options="rate_quotation_ds" returnField="exchange_rate_quotation" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="doUpdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <script><![CDATA[
+
+            function loadComplete() {
+                var journal_date = '${/parameter/@journal_date}';
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.gld_get_period_name/query*/
+                    $('gld_get_period_name_link').getUrl(),
+                    para: {
+                        p_date: journal_date
+                    },
+                    success: periodName,
+                    scope: this
+                });
+            }
+            loadComplete();
+        ]]></script>
+        <a:screenBody>
+            <a:screenTopToolbar id="exp_req_dup_dup_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="okFunction" text="PROMPT.OK" width="80"/>
+                <a:toolbarButton click="closeFunction" text="PROMPT.RETURN" width="80"/>
+            </a:screenTopToolbar>
+            <a:form id="exp_req_dup_dup_head_form" column="1" title="EXP_REQUESTION_DUPLICATION.TITLE">
+                <a:box id="exp_req_dup_dup_normal_box" column="4" style="width:100%">
+                    <a:datePicker name="journal_date" bindTarget="input_ds" prompt="ACP_REQUISITION.REQUISITION_DATE">
+                        <a:events>
+                            <a:event name="select" handler="doSelect"/>
+                        </a:events>
+                    </a:datePicker>
+                    <a:textField name="period_name" id="period_name" bindTarget="input_ds" prompt="EXP_REPORT_ACCOUNTS.PERIOD_NAME"/>
+                </a:box>
+            </a:form>
+            <a:grid id="exp_req_dup_dup_grid" bindTarget="requestion_duplication_duplicate_ds" marginHeight="171" navBar="true">
+                <a:columns>
+                    <a:column name="currency_code" align="left" prompt="EXP_REPORT_ACCOUNTS.CURRENCY_CODE" width="120"/>
+                    <a:column name="exchange_rate_type_display" align="left" editorFunction="doEdit" prompt="EXP_REPORT_ACCOUNTS.EXCHANGE_RATE_TYPE" width="120"/>
+                    <a:column name="exchange_rate_quotation_display" align="left" editorFunction="doEdit" prompt="EXP_REPORT_ACCOUNTS.EXCHANGE_RATE_QUOTATION" width="120"/>
+                    <a:column name="exchange_rate" align="right" editorFunction="doEdit" prompt="EXP_REPORT_ACCOUNTS.EXCHANGE_RATE" width="100"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="edit_cbx"/>
+                    <a:textField id="edit_tf"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            　　function expReqDupDupInitSize() {
+            　　    //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            　　    Ext.get('exp_req_dup_dup_head_form').setWidth(autoWidth + 4);
+            　　    $('exp_req_dup_dup_grid').setWidth(autoWidth);  　　    
+            　　}
+            　　//Ext.fly(window).on('resize', expReqDupDupInitSize);　　　　
+            expReqDupDupInitSize();
+        　　]]></script>
+    </a:view>
+</a:screen>

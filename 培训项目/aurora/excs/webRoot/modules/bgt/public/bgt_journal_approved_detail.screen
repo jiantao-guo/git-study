@@ -1,0 +1,437 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="bgt.bgt_journal_head_approve" rootpath="bgt_header_info"/>
+        <a:model-query defaultwhereclause="((sysdate between t1.start_date_active and t1.end_date_active ) or t1.end_date_active is null) and t1.company_type =1  and   exists (select com.set_of_books_id  from fnd_companies_vl com  where com.set_of_books_id =t1.set_of_books_id  and  com.company_id = ${/session/@company_id})" model="fnd.fnd_companies_vl" rootpath="company"/>
+        <a:model-query defaultwhereclause=" nvl(rc.summary_flag,&apos;N&apos;) =&apos;N&apos; and (sysdate between rc.start_date_active and rc.end_date_active or rc.end_date_active is null) and rc.company_id = ${/session/@company_id}" model="fnd.fnd_responsibility_centers" rootpath="responsibility"/>
+        <a:model-query model="bgt.budget_items_vl" rootpath="bgt_budget_items"/>
+        <a:model-query defaultwhereclause=" ge.ENABLED_FLAG =&apos;Y&apos; " model="gld.gld_exchangerate_types" rootpath="exchangerate_type_vl"/>
+        <a:model-query defaultwhereclause="t.code =&apos;EXCHANGE_RATE_QUOTATION&apos; " model="sys.sys_code_values_v" rootpath="sys_code_values_v"/>
+        <a:model-query defaultwhereclause="sob.SET_OF_BOOKS_ID = (select fnd.set_of_books_id  from fnd_companies fnd where fnd.company_id = ${/session/@company_id} )" model="gld.gld_set_of_books" rootpath="gld_set_of_books"/>
+        <a:model-query model="bgt.bgt_journal_update_dimension" rootPath="dimension_init"/>
+        <a:model-query model="bgt.bgt_journal_update_dimension_line" rootPath="dimension_line_init"/>
+        <!-- 预算日记账头、行增加费用对象 -->
+        <a:model-query autoCount="false" fetchAll="true" model="bgt.BGT5120.bgt_jour_head_object" rootPath="head_object"/>
+        <a:model-query autocount="false" fetchall="true" model="bgt.BGT5120.bgt_jour_line_object" rootpath="line_object"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="bgt_journal_reject_link" model="bgt.bgt_journal_reject" modelaction="update"/>
+        <a:link id="bgt_journal_approvedcancel_link" model="bgt.bgt_journal_approvedcancel" modelaction="update"/>
+        <a:link id="bgt_journal_head_approve_link" model="bgt.bgt_journal_head_approve" modelaction="update"/>
+        <a:link id="bgt_journal_approved_link" url="${/request/@context_path}/modules/bgt/BGT5210/bgt_journal_approved.screen"/>
+        <a:link id="check_uploadFile_link_1" url="${/request/@context_path}/check_uploadFile.screen"/>
+        <script><![CDATA[
+            function loadComplete() {
+                $('line_data_ds').query();
+            }
+            
+            function lineDataLoadFunction() {
+                var records = $('bgt_journal_line').getAll();
+                var lineRecords = $('line_data_ds').getAll();
+                for (var i = 0;i < records.length;i++) {
+                   	for(var j = 0 ; j < lineRecords.length ;j ++){
+	        	        records[i].set(lineRecords[j].get('dimension_code'),lineRecords[j].get('value_description'));
+	        	    }
+                }
+                
+            }
+            
+            function returnquery() {
+                window.location.href = /*bgt_journal_approved.screen*/
+                $('bgt_journal_approved_link').getUrl();
+            }
+            
+            function approved() {
+                var journal_header_id = '${/parameter/@journal_header_id}';
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/bgt.bgt_journal_head_approve/update*/
+                    $('bgt_journal_head_approve_link').getUrl(),
+                    para: {
+                        journal_header_id: journal_header_id,
+                        _status: 'update'
+                    },
+                    success: returnquery,
+                    scope: this
+                });
+            }
+            
+            function cancelapproved() {
+                var journal_header_id = '${/parameter/@journal_header_id}';
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/bgt.bgt_journal_approvedcancel/update*/
+                    $('bgt_journal_approvedcancel_link').getUrl(),
+                    para: {
+                        journal_header_id: journal_header_id,
+                        _status: 'update'
+                    },
+                    success: returnquery,
+                    scope: this
+                });
+            }
+            
+            function reject() {
+                var journal_header_id = '${/parameter/@journal_header_id}';
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/bgt.bgt_journal_reject/update*/
+                    $('bgt_journal_reject_link').getUrl(),
+                    para: {
+                        journal_header_id: journal_header_id,
+                        _status: 'update'
+                    },
+                    success: returnquery,
+                    scope: this
+                });
+            }
+            
+            function currency_name(dataSet, record, index) {
+                re = $('gld_set_of_books_ds').getAt(0);
+                record.set('currency_code', re.get('functional_currency_code'));
+                record.set('currency_name', re.get('currency_name'));
+            
+            }
+            
+            function exchange_rate_type(record) {
+            
+                re = $('gld_set_of_books_ds').getAt(0);
+            
+                if (record.get('currency_code') == re.get('functional_currency_code')) {
+                    record.set('exchange_rate_type', null);
+            
+                    return '';
+                } else {
+                    return 'combobox_editor';
+                }
+            
+            }
+            
+            function sys_code_values_v(record) {
+                if (record.get('currency_code') == record.get('functional_currency_code')) {
+                    record.set('sys_code_values_v', null);
+                    return '';
+                } else {
+                    if (record.get('type_name') != 'MANUAL') return '';
+                    else {
+                        return 'combobox_editor';
+                    }
+                }
+            }
+            
+            function sys_code_values(record) {
+                if (record.get('currency_code') == record.get('functional_currency_code'))
+            
+                {
+                    record.set('exchange_rate', 1);
+                    return '';
+                } else {
+                    return 'number_editor';
+                }
+            }
+            
+            function function_amount(record) {
+                if (record.get('exchange_rate') != null && record.get('amount') != null) {
+                    record.set('functional_amount', record.get('exchange_rate') * record.get('amount'));
+                    return '';
+                } else {
+                    return '';
+                }
+            }
+            
+            function addFunction_detail(dataSet, record, index) {
+                re = $('gld_set_of_books_ds').getAt(0);
+            
+                record.set('currency_code', re.get('functional_currency_code'));
+                record.set('currency_name', re.get('currency_name'));
+                record.set('exchange_rate', 1);
+            }
+            
+            function bgtUploadFun() {
+                var url = /*${/request/@context_path}/check_uploadFile.screen*/
+                $('check_uploadFile_link_1').getUrl() + '?table_name=BGT_JOURNAL_HEADERS&header_id=${/parameter/@journal_header_id}'
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'exp_report_pmtplan_schedules_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            
+            function lineDataLoadFun(){
+                var records = $('bgt_journal_line').getAll();
+                
+                if(records.length == 0){
+                    return ;
+                }
+                var headRecord = $('dimension_ds').getAt(0);
+                headRecord.set('d12',records[0].get('e12'));
+                headRecord.set('d13',records[0].get('e13'));
+                headRecord.set('d14',records[0].get('e14'));
+                headRecord.set('d15',records[0].get('e15'));
+                headRecord.set('d12_display',records[0].get('d12'));
+                headRecord.set('d13_display',records[0].get('d13'));
+                headRecord.set('d14_display',records[0].get('d14'));
+                headRecord.set('d15_display',records[0].get('d15'));
+                
+            }
+            function loadLineFun_detail() {
+                var records = $('bgt_journal_line').getAll();            
+                var headRecord = $('dimension_ds').getAt(0);
+                headRecord.set('d12',records[0].get('e12'));
+                headRecord.set('d13',records[0].get('e13'));
+                headRecord.set('d14',records[0].get('e14'));
+                headRecord.set('d15',records[0].get('e15'));
+                headRecord.set('d12_display',records[0].get('d12'));
+                headRecord.set('d13_display',records[0].get('d13'));
+                headRecord.set('d14_display',records[0].get('d14'));
+                headRecord.set('d15_display',records[0].get('d15'));
+            }			
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="gld_set_of_books_ds">
+                <a:datas dataSource="/model/gld_set_of_books"/>
+                <a:fields>
+                    <a:field name="currency_name"/>
+                    <a:field name="functional_currency_code"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="company_ds">
+                <a:datas dataSource="/model/company"/>
+            </a:dataSet>
+            <a:dataSet id="sys_code_values_v_ds">
+                <a:datas dataSource="/model/sys_code_values_v"/>
+            </a:dataSet>
+            <a:dataSet id="exchangerate_type_vl_ds">
+                <a:datas dataSource="/model/exchangerate_type_vl"/>
+            </a:dataSet>
+            <a:dataSet id="responsibility_ds">
+                <a:datas dataSource="/model/responsibility"/>
+            </a:dataSet>
+            <a:dataSet id="budget_items_vl_ds">
+                <a:datas dataSource="/model/bgt_budget_items"/>
+            </a:dataSet>
+            <a:dataSet id="bgt_header_info">
+                <a:datas datasource="/model/bgt_header_info"/>
+                <a:fields>
+                    <a:field name="budget_journal_number" readOnly="true"/>
+                    <a:field name="version_desc" readOnly="true"/>
+                    <a:field name="budget_structure_desc" readOnly="true"/>
+                    <a:field name="scenario_desc" readOnly="true"/>
+                    <a:field name="period_set_desc" readOnly="true"/>
+                    <a:field name="period_strategy_desc" readOnly="true"/>
+                    <a:field name="status_desc" readOnly="true"/>
+                    <a:field name="period_name" readOnly="true"/>
+                    <a:field name="period_quarter" readOnly="true"/>
+                    <a:field name="period_year" readOnly="true"/>
+                    <a:field name="journal_header_notes" readOnly="true"/>
+                    <a:field name="sum_amount" prompt="CON_CONTRACT_HEADERS.SUM_AMOUNT" readOnly="true"/>
+                    <a:field name="create_date_display" prompt="BGT_JOURNAL_CREATE_DATE" readOnly="true"/>
+                    <!-- 员工信息 -->
+                    <a:field name="bgt_jour_type_desc" readOnly="true"/>
+                    <a:field name="employee_name" readOnly="true"/>
+                    <a:field name="position_display" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="fnd.fnd_uom_codes_ds" loadData="true" model="fnd.fnd_uom_codes"/>
+            <a:dataSet id="bgt_gld_currency_v1" loadData="true" model="gld.gld_currency_vl">
+                <a:fields>
+                    <a:field name="functional_currency_code"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="bgt_journal_line" autoQuery="true" fetchAll="true" model="bgt.bgt_journal_line_update" queryUrl="${/request/@context_path}/modules/bgt/public/bgt_journal_line_query.svc?journal_header_id=${/parameter/@journal_header_id}&amp;_ban_remind=Y">
+                <a:fields>
+                    <a:field name="description" displayField="description" options="budget_items_vl_ds" prompt="BGT_JOURNAL_LINES.BUDGET_ITEM_ID" returnField="budget_item_id" valueField="budget_item_id"/>
+                    <a:field name="company_name" displayField="company_short_name" options="company_ds" prompt="BGT_JOURNAL_LINES.COMPANY_ID" returnField="company_id" valueField="company_id"/>
+                    <a:field name="responsibility_center_name" displayField="responsibility_center_name" options="responsibility_ds" prompt="部门名称" returnField="center_id" valueField="responsibility_center_id"/>
+                    <a:field name="line_period_year" prompt="BGT_JOURNAL_ALHEADERS.PERIOD_YEAR"/>
+                    <a:field name="line_period_quarter" prompt="BGT_JOURNAL_HEADERS.PERIOD_QUARTER"/>
+                    <a:field name="line_period_name" prompt="BGT_JOURNAL_HEADERS.PERIOD_NAME"/>
+                    <a:field name="exchange_rate_type" displayField="type_name" options="exchangerate_type_vl_ds" prompt="BGT_JOURNAL_INTERFACE.EXCHANGE_RATE_TYPE" returnField="type_name" valueField="type_code"/>
+                    <a:field name="currency_name" displayField="currency_name" options="bgt_gld_currency_v1" prompt="BGT_JOURNAL_LINES.CURRENCY" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="sys_code_values_v" displayField="code_value_name" options="sys_code_values_v_ds" prompt="BGT_JOURNAL_LINES.EXCHANGE_RATE_QUOTATION" returnField="code_value" valueField="code_value_id"/>
+                    <a:field name="exchange_rate" Prompt="BGT_JOURNAL_LINES.EXCHANGE_RATE"/>
+                    <a:field name="amount" Prompt="BGT_JOURNAL_LINES.AMOUNT"/>
+                    <a:field name="functional_amount" Prompt="BGT_JOURNAL_LINES.FUNCTIONAL_AMOUNT"/>
+                    <a:field name="quantity" prompt="BGT_JOURNAL_LINES.QUANTITY"/>
+                    <a:field name="uom" Prompt="BGT_JOURNAL_LINES.UOM" displayField="uom_name" options="fnd.fnd_uom_codes_ds" returnField="uom_name" valueField="uom_code"/>
+                    <a:field name="journal_lines_notes" prompt="BGT_JOURNAL_LINES.JOURNAL_LINES_NOTES"/>
+                    <a:field name="journal_header_id"/>
+                    <a:field name="journal_line_id"/>
+                    <a:placeHolder id="dimension_line_ds_place"/>
+                    <a:placeHolder id="dynamicLineFieldsObj"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="addFunction_detail"/>
+                    <a:event name="load" handler="loadLineFun_detail"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="dimension_ds" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="dimension_ds_place"/>
+                </a:fields>
+            </a:dataSet>
+            <!--头费用对象动态生成列-->
+            <a:dataSet id="bgt_jour_head_object" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="dynamicHeadObjects"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="line_data_ds" fetchAll="true" model="bgt.bgt_journal_dimension_line_data" queryUrl="${/request/@context_path}/autocrud/bgt.bgt_journal_dimension_line_data/query?head_id=${/parameter/@journal_header_id}">
+                <a:events>
+                    <a:event name="load" handler="lineDataLoadFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton Text="PROMPT.APPROVE" click="approved" width="80"/>
+                <a:toolbarButton Text="PROMPT.CANCELAPPROVED" click="cancelapproved" width="80"/>
+                <a:toolbarButton Text="PROMPT.REJECT" click="reject" width="80"/>
+                <a:toolbarButton Text="PROMPT.RETURN" click="returnquery" type="backbtn" width="80"/>
+                <a:toolbarButton Text="PROMPT.VIEW_ATTACHMENT" click="bgtUploadFun" width="80"/>
+            </a:screenTopToolbar>
+            <a:form id="bgt_journal_head_form" title="BGT_JOURNAL_READONLY.TITLE1">
+                <a:box column="4" labelWidth="100" row="2" style="width:100%">
+                    <a:textField name="budget_journal_number" bindTarget="bgt_header_info" prompt="BGT_JOURNAL_HEADERS.BUDGET_JOURNAL_NUMBER"/>
+                    <a:textField name="bgt_jour_type_desc" bindTarget="bgt_header_info" prompt="BGT_JOURNAL_TYPES"/>
+                    <a:textField name="period_strategy_desc" bindTarget="bgt_header_info" prompt="BGT_JOURNAL_QUERY.PERIOD_STRATEGY_DESC"/>
+                    <a:numberField name="sum_amount" allowDecimals="true" allowFormat="true" bindTarget="bgt_header_info"/>
+                    <a:textField name="budget_structure_desc" bindTarget="bgt_header_info" prompt="BGT_JOURNAL_HEADERS.BUDGET_STRUCTURE_ID"/>
+                    <a:textField name="version_desc" bindTarget="bgt_header_info" prompt="BGT_JOURNAL_HEADERS.VERSION_ID"/>
+                    <a:textField name="scenario_desc" Prompt="BGT_JOURNAL_HEADERS.SCENARIO_ID" bindTarget="bgt_header_info"/>
+                    <!-- <a:textField name="period_set_desc" bindTarget="bgt_header_info" prompt="BGT_BUDGET_STRUCTURES.PERIOD_SET_CODE"/> -->
+                    <a:textField name="period_year" bindTarget="bgt_header_info" prompt="BGT_JOURNAL_HEADERS.PERIOD_YEAR"/>
+                    <a:textField name="create_date_display" bindTarget="bgt_header_info"/>
+                    <a:textField name="employee_name" bindTarget="bgt_header_info" prompt="EXP_REQUISITION_HEADERS.EMPLOYEE_ID"/>
+                    <a:textField name="position_display" bindTarget="bgt_header_info" prompt="EXP_REQUISITION_HEADERS.POSITION_ID"/>
+                    <a:textField name="status_desc" bindTarget="bgt_header_info" prompt="BGT_JOURNAL_HEADERS.STATUS"/>
+                    <a:placeHolder id="dimension_form_place"/>
+                    <a:placeHolder id="dynamicHeadObject"/>
+                </a:box>
+                <a:box labelWidth="100" style="width:100%">
+                    <a:textArea name="journal_header_notes" id="bgt_journal_head_note_ta" bindtarget="bgt_header_info" prompt="BGT_JOURNAL_HEADERS.JOURNAL_HEADER_NOTES"/>
+                </a:box>
+            </a:form>
+            <a:grid id="bgt_journal_line_grid" bindTarget="bgt_journal_line" marginHeight="290">
+                <a:toolBar>
+                    <a:button type="excel"/>
+                    <!-- <a:label/> -->
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="company_name" align="left"/>
+                    <a:column name="responsibility_center_name" align="left"/>
+                    <a:column name="description" align="left"/>
+                    <a:column name="line_period_name" align="center"/>
+                    <a:column name="line_period_quarter" align="center"/>
+                    <a:column name="line_period_year" align="center"/>
+                    <!-- <a:column name="currency_name" align="left"/> -->
+                    <!--  add by 15033 20180316 隐藏汇率类型、标价方法、汇率 
+                    <a:column name="exchange_rate_type" align="left"/>
+                    <a:column name="sys_code_values_v" align="left"/>
+                    <a:column name="exchange_rate" align="right"/>-->
+                    <a:column name="amount" align="right" renderer="Aurora.formatMoney"/>
+                    <!-- <a:column name="functional_amount" align="right" renderer="Aurora.formatMoney"/> -->
+                    <!-- <a:column name="quantity" align="right"/> -->
+                    <!-- <a:column name="uom" align="left"/> -->
+                    <a:column name="journal_lines_notes" align="left"/>
+                    <a:placeHolder id="dimension_line_grid_place"/>
+                    <a:placeHolder id="dynamicLineColumnObj"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+			
+				loadComplete();
+				//lineDataLoadFun();
+		]]></script>
+        <script purpose="auto_resize"><![CDATA[
+				function bgtJourROStandardInitSize() {
+					//描述宽度
+					var labelWidth = 75;
+					//标签宽度,5 = 3padding + 2border-spacing
+					var tagWidth = 150 + 5;
+					//页面宽度、高度
+					var vw = $A.getViewportWidth();
+					//留白宽度
+					var marginWidth = 35;
+					//自适应宽度
+					var autoWidth = vw - marginWidth;
+					//Form内部宽度，-2border
+					var formInnerWidth = autoWidth - 2;
+					//所占列数
+					var colSpan = 4;
+					//设置组件的自适应宽度
+					Ext.get('bgt_journal_head_form').setWidth(autoWidth + 4);
+					$('bgt_journal_line_grid').setWidth(autoWidth);
+					//设置TextArea的自适应宽度,别问我最后那个6是哪里来的，试出来的
+					Ext.get('bgt_journal_head_note_ta').setWidth(formInnerWidth - (formInnerWidth / colSpan - labelWidth - tagWidth) - labelWidth - 6);
+				}
+				//Ext.fly(window).on('resize', bgtJourROStandardInitSize);
+				bgtJourROStandardInitSize();
+		]]></script>
+    </a:view>
+    <a:view-config>
+        <c:create-config targetId="dimension_ds_place">
+            <p:loop nullable="true" source="/model/dimension_init">
+                <c:process-config>
+                    <a:field name="${@dimension_code}_display" defaultValue="${@value_description}" prompt="${@description}" readOnly="true"/>
+                    <a:field name="${@dimension_code}" defaultValue="${@default_dim_value_id}" readOnly="true"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dimension_form_place">
+            <p:loop nullable="true" source="/model/dimension_init">
+                <c:process-config>
+                    <a:textField name="${@dimension_code}_display" bindTarget="dimension_ds"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dimension_line_ds_place">
+            <p:loop nullable="true" source="/model/dimension_line_init">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" prompt="${@description}" readOnly="true"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dimension_line_grid_place">
+            <p:loop nullable="true" source="/model/dimension_line_init">
+                <c:process-config>
+                    <a:column name="${@dimension_code}" align="center"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <!-- 头、行费用对象动态列 -->
+        <c:batch-config source="/model/head_object" targetId="dynamicHeadObject">
+            <a:textField name="${@expense_object_type_code}" bindTarget="bgt_jour_head_object"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicHeadObjects">
+            <p:loop source="/model/head_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovUrl="${/request/@context_path}/modules/expm/public/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" prompt="${@description}" readOnly="true">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/line_object" targetId="dynamicLineColumnObj">
+            <a:column name="${@expense_object_type_code}" align="center"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicLineFieldsObj">
+            <p:loop source="/model/line_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovUrl="${/request/@context_path}/modules/expm/public/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" prompt="${@description}">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

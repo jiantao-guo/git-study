@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_travel_plan_employeelist" rootPath="employee_list"/>
+        <a:model-query autoCount="false" defaultwhereclause="enabled_flag=&apos;Y&apos;" fetchAll="true" model="gld.gld_currency" rootPath="currency_list"/>
+        <a:model-query autoCount="false" defaultWhereClause=" user_id=${/session/@user_id}" fetchAll="true" model="sys.sys_user" rootPath="employee"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_type_choice_emp_init" rootPath="emp_init"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_travel_plan_create_link" url="${/request/@context_path}/modules/expm/EXP7110/exp_travel_plan_create.screen"/>
+        <a:link id="exp_employee_info_init_link" model="db.exp_requisition_pkg.get_employee_info" modelaction="batch_update"/>
+        <script><![CDATA[
+        function onQueryUpdate(dataSet, record, name, value) {
+                if (name == 'employee_id') {
+                    var lovField = record.getField("travel_plan_type");
+                    lovField.setLovPara('employee_id', record.get('employee_id'));
+                    Aurora.request({
+                    url: $('exp_employee_info_init_link').getUrl() + '?_ban_remind=Y',
+                    para: [{
+                        employee_id: value,
+                        _status: 'update'
+                    }],
+                    success: function(res) {
+                        lovField.setLovPara('company_id', res.result.record.company_id);
+                        record.set('company_id', res.result.record.company_id);
+                    },
+                    scope: this
+                });
+                }
+               
+                if (name == 'travel_plan_type_id') {
+                    // var value = record.get('currency_code');
+                    var curarray = $('currencylist_ds').getAll();
+                    var length = curarray.length;
+                    for (var i = 0;i < length;i++) {
+                        var currecord = curarray[i];
+                        if (record.get('currency_code') == currecord.get('currency_code')) {
+                            var qs = $('exp_travel_plan_type_ds');
+                            qs.data[0].set("currency_code", currecord.get('currency_code'));
+                            qs.data[0].set("currency", currecord.get("currency_name"));
+                            break;
+                        }
+                    }
+            
+                }
+            }
+            
+            function getEmployeeNameById(Id) {
+                var dataSet = $('employee_ds');
+                var records = dataSet.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    if (record.get('employee_id') == Id) {
+                        return record.get('employeename');
+                    }
+                }
+            }
+            
+            function createTVP(){
+                var ds = $('exp_travel_plan_type_ds');
+                var record = ds.getCurrentRecord();
+                var validate = ds.validate();
+                var url = $('exp_travel_plan_create_link').getUrl() + '?_ban_remind=Y';
+                if (validate) {
+                    Aurora.post(url, record.data);
+                }
+                return;
+            }
+            ]]></script>
+        <a:dataSets>
+            <a:dataSet id="employee_ds">
+                <a:datas dataSource="/model/employee_list"/>
+            </a:dataSet>
+            <a:dataSet id="currencylist_ds">
+                <a:datas dataSource="/model/currency_list"/>
+            </a:dataSet>
+            <a:dataSet id="exp_travel_plan_type_ds">
+                <a:fields>
+                    <a:field name="employeename" displayField="employeename" options="employee_ds" prompt="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID" required="true" returnField="employee_id" valueField="employee_id"/>
+                    <a:field name="travel_plan_type" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="expm.exp_travel_plan_typelist" lovWidth="500" prompt="TRAVEL_PLAN_TYPE.TRAVEL_PLAN_CATEGORY" required="true" title="EXP_TP_QUERYY_FINANCE.TP_TYPE">
+                        <a:mapping>
+                            <a:map from="travel_plan_type_id" to="travel_plan_type_id"/>
+                            <a:map from="description" to="travel_plan_type"/>
+                            <a:map from="currency_name" to="currency"/>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="multiple_currency_support_flag" to="multiple_currency_support_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="multiple_currency_support_flag"/>
+                    <a:field name="travel_plan_type_id"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="currency" displayField="currency_name" options="currencylist_ds" prompt="EXP_TRAVEL_PLAN_HEADERS.CURRENCY_CODE" required="true" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="employee_id"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onQueryUpdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="exp_travel_plan_type_choice_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="createTVP" text="HAP_OK" width="80"/>
+            </a:screenTopToolbar>
+            <a:box id="exp_travel_plan_type_choice_box" column="1" labelWidth="100">
+                <a:comboBox name="employeename" bindTarget="exp_travel_plan_type_ds"/>
+                <a:lov name="travel_plan_type" bindTarget="exp_travel_plan_type_ds"/>
+                <a:comboBox name="currency" bindTarget="exp_travel_plan_type_ds"/>
+            </a:box>
+        </a:screenBody>
+        <script><![CDATA[
+            Aurora.onReady(function() {
+                Ext.get('exp_travel_plan_type_choice_box').setWidth(parseInt(Aurora.getCookie('vw')) - 45);
+                if ('${/model/emp_init/record/@emp_count}' == 0 || '${/model/emp_init/record/@emp_count_flag}' == 0) {
+                    return;
+                }
+                $('exp_travel_plan_type_ds').create();
+                var record = $('exp_travel_plan_type_ds').getAt(0);
+                record.set('employeename', getEmployeeNameById('${/model/employee/record/@employee_id}'));
+                record.set('employee_id', '${/model/employee/record/@employee_id}');
+            });
+        ]]></script>
+    </a:view>
+</a:screen>

@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        v.need_payment_amount - payed_amount unpayment_amount,
+                        v.need_payment_amount - payed_amount payment_amount,
+                        v.*
+                    FROM
+                        (SELECT
+                            erh.exp_report_header_id,
+                            erps.payee_category payee_category_id,
+                            (SELECT
+                                b.code_value_name
+                            FROM
+                                sys_codes_vl a,
+                                sys_code_values_vl b
+                            WHERE
+                                a.code_id    = b.code_id AND
+                                a.code       = 'PAYMENT_OBJECT' AND
+                                b.code_value = erps.payee_category
+                            ) payee_category,
+                            DECODE(erps.payee_category, 'EMPLOYEE',
+                            (SELECT
+                                ee.employee_code
+                                || '-'
+                                || ee.name
+                            FROM
+                                exp_employees ee
+                            WHERE
+                                ee.employee_id = erps.payee_id
+                            ), 'VENDER',
+                            (SELECT
+                                svv.vender_code
+                                || '-'
+                                || svv.description
+                            FROM
+                                pur_system_venders_vl svv
+                            WHERE
+                                svv.vender_id = erps.payee_id
+                            ), 'CUSTOMER',
+                            (SELECT
+                                scv.customer_code
+                                || '-'
+                                || scv.description
+                            FROM
+                                ord_system_customers_vl scv
+                            WHERE
+                                scv.customer_id = erps.payee_id
+                            )) payee_name,
+                            erps.payee_id,
+                            erh.exp_report_type_id,
+                            TO_CHAR(erh.report_date,'yyyy-mm-dd') report_date,
+                            TO_CHAR(erps.schedule_due_date,'yyyy-mm-dd') schedule_due_date,
+                            erps.usedes,
+                            (SELECT description FROM csh_payment_usedes_vl WHERE usedes_code=erps.usedes
+                            ) usedes_description,
+                            erh.currency_code,
+                            erh.company_id,
+                            erh.employee_id,
+                            erps.payment_type_id payment_method_id,
+                            (SELECT
+                                description_text
+                            FROM
+                                csh_payment_methods cpm,
+                                fnd_descriptions fd
+                            WHERE
+                                cpm.payment_method_id = erps.payment_type_id AND
+                                fd.description_id     = cpm.description_id AND
+                                fd.language           = ${/session/@lang}
+                            ) payment_method,
+                            (SELECT
+                                SUM(erl.report_amount)
+                            FROM
+                                exp_report_lines erl
+                            WHERE
+                                erl.exp_report_header_id = erh.exp_report_header_id
+                            ) report_amount,
+                            erps.due_amount need_payment_amount,
+                            (SELECT
+                                NVL(SUM(w.csh_write_off_amount), 0)
+                            FROM
+                                csh_write_off w
+                            WHERE
+                                w.document_source    = 'EXPENSE_REPORT' AND
+                                w.document_header_id = erps.exp_report_header_id AND
+                                w.document_line_id   = erps.payment_schedule_line_id
+                            ) payed_amount,
+                            erh.exp_report_number,
+                            (SELECT
+                                ertv.description
+                            FROM
+                                exp_expense_report_types_vl ertv
+                            WHERE
+                                ertv.expense_report_type_id = erh.exp_report_type_id
+                            ) exp_report_type,
+                            erps.payment_schedule_line_id,
+                            (SELECT
+                                cchs.contract_number
+                            FROM
+                                con_contract_headers cchs
+                            WHERE
+                                cchs.contract_header_id=s.document_id
+                            ) contract_number,
+                            (SELECT
+                                cpss.payment_schedule_line_number
+                            FROM
+                                con_payment_schedules cpss
+                            WHERE
+                                cpss.payment_schedule_line_id=s.document_line_id
+                            ) line_number,
+                            (SELECT
+                                fv.company_short_name
+                            FROM
+                                fnd_companies_vl fv
+                            WHERE
+                                fv.company_id=erps.company_id
+                            ) company_name,
+                            erh.company_id report_company_id,
+                            (SELECT
+                                fv.company_code
+                                ||'-'
+                                ||fv.company_short_name
+                            FROM
+                                fnd_companies_vl fv
+                            WHERE
+                                fv.company_id=erh.company_id
+                            ) report_company_desc
+                        FROM
+                            exp_report_headers erh,
+                            exp_report_pmt_schedules erps,
+                            fnd_companies_vl vvv,
+                            csh_doc_payment_company cch,
+                            con_document_flows s
+                        WHERE
+                            erh.audit_flag                                                                               = 'Y' AND
+                            sys_user_secure_exit_pkg.exp_report_payment(erh.exp_report_header_id,${/session/@session_id})='Y' AND
+                            cch.document_line_id                                                                         =erps.payment_schedule_line_id AND
+                            cch.document_type                                                                            ='EXP_REPORT' AND
+                            (
+                                erh.write_off_status != 'C' OR
+                                erh.write_off_status IS NULL
+                            )
+                            AND
+                            (
+                                erh.reversed_flag  = 'N' OR
+                                erh.reversed_flag IS NULL
+                            )
+                            AND
+                            payment_status        IN ('ALLOWED','PAID') AND
+                            erps.company_id        =vvv.company_id AND
+                            cch.payment_company_id = ${/session/@company_id} AND
+                            vvv.set_of_books_id    =
+                            (SELECT
+                                set_of_books_id
+                            FROM
+                                fnd_companies_vl
+                            WHERE
+                                company_id=${/session/@company_id}
+                            ) AND
+                            s.document_type(+)          ='CON_CONTRACT' AND
+                            s.source_document_type(+)   ='EXP_REPORT_PMT_SCHEDULES' AND
+                            s.source_document_id(+)     =erps.exp_report_header_id AND
+                            s.source_document_line_id(+)=erps.payment_schedule_line_id AND
+                            erh.report_status           = 'COMPLETELY_APPROVED' AND
+                            erh.exp_report_header_id    = erps.exp_report_header_id
+                        ) v
+                    WHERE
+                        (
+                            v.need_payment_amount - payed_amount
+                        )
+                        > 0
+                    ) t #WHERE_CLAUSE#
+                ORDER BY
+                    t.exp_report_number,
+                    t.report_date DESC
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@session_id"/>
+                <bm:parameter name="company_id"/>
+                <bm:parameter inputPath="/session/@company_id"/>
+                <bm:parameter name="company_id"/>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <!-- <bm:data-filters>
+    	<bm:data-filter name="query" enforceOperations="v.company_id = ${/session/@company_id}"/>
+    </bm:data-filters> -->
+    <bm:query-fields>
+        <bm:query-field name="expense_report_type_id" dataType="java.lang.Long" queryExpression="t.exp_report_type_id = ${@expense_report_type_id}"/>
+        <bm:query-field name="payee_category" dataType="java.lang.String" queryExpression="t.payee_category_id = ${@payee_category}"/>
+        <bm:query-field name="payee_id" dataType="java.lang.Long" queryExpression="t.payee_id = ${@payee_id}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="t.currency_code = ${@currency_code}"/>
+        <bm:query-field name="report_company_id" dataType="java.lang.Long" queryExpression="t.report_company_id like ${@report_company_id}"/>
+        <bm:query-field name="schedule_due_date_from" dataType="java.lang.String" queryExpression="t.schedule_due_date &gt;=${@schedule_due_date_from}"/>
+        <bm:query-field name="schedule_due_date_to" dataType="java.lang.String" queryExpression="t.schedule_due_date &lt;=${@schedule_due_date_to}"/>
+        <bm:query-field name="report_date_from" dataType="java.lang.String" queryExpression="t.report_date &gt;=${@report_date_from}"/>
+        <bm:query-field name="report_date_to" dataType="java.lang.String" queryExpression="t.report_date &lt;=${@report_date_to}"/>
+        <bm:query-field name="exp_report_number" dataType="java.lang.String" queryExpression="t.exp_report_number like ${@exp_report_number}"/>
+        <bm:query-field name="payment_usedes" queryExpression="t.usedes = ${@payment_usedes}"/>
+        <bm:query-field name="payment_method_id" queryExpression="t.payment_method_id=${@payment_method_id}"/>
+    </bm:query-fields>
+</bm:model>

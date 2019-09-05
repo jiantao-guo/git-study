@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autocount="false" defaultwhereclause=" exists (select bo.BGT_ORG_ID from  bgt_organizations_vl bo  where bo.BGT_ORG_ID = t1.BGT_ORG_ID  and   exists (select fc.SET_OF_BOOKS_ID  from fnd_companies_vl fc  where fc.SET_OF_BOOKS_ID = bo.SET_OF_BOOKS_ID  and   fc.COMPANY_ID = ${/session/@company_id}))  and exists (select bbsa.budget_structure_id    from  bgt_budget_structures_assigns  bbsa where bbsa.budget_structure_id = t1.BUDGET_STRUCTURE_ID    and bbsa.company_id = ${/session/@company_id})  order by    BUDGET_STRC_CODE " fetchall="false" model="bgt.bgt_budget_structures_vl" rootpath="budget_structure"/>
+        <a:model-query autocount="false" defaultwhereclause="t1.budget_org_id in (select bgt.bgt_org_id  from bgt_organizations bgt, fnd_companies fn where bgt.set_of_books_id = fn.set_of_books_id and fn.company_id = ${/session/@company_id}) and t1.enabled_flag = &apos;Y&apos;" fetchall="false" model="bgt.bgt_scenarios" rootpath="budget_scenarios"/>
+        <a:model-query autocount="false" fetchall="false" model="bgt.bgt_version_vl" rootpath="budget_version"/>
+        <a:model-query autocount="false" defaultwhereclause="t1.CODE_ID in(select s.code_id from SYS_CODES s where s.CODE =&apos;BGT_BUDGET_STATUS&apos;  AND s.ENABLED_FLAG=&apos;Y&apos;)  AND t1.ENABLED_FLAG =&apos;Y&apos;  AND t1.CODE_VALUE =&apos;POSTED&apos;ORDER BY t1.CODE_VALUE    " fetchall="false" model="sys.sys_code_values_vl" rootpath="budget_statuts"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="bgt_journal_reverse_note_link" url="${/request/@context_path}/modules/bgt/BGT5410/bgt_journal_reverse_note.screen"/>
+        <a:link id="bgt_reverse_detail_link" url="${/request/@context_path}/modules/bgt/BGT5410/bgt_reverse_detail.screen"/>
+        <script><![CDATA[
+            function query() {
+                $('bgt_journal_head_app').query();
+            }
+            
+            function reset() {
+            
+                $('budget_query_ds').reset();
+            }
+            
+            function column_detail(value, record, name) {
+                var head_id = record.get("journal_header_id");
+                if (record.get("journal_header_id")) {
+                    return '<a href="javascript:b(' + head_id + ')">' + value + '</a>';
+                }            
+            }
+            
+            function b(id) {
+                new Aurora.Window({
+                    id: 'new_bgt_journal_posted_detail_window',
+                    url: /*bgt_reverse_detail.screen*/
+                    $('bgt_reverse_detail_link').getUrl() + '?journal_header_id=' + id + '&head_id=' + id,
+                    fullScreen: true,				
+                    title: '${l:BGT_JOURNAL_REVERSE_DETAILS}'
+                });
+            
+            }
+            
+            function reverse() {
+                Aurora.Masker.mask(Ext.getBody(), '${l:BGT_JOURNAL_REVERSE.REVERSE}');
+                if ($('bgt_journal_head_app').getSelected().length > 0) {
+            
+                    var pp = $('bgt_journal_head_app').getSelected();
+            
+                    new Aurora.Window({
+                        id: 'new_bgt_journal_reverse_note_window',
+                        url: /*bgt_journal_reverse_note.screen*/
+                        $('bgt_journal_reverse_note_link').getUrl() + '?pp=' + pp,
+                        width: 650,
+                        height: 160,
+                        title: '${l:BGT_DESVER_REASON}'
+                    });
+                } else {
+                    alert('${l:PROMPT.PLEASE_SELECT}');
+                }
+                Aurora.Masker.unmask(Ext.getBody());
+            }
+            
+            function openWindow(url) {
+                if (!Ext.getCmp('QUERY_FORM').getForm().isValid()) {
+                    return;
+                }
+                var grid = document.getElementById('grid');
+                var records = Ext.getCmp('grid').getSelectionModel().getSelections();
+                if (records.length < 1) {
+                    Ext.MessageBox.alert(prompts['PROMPT'], prompts['PROMPT.PLEASE_SELECT']);
+                    return false;
+                }
+            
+                var p_rej = window.showModalDialog(url, window, "dialogWidth=640px;dialogHeight=240px;status:no;help:no;scroll:no;resizable:no;");
+            
+                if (p_rej) {
+                    set_value(p_rej);
+                } else {
+                    return false;
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="budget_structure_ds">
+                <a:datas datasource="/model/budget_structure"/>
+            </a:dataSet>
+            <a:dataSet id="budget_status_ds">
+                <a:datas datasource="/model/budget_statuts"/>
+            </a:dataSet>
+            <a:dataSet id="bgt_scenarios_ds">
+                <a:datas datasource="/model/budget_scenarios"/>
+            </a:dataSet>
+            <a:dataSet id="budget_version_ds">
+                <a:datas datasource="/model/budget_version"/>
+            </a:dataSet>
+            <a:dataSet id="svc" lookupcode="BUDGET_PERIOD"/>
+            <a:dataSet id="bgt_journal_status_ds" lookupcode="BUDGET_VERSION_STATUS"/>
+            <a:dataSet id="budget_query_ds">
+                <a:fields>
+                    <a:field name="JOURNAL_HEADER_ID"/>
+                    <a:field name="budget_strucutre_id_display" displayField="description" options="budget_structure_ds" prompt="BGT_JOURNAL_HEADERS.BUDGET_STRUCTURE_ID" returnField="budget_structure_id" valueField="budget_structure_id"/>
+                    <a:field name="budget_journal_number" prompt="BGT_JOURNAL_HEADERS.BUDGET_JOURNAL_NUMBER"/>
+                    <!-- <a:field name="budget_perid_name" lovHeight="550" lovService="bgt.period_set_code_for_company" lovWidth="550" prompt="BGT_BUDGET_STRUCTURES.PERIOD_SET_CODE" title="BGT_BUDGET_STRUCTURES.PERIOD_SET_CODE">
+                        <a:mapping>
+                            <a:map from="bgt_period_set_code" to="b_period_set_code"/>
+                            <a:map from="description" to="budget_perid_name"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="period_strategy_name" displayfield="code_value_name" options="svc" prompt="BGT_JOURNAL_QUERY.PERIOD_STRATEGY_DESC" returnField="period_strategy" valuefield="code_value"/>
+                    <a:field name="bgt_scenarios_name" displayfield="description" options="bgt_scenarios_ds" prompt="BGT_JOURNAL_HEADERS.SCENARIO_ID" returnfield="scenario_id" valuefield="scenario_id"/>
+                    <a:field name="bgt_scenarios_id"/>
+                    <a:field name="bgt_version_name" displayfield="description" options="budget_version_ds" prompt="BGT_JOURNAL_HEADERS.VERSION_ID" returnField="version_id" valueField="version_id"/>
+                    <a:field name="bgt_version_id"/>
+                    <a:field name="bgt_version_status"/>
+                    <a:field name="status_display" displayfield="code_value_name" options="budget_status_ds" prompt="BGT_JOURNAL_HEADERS.STATUS" returnfield="status" valuefield="code_value"/>
+                    <a:field name="period_year" prompt="BGT_JOURNAL_HEADERS.PERIOD_YEAR"/>
+                    <a:field name="period_quarter" prompt="BGT_JOURNAL_HEADERS.PERIOD_QUARTER"/>
+                    <a:field name="period_name" prompt="BGT_JOURNAL_HEADERS.PERIOD_NAME"/>
+                    <a:field name="bgt_jour_type_desc" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="bgt.BGT5110.bgt_journal_typelist" lovWidth="500" prompt="BGT_JOURNAL_TYPES" title="BGT_JOURNAL_TYPES">
+                        <a:mapping>
+                            <a:map from="bgt_journal_type_id" to="bgt_journal_type_id"/>
+                            <a:map from="description" to="bgt_jour_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bgt_journal_type_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="budget_period_ds" loadData="true" model="bgt.period_set_code_for_company"/>
+            <a:dataSet id="bgt_journal_head_app" autoPageSize="true" autoQuery="true" model="bgt.BGT5410.bgt_journal_reverse" queryDataSet="budget_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="operation_unit_desc" prompt="BGT_JOURNAL_HEADERS.OPERATION_UNIT_ID"/>
+                    <a:field name="budget_journal_number" prompt="BGT_JOURNAL_HEADERS.BUDGET_JOURNAL_NUMBER"/>
+                    <a:field name="period_strategy_desc" prompt="BGT_JOURNAL_QUERY.PERIOD_STRATEGY_DESC"/>
+                    <a:field name="budget_structure_desc" prompt="BGT_JOURNAL_HEADERS.BUDGET_STRUCTURE_ID"/>
+                    <a:field name="period_set_desc" prompt="BGT_BUDGET_STRUCTURES.PERIOD_SET_CODE"/>
+                    <a:field name="period_year" prompt="BGT_JOURNAL_HEADERS.PERIOD_YEAR"/>
+                    <a:field name="period_quarter" prompt="BGT_JOURNAL_HEADERS.PERIOD_QUARTER"/>
+                    <a:field name="period_name" prompt="BGT_JOURNAL_HEADERS.PERIOD_NAME"/>
+                    <a:field name="scenario_desc" prompt="BGT_JOURNAL_HEADERS.SCENARIO_ID"/>
+                    <a:field name="version_desc" prompt="BGT_JOURNAL_HEADERS.VERSION_ID"/>
+                    <a:field name="status_desc" prompt="BGT_JOURNAL_HEADERS.STATUS"/>
+                    <a:field name="journal_header_notes" prompt="BGT_JOURNAL_HEADERS.JOURNAL_HEADER_NOTES"/>
+                    <a:field name="bgt_jour_type_desc" prompt="BGT_JOURNAL_TYPES"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="reset" text="HAP_RESET" width="80"/>
+                <a:toolbarButton Text="PROMPT.REVERSE" click="reverse" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="budget_query_ds" resultTarget="bgt_journal_head_app" style="width:100%;border:none">
+                <a:formToolBar labelWidth="100">
+                    <a:lov name="bgt_jour_type_desc" bindTarget="budget_query_ds"/>
+                    <a:textField name="budget_journal_number" bindTarget="budget_query_ds"/>
+                    <a:comboBox name="period_strategy_name" bindTarget="budget_query_ds"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:comboBox name="status_display" bindTarget="budget_query_ds"/>
+                    <a:comboBox name="budget_strucutre_id_display" bindTarget="budget_query_ds"/>
+                    <a:comboBox name="bgt_version_name" bindTarget="budget_query_ds"/>
+                    <a:comboBox name="bgt_scenarios_name" bindTarget="budget_query_ds"/>
+                    <a:textField name="period_year" bindTarget="budget_query_ds"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="grid" bindTarget="bgt_journal_head_app" marginHeight="121" marginWidth="45" navBar="true">
+                <a:columns>
+                    <a:column name="budget_journal_number" align="center" renderer="column_detail" width="180"/>
+                    <a:column name="bgt_jour_type_desc" align="left" width="150"/>
+                    <a:column name="period_strategy_desc" align="left" width="60"/>
+                    <a:column name="budget_structure_desc" align="left" width="130"/>
+                    <a:column name="period_set_desc" align="left" width="140"/>
+                    <a:column name="period_year" align="center" width="60"/>
+                    <a:column name="scenario_desc" align="left" width="140"/>
+                    <a:column name="version_desc" align="left" width="160"/>
+                    <a:column name="status_desc" align="left" width="60"/>
+                    <a:column name="create_date_display" align="left" prompt="创建日期"/>
+                    <a:column name="journal_header_notes" align="left" width="150"/>
+                </a:columns>
+                <a:editors/>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

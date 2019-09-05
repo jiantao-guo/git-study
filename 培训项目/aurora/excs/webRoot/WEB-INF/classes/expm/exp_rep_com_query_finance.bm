@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        s.exp_report_header_id,
+                        s.company_id,
+                        s.unit_id,
+                        (SELECT
+                            f.description_text
+                        FROM
+                            fnd_descriptions f
+                        WHERE
+                            f.language       =${/session/@lang} AND
+                            f.description_id =
+                            (SELECT u.description_id FROM exp_org_unit u WHERE u.unit_id=s.unit_id
+                            )
+                        ) unit_name,
+                        (SELECT
+                            cch.contract_header_id
+                        FROM
+                            con_contract_headers cch,
+                            con_document_flows cdf
+                        WHERE
+                            cch.contract_header_id   = cdf.document_id AND
+                            cdf.document_type        = 'CON_CONTRACT_HEADERS' AND
+                            cdf.source_document_type = 'EXP_REPORT_HEADERS' AND
+                            cdf.source_document_id   = s.exp_report_header_id
+                        ) contract_header_id,
+                        (SELECT
+                            cch.contract_number
+                        FROM
+                            con_contract_headers cch,
+                            con_document_flows cdf
+                        WHERE
+                            cch.contract_header_id   = cdf.document_id AND
+                            cdf.document_type        = 'CON_CONTRACT_HEADERS' AND
+                            cdf.source_document_type = 'EXP_REPORT_HEADERS' AND
+                            cdf.source_document_id   = s.exp_report_header_id
+                        ) contact_number,
+                        s.exp_report_number exp_requisition_number,
+                        s.employee_id,
+                        s.audit_flag,
+                        DECODE(s.audit_flag,'Y','复核通过','R','初审通过','N','未审核') audit_flag_desc,
+                        TO_CHAR(s.audit_date, 'yyyy-mm-dd') audit_date,
+                        (SELECT
+                            employee_code
+                        FROM
+                            exp_employees es
+                        WHERE
+                            es.employee_id = s.employee_id
+                        ) employee_code,
+                        (SELECT name FROM exp_employees es WHERE es.employee_id = s.employee_id
+                        ) employee_name,
+                        s.payee_category,
+                        (SELECT
+                            code_value_name
+                        FROM
+                            sys_code_values_vl b,
+                            sys_codes a
+                        WHERE
+                            b.code_id  = a.code_id AND
+                            a.code     = 'PAYMENT_OBJECT' AND
+                            code_value = s.payee_category
+                        ) payee_category_name,
+                        s.payee_id,
+                        DECODE(s.payee_category, 'EMPLOYEE',
+                        (SELECT
+                            employee_code
+                            || '-'
+                            || name
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id = s.payee_id
+                        ), 'CUSTOMER',
+                        (SELECT
+                            vc.customer_code
+                            || '-'
+                            || vc.description
+                        FROM
+                            ord_system_customers_vl vc
+                        WHERE
+                            vc.customer_id = s.payee_id
+                        ),
+                        (SELECT
+                            vv.vender_code
+                            || '-'
+                            || vv.description
+                        FROM
+                            pur_system_venders_vl vv
+                        WHERE
+                            vv.vender_id = s.payee_id
+                        )) payee_name,
+                        s.currency_code,
+                        (SELECT
+                            currency_name
+                        FROM
+                            gld_currency_vl gcv
+                        WHERE
+                            gcv.currency_code = s.currency_code
+                        ) currency_name,
+                        s.exchange_rate_type,
+                        s.exchange_rate_quotation,
+                        (SELECT
+                            SUM(t.report_amount)
+                        FROM
+                            exp_report_lines t
+                        WHERE
+                            t.exp_report_header_id = s.exp_report_header_id
+                        ) quarter_num,
+                        (SELECT
+                            SUM(t.report_functional_amount)
+                        FROM
+                            exp_report_lines t
+                        WHERE
+                            t.exp_report_header_id = s.exp_report_header_id
+                        ) quarter_num_fun,
+                        s.period_name,
+                        s.je_creation_status,
+                        s.gld_interface_flag,
+                        s.created_by,
+                        s.creation_date,
+                        s.last_updated_by,
+                        s.last_update_date,
+                        TO_CHAR(s.report_date, 'YYYY-MM-DD') requesition_date,
+                        s.exp_report_type_id exp_requisition_type_id,
+                        (SELECT
+                            erpv.description
+                        FROM
+                            exp_expense_report_types_vl erpv
+                        WHERE
+                            erpv.expense_report_type_id = s.exp_report_type_id
+                        ) type_description,
+                        (SELECT
+                            erpv.report_name
+                        FROM
+                            exp_expense_report_types_vl erpv
+                        WHERE
+                            erpv.expense_report_type_id = s.exp_report_type_id
+                        ) report_name,
+                        (SELECT
+                            erpv.expense_requisition_type_code
+                        FROM
+                            exp_expense_req_types_vl erpv
+                        WHERE
+                            erpv.expense_requisition_type_id = s.exp_report_type_id
+                        ) type_code,
+                        s.description,
+                        NVL(s.reversed_flag, 'N') reversed_flag,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'CSH_REVERSE_SELECT' AND
+                            b.code_value = NVL(s.reversed_flag, 'N')
+                        ) reversed_flag_name,
+                        DECODE(s.reversed_flag, 'W',
+                        (SELECT
+                            h.exp_report_number
+                        FROM
+                            exp_report_headers h
+                        WHERE
+                            h.source_exp_rep_header_id = s.exp_report_header_id
+                        ), '') reverse_number,
+                        DECODE(s.reversed_flag, 'R',
+                        (SELECT
+                            h.exp_report_number
+                        FROM
+                            exp_report_headers h
+                        WHERE
+                            h.exp_report_header_id = s.source_exp_rep_header_id
+                        ), '') reversed_number,
+                        s.report_status requisition_status_value,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'EXP_EXPENSE_REPORT_STATUS' AND
+                            b.code_value = s.report_status
+                        ) requisition_status,
+                        sum_am.paymented_samount,
+                        (SELECT
+                            a.period_name
+                        FROM
+                            exp_report_accounts a
+                        WHERE
+                            a.exp_report_header_id = s.exp_report_header_id AND
+                            rownum                 = 1
+                        ) gl_period_name,
+                        TO_CHAR(
+                        (SELECT
+                            max(era.journal_date)
+                        FROM
+                            exp_report_accounts era
+                        WHERE
+                            era.exp_report_header_id = s.exp_report_header_id AND
+                            era.source_code          = 'EXPENSE_REPORT_AUDIT' 
+                        ), 'yyyy-mm-dd') journal_date
+                    FROM
+                        exp_report_headers s,
+                        (SELECT
+                            SUM(cw.document_write_off_amount) paymented_samount,
+                            eh.exp_report_header_id
+                        FROM
+                            csh_write_off cw,
+                            exp_report_headers eh
+                        WHERE
+                            cw.document_source    = 'EXPENSE_REPORT' AND
+                            cw.document_header_id = eh.exp_report_header_id
+                        GROUP BY
+                            eh.exp_report_header_id
+                        ) sum_am
+                    WHERE
+                        s.exp_report_header_id                                                                             = sum_am.exp_report_header_id(+) AND
+                        sys_user_secure_exit_pkg.exp_report_account_query(s.exp_report_header_id, ${/session/@session_id}) = 'Y' AND
+                        s.company_id                                                                                      IN
+                        (SELECT
+                            fc.company_id
+                        FROM
+                            fnd_companies fc START
+                        WITH fc.parent_company_id = ${/session/@company_id} CONNECT BY fc.parent_company_id = prior fc.company_id
+                        UNION
+                        SELECT to_number(${/session/@company_id}) AS company_id FROM dual
+                        )
+                    ORDER BY
+                        exp_report_header_id DESC
+                    ) v #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="audit_flag" queryExpression="audit_flag = ${@audit_flag}"/>
+        <bm:query-field name="gl_period_name" queryExpression="gl_period_name = ${@gl_period_name}"/>
+        <bm:query-field name="company_id" queryExpression="company_id = ${@company_id}"/>
+        <bm:query-field name="unit_id" queryExpression="unit_id = ${@unit_id}"/>
+        <bm:query-field name="payee_category" datatype="java.lang.String" queryExpression="payee_category = ${@payee_category}"/>
+        <bm:query-field name="payee_id" datatype="java.lang.String" queryExpression="payee_id like ${@payee_id}"/>
+        <bm:query-field name="requisition_status" datatype="java.lang.String" queryExpression="requisition_status_value = ${@requisition_status}"/>
+        <bm:query-field name="currency_code" datatype="java.lang.String" queryExpression="CURRENCY_CODE like ${@currency_code}"/>
+        <bm:query-field name="requesition_date_from" datatype="java.lang.String" queryExpression="requesition_date &gt;= ${@requesition_date_from}"/>
+        <bm:query-field name="requesition_date_to" datatype="java.lang.String" queryExpression="requesition_date &lt;= ${@requesition_date_to}"/>
+        <bm:query-field name="employee_id" datatype="java.lang.Long" queryExpression="employee_id  = ${@employee_id}"/>
+        <bm:query-field name="report_number" datatype="java.lang.String" queryExpression="exp_requisition_number  like ${@report_number}"/>
+        <bm:query-field name="type_item" datatype="java.lang.Long" queryExpression="exp_requisition_type_id  = ${@type_item}"/>
+        <bm:query-field name="exp_report_type" datatype="java.lang.String" queryExpression="v.exp_requisition_type_id = (SELECT eert.expense_report_type_id  FROM exp_expense_report_types eert WHERE eert.expense_report_type_code =     ${@exp_report_type}      AND eert.company_id = v.company_id)"/>
+        <bm:query-field name="contact_number" datatype="java.lang.String" queryExpression="contact_number  = ${@contact_number}"/>
+        <bm:query-field name="audit_date" datatype="java.lang.String" queryExpression="audit_date  = ${@audit_date}"/>
+        <bm:query-field name="journal_date" datatype="java.lang.String" queryExpression="journal_date  = ${@journal_date}"/>
+        <bm:query-field name="reversed_flag" datatype="java.lang.String" queryExpression="reversed_flag  = ${@reversed_flag}"/>
+        <bm:query-field name="requisition_amount_from" datatype="java.lang.Double" queryExpression="quarter_num &gt;= ${@requisition_amount_from}"/>
+        <bm:query-field name="requisition_amount_to" datatype="java.lang.Double" queryExpression="quarter_num &lt;= ${@requisition_amount_to}"/>
+        <bm:query-field name="p_audit_flag" datatype="java.lang.String" queryExpression="(audit_flag = ${@p_audit_flag} OR (NULLIF(${@p_audit_flag},&apos;N&apos;) is null) or (${@p_audit_flag} is null))"/>
+    </bm:query-fields>
+</bm:model>

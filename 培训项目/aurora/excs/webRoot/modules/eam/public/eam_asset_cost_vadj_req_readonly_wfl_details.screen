@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-5-6 上午10:04:10   
+    $Revision: 1.0  
+    $Purpose: 资产价值调整申请(资产成本调整)工作流审批页面
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="eam.eam0413.eam0413_requisition_headers_query" rootPath="eam0411_req_header"/>
+        <a:model-query autoCount="false" model="expm.get_sys_image_url" rootPath="image_url"/>
+        <a:model-query autoCount="false" defaultWhereClause=" user_id=${/session/@user_id}" fetchAll="true" model="sys.sys_user" rootPath="employee"/>
+        <a:model-query autoCount="false" defaultWhereClause="e.employee_id = ${/model/employee/record/@employee_id}" model="expm.cux_exp_get_unit_info" rootPath="unit"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="asset_headers_link" url="${/request/@context_path}/modules/eam/public/eam_asset_headers_readonly_for_requisition.screen"/>
+        <a:link id="eam_requisition_history_query_link" url="${/request/@context_path}/modules/eam/public/eam_asset_requisition_query_history.screen"/>
+        <a:link id="eam_asset_cost_source" url="${/request/@context_path}/modules/eam/EAM0920/eam_asset_cost_source_readonly.screen"/>
+        <a:link id="exp_req_readonly_link" url="${/request/@context_path}/modules/expm/public/exp_requisition_readonly_wfl.screen"/>
+        <a:link id="cux_create_image_url_id_link" model="sys.cux_sys_create_image_url" modelaction="batch_update"/>
+        <script><![CDATA[
+            
+            function onOpenAsset(value, record, name){
+                var asset_id = record.get('asset_id');
+                
+                if (!record.isNew) {
+                    return '<a href="javascript:onOpenAssetInfo(' + asset_id + ')">'+value+'</a>';
+                }else{
+                    return value;
+                }
+            }
+            
+            function onOpenAssetInfo(asset_id) {
+                new Aurora.Window({
+                    id: 'eam_asset_cost_vadj_window',
+                    url: $('asset_headers_link').getUrl() + '?asset_id=' + asset_id,
+                    title: '${l:EAM_ASSET_HEADERS.SEARCH}',
+                    height: 430,
+                    width: 930
+                });
+            }
+            
+            function eam_cost_vadj_history(){
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+				new Aurora.Window({
+		                    id: 'eam_requisiton_history_window',
+		                    url: $('eam_requisition_history_query_link').getUrl() +'?header_id=' + requisition_header_id,
+		                    title: '${l:REC_REQUISITION_HISTORY}',
+		                    height: 500,
+		                    width: 700
+		                });    
+            }
+            
+            //added by gaobo.wang 20130605 begin
+            //查看成本来源信息
+            function onCostSource(value, record, name) {
+                var asset_id = record.get("asset_id");
+                var requisition_line_id = record.get("requisition_line_id");
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+                var asset_book_id = '${/model/eam0411_req_header/record/@asset_book_id}';
+                var ast_requisition_type_id = '${/model/eam0411_req_header/record/@ast_requisition_type_id}';
+                
+                if (asset_id){
+                	return '<a href="javascript:eamCostSourceManage(' + requisition_header_id + ',' + ast_requisition_type_id + ',' + asset_book_id + ',' + asset_id + ',' + requisition_line_id + ')">${l:EAM_ASSET_COST_SOURCES}</a>';
+                }else{
+                	return null;
+                }
+            }
+            //added by gaobo.wang 20130605 end;
+            // 资产信息管理
+            
+            
+            function eamCostSourceManage(requisition_header_id, ast_requisition_type_id, asset_book_id, asset_id, requisition_line_id) {
+            
+                var url = $('eam_asset_cost_source').getUrl() + '?requisition_header_id=' + requisition_header_id + '&ast_requisition_type_id=' + ast_requisition_type_id + '&asset_book_id=' + asset_book_id + '&requisition_line_id=' + requisition_line_id + '&asset_id=' + asset_id;
+            
+                new Aurora.Window({
+                    id: 'eam0410_assetManage_screen',
+                    url: url,
+                    title: '${l:EAM_ASSET_COST_SOURCES}',
+                    height: 430,
+                    width: 800
+                }).on('close', function() {
+                    $('eam0411_cost_vadj_req_lines_ds').setQueryParameter('requisition_header_id', requisition_header_id);
+                    $('eam0411_cost_vadj_req_lines_ds').query();
+                });
+            }
+            
+             // 申请行索引更改时
+             function onIndexChangeFun(dataset, record) {
+                 var requisition_header_id = record.get("requisition_header_id");
+                 var requisition_line_id = record.get("requisition_line_id"); 
+                 $('eam0411_document_cates_ds').setQueryParameter('requisition_header_id', requisition_header_id);
+                 $('eam0411_document_cates_ds').setQueryParameter('requisition_line_id', requisition_line_id);
+                 $('eam0411_document_cates_ds').query();
+             }
+            
+            function eamReqNumRenderer(value, record, name) {
+                return '<a href="javascript:reqNumNewWindow_2(\'' + record.get('source_document_category') + '\',' + record.get('source_document_id') + ');">' + value + '</a>';
+            }
+            
+            function reqNumNewWindow_2(document_category, document_header_id) {
+                if (document_category == 'EXP_REQ') {
+                    var url = /*exp_requisition_readonly_wfl.screen*/
+                    $('exp_req_readonly_link').getUrl() + '?head_id=' + document_header_id;
+                    //window.open(url,'','fullscreen=no,resizable=yes,width=1024,height=620');
+                }
+                new Aurora.Window({
+                    url: url,
+                    fullScreen: true,
+                    width: 1024,
+                    height: 620
+                });
+            }
+            
+            //影像查看
+            function uploadImage() {
+                var requisition_number = '${/model/eam0411_req_header/record/@requisition_number}';
+                var url = '${/model/image_url/record/@url}';
+                url = url + '?operID=' + '${/session/@user_id}' + '&operName=' + '${/model/employee/record/@description}' + '&operOrgID=' + '${/model/unit/record/@unit_id}' + '&operOrgName=' + '${/model/unit/record/@description}' + '&right=' + '010' + '&businessCode=' + 'CW' + '&businessAppNo=' + requisition_number + '&batchID=' + '&scanMode=0';
+                // window.open(encodeURI(url));
+                var datas = [];
+                var data = {
+                    url: url,
+                    _status: 'insert'
+                };
+                datas.push(data);
+            
+                Aurora.request({
+                    url: $('cux_create_image_url_id_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        if (res.result.record.image_id) {
+                            open_image_url(res.result.record.image_id);
+                        }
+                    },
+                    scope: this
+                });
+            }
+            
+            function open_image_url(image_id) {
+                var screenWidth = Aurora.getViewportWidth() - 30;
+                var screenHeight = Aurora.getViewportHeight() - 15;
+                window.open('${/request/@context_path}/cux_sys_image.screen?widthurl=' + screenWidth + '&heighturl=' + screenHeight + '&image_id=' + image_id);
+            }
+        ]]></script>
+        <!-- 声明dataSets -->
+        <a:dataSets>
+            <!-- 申请头DS -->
+            <a:dataSet id="eam0411_cost_vadj_req_form_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="company_name" defaultValue="${/model/eam0411_req_header/record/@company_name}" readOnly="true"/>
+                    <a:field name="unit_name" defaultValue="${/model/eam0411_req_header/record/@unit_name}" readOnly="true"/>
+                    <a:field name="requisition_number" defaultValue="${/model/eam0411_req_header/record/@requisition_number}" prompt="ACP_REQUISITION.REQUEST_NO" readOnly="true"/>
+                    <a:field name="asset_book_id" defaultValue="${/model/eam0411_req_header/record/@asset_book_id}"/>
+                    <a:field name="requisition_header_id" defaultValue="${/model/eam0411_req_header/record/@requisition_header_id}"/>
+                    <a:field name="period_name" defaultValue="${/model/eam0411_req_header/record/@period_name}"/>
+                    <a:field name="asset_book_desc" defaultValue="${/model/eam0411_req_header/record/@asset_book_desc}" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" readOnly="true"/>
+                    <a:field name="ast_requisition_type_id" defaultValue="${/model/eam0411_req_header/record/@ast_requisition_type_id}"/>
+                    <a:field name="unit_id" defaultValue="${/model/eam0411_req_header/record/@unit_id}"/>
+                    <a:field name="employee_id" defaultValue="${/model/eam0411_req_header/record/@employee_id}"/>
+                    <a:field name="position_id" defaultValue="${/model/eam0411_req_header/record/@position_id}"/>
+                    <!-- <a:field name="user_group_id"/> -->
+                    <a:field name="requisition_type" defaultValue="${/model/eam0411_req_header/record/@ast_requisition_type_desc}" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_TYPE_CODE" readOnly="true"/>
+                    <a:field name="requisition_date" defaultValue="${/model/eam0411_req_header/record/@requisition_date}" prompt="AST_REQUISITION_DATE" readOnly="true"/>
+                    <a:field name="org_position" defaultValue="${/model/eam0411_req_header/record/@position_name}" prompt="AST_REQUISITION_POSITION" readOnly="true"/>
+                    <a:field name="req_employee_name" defaultValue="${/model/eam0411_req_header/record/@employee_name}" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_PROPOSER" readOnly="true"/>
+                    <a:field name="employee_name" defaultValue="${/model/eam0411_req_header/record/@employee_name}" prompt="AST_REQUISITION_ORIGINATOR" readOnly="true"/>
+                    <a:field name="description" defaultValue="${/model/eam0411_req_header/record/@description}" prompt="AST_REQUISITION_DESC" readOnly="true"/>
+                    <a:field name="req_status_desc" defaultValue="${/model/eam0411_req_header/record/@req_status_desc}" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUSII" readOnly="true"/>
+                    <a:field name="value_type" defaultValue="${/model/eam0411_req_header/record/@value_type}"/>
+                    <a:field name="value_type_desc" defaultValue="${/model/eam0411_req_header/record/@value_type_desc}" prompt="EAM_VALUE_TYPE" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 申请行DS -->
+            <a:dataSet id="eam0411_cost_vadj_req_lines_ds" autoQuery="true" bindName="lines" bindTarget="eam0411_cost_vadj_req_form_ds" model="eam.eam0410.eam0410_requisition_lines_edit" queryUrl="${/request/@context_path}/autocrud/eam.eam0410.eam0410_requisition_lines_edit/query?requisition_header_id=${/parameter/@requisition_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="line_number"/>
+                    <a:field name="requisition_header_id" defaultValue="${/model/eam0411_req_header/record/@requisition_header_id}"/>
+                    <a:field name="asset_id"/>
+                    <a:field name="asset_name" prompt="EAM_ASSET_HEADERS.DESCRIPTION"/>
+                    <a:field name="asset_code" prompt="EAM_ASSET_HEADERS.ASSET_CODE"/>
+                    <a:field name="current_cost" prompt="EAM_ASSET_FINANCE_INFO.CURRENT_COST"/>
+                    <a:field name="accumulated_dep_amt" prompt="EAM_ASSET_FINANCE_INFO.ACCUMULATED_DEP_AMT"/>
+                    <a:field name="impairment_loss_amt" prompt="EAM_ASSET_FINANCE_INFO.IMPAIRMENT_LOSS_AMT"/>
+                    <a:field name="transaction_type_id"/>
+                    <a:field name="trans_type_desc" prompt="EAM_REQUISITION_TYPES.DEFAULT_TRX_TYPE_DESC"/>
+                    <a:field name="value_adj_date"/>
+                    <a:field name="pl_amount" prompt="EAM_REQUISITION_VADJ_AUDIT.PL_AMOUNT"/>
+                    <a:field name="description" prompt="AST_REQUISITION_DESC"/>
+                    <a:field name="unit_id" defaultValue="${/model/eam0411_req_header/record/@unit_id}"/>
+                    <a:field name="employee_id" defaultValue="${/model/eam0411_req_header/record/@employee_id}"/>
+                    <a:field name="position_id" defaultValue="${/model/eam0411_req_header/record/@position_id}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="indexchange" handler="onIndexChangeFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 申请单据关联DS -->
+            <a:dataSet id="eam0411_document_release_ds" bindName="document_cates" bindTarget="eam0411_cost_vadj_req_lines_ds" model="eam.eam0310.eam0310_document_req_releases_edit" selectable="true">
+                <a:fields>
+                    <a:field name="source_document_category"/>
+                    <a:field name="source_document_id"/>
+                    <a:field name="source_document_line_id"/>
+                    <a:field name="source_doc_cate_desc" displayField="code_value_name" options="eam0411_document_cates_ds" prompt="EAM_DOCUMENT_CATEGORY" required="true" returnField="source_document_category" valueField="code_value"/>
+                    <a:field name="source_doc_desc" lovGridHeight="260" lovHeight="400" lovService="eam.eam0310.eam0310_exp_requisition_query" lovWidth="800" prompt="WFL_WORKFLOW.ORDER_NO" required="true" title="MLC_INTER_ORDERS.ORDER_CODE">
+                        <a:mapping>
+                            <a:map from="exp_requisition_number" to="source_doc_desc"/>
+                            <a:map from="line_number" to="source_doc_line_desc"/>
+                            <a:map from="exp_requisition_header_id" to="source_document_id"/>
+                            <a:map from="exp_requisition_line_id" to="source_document_line_id"/>
+                            <a:map from="primary_quantity" to="req_quantity"/>
+                            <a:map from="requisition_amount" to="req_amount"/>
+                            <a:map from="req_item_desc" to="req_project"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="source_doc_line_desc" prompt="EXP_REPORT_LINES.LINE_NUMBER"/>
+                    <a:field name="req_project" prompt="EXP_REQ_ITEMS.REQ_ITEM_CODE"/>
+                    <a:field name="req_quantity" prompt="EAM_REQUEST_QUANTITY"/>
+                    <a:field name="req_amount" prompt="EAM_REQUEST_AMOUNT"/>
+                    <a:field name="release_quantity" defaultValue="1" prompt="EXP_REQUISITION_DISTS.RELEASED_QUANTITY"/>
+                    <a:field name="release_amount" prompt="CSH_WRITE_OFF.CSH_WRITE_OFF_AMOUNT" required="true"/>
+                    <a:field name="description" prompt="EXP_EMPLOYEE.NOTES"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 单据分类 -->
+            <a:dataSet id="eam0411_document_cates_ds" lookupCode="EAM_REQ_SOURCE_DOCUMENT_CATE" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <!-- 申请头 -->
+            <a:form column="1" title="EAM_REQUISITION_COST_VADJ_CREATE.TITLE" width="730">
+                <a:box column="4" width="1000">
+                    <!--<a:comboBox name="org_position" bindTarget="eam0411_cost_vadj_req_form_ds"/>
+                    <a:textField name="employee_name" bindTarget="eam0411_cost_vadj_req_form_ds"/>-->
+                    <a:textField name="requisition_number" bindTarget="eam0411_cost_vadj_req_form_ds" prompt="单据编号"/>
+                    <!--<a:textField name="asset_book_desc" bindTarget="eam0411_cost_vadj_req_form_ds"/>-->
+                    <a:textField name="requisition_type" bindTarget="eam0411_cost_vadj_req_form_ds" prompt="单据类型"/>
+                    <a:comboBox name="value_type_desc" bindTarget="eam0411_cost_vadj_req_form_ds"/>
+                    <a:datePicker name="requisition_date" bindTarget="eam0411_cost_vadj_req_form_ds" style="float:left;margin-right: 10px;"/>
+                    <a:textField name="req_employee_name" bindTarget="eam0411_cost_vadj_req_form_ds"/>
+                    <a:textField name="company_name" bindTarget="eam0411_cost_vadj_req_form_ds" prompt="机构"/>
+                    <a:textField name="unit_name" bindTarget="eam0411_cost_vadj_req_form_ds" prompt="部门"/>
+                    <!--<a:textField name="req_status_desc" bindTarget="eam0411_cost_vadj_req_form_ds"/>-->
+                </a:box>
+                <a:hBox width="730">
+                    <a:textArea name="description" bindTarget="eam0411_cost_vadj_req_form_ds" prompt="描述" width="632"/>
+                </a:hBox>
+            </a:form>
+            <a:hBox>
+                <a:button click="eam_cost_vadj_history" text="跟踪单据"/>
+                <!--<a:button id="uploadImageBtn" click="uploadImage" text="影像查看"/>-->
+            </a:hBox>
+            <a:grid bindTarget="eam0411_cost_vadj_req_lines_ds" height="200" navBar="true" width="1000">
+                <a:toolBar>
+                    <a:label/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="line_number" align="center" width="50"/>
+                    <!--<a:column align="center" renderer="onCostSource" width="80"/>-->
+                    <a:column name="asset_code" align="center" prompt="资产编码" renderer="onOpenAsset"/>
+                    <a:column name="asset_name" align="center" width="200"/>
+                    <a:column name="current_cost" align="right" width="100"/>
+                    <a:column name="accumulated_dep_amt" align="right" width="100"/>
+                    <a:column name="impairment_loss_amt" align="right" width="100"/>
+                    <!--<a:column name="trans_type_desc" align="center" width="100"/>-->
+                    <a:column name="value_adj_date" align="center" renderer="Aurora.formatDate" width="100"/>
+                    <a:column name="pl_amount" align="right" width="100"/>
+                    <a:column name="description" align="left" width="200"/>
+                </a:columns>
+            </a:grid>
+            <a:grid bindTarget="eam0411_document_release_ds" height="220" navBar="true" width="980">
+                <a:columns>
+                    <a:column name="source_doc_line_desc" align="center" width="40"/>
+                    <a:column name="source_doc_cate_desc" align="center"/>
+                    <a:column name="source_doc_desc" align="center" prompt="单据编号" renderer="eamReqNumRenderer" width="160"/>
+                    <a:column name="req_project" align="center"/>
+                    <a:column name="req_quantity" align="center"/>
+                    <a:column name="req_amount" align="center"/>
+                    <!-- <a:column name="release_quantity" align="center" editor="rec_req_quantity"/> -->
+                    <a:column name="release_amount" align="center"/>
+                    <a:column name="description" align="center" width="150"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

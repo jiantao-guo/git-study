@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangguangfan  
+    $Date: 2013-1-18 下午03:21:10  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	select * from
+             	(SELECT erh.exp_report_header_id,
+				       erh.exp_report_number,
+				       erh.employee_id,
+				       erh.exp_report_type_id,
+				       ertv.expense_report_type_code,
+				       ertv.description expense_report_type_desc,
+				       ee.employee_code,
+				       ee.name employee_name,
+				       to_char(erh.report_date,'yyyy-mm-dd') report_date,
+				       (SELECT to_char(SUM(nvl(erl.report_amount, 0)),'999,999,999,999,990.00')
+				          FROM exp_report_lines erl
+				         WHERE erl.exp_report_header_id = erh.exp_report_header_id) quarter_num,
+				       erh.description
+				  FROM exp_report_headers          erh,
+				       exp_expense_report_types_vl ertv,
+				       exp_employees               ee
+				 WHERE erh.report_status = 'COMPLETELY_APPROVED'
+				   AND erh.audit_flag = 'Y'
+				   AND erh.exp_report_type_id = ertv.expense_report_type_id(+)
+				   AND erh.employee_id = ee.employee_id(+)
+				   and erh.employee_id = ${@employee_id}
+				   and nvl(erh.reversed_flag,'N') ='N'
+				   AND EXISTS
+				 (SELECT 1
+				          FROM exp_report_pmt_schedules erps
+				         WHERE erh.exp_report_header_id = erps.exp_report_header_id
+				           AND erps.frozen_flag = 'Y')
+				   AND ((SELECT nvl(SUM(erps.due_amount),0)
+				           FROM exp_report_pmt_schedules erps
+				          WHERE erps.exp_report_header_id = erh.exp_report_header_id) -
+				       (SELECT nvl(SUM(w.csh_write_off_amount), 0)
+				           FROM csh_write_off w
+				          WHERE w.document_source = 'EXPENSE_REPORT'
+				            AND w.document_header_id = erh.exp_report_header_id)) <> 0) v
+     			#WHERE_CLAUSE#  
+                ORDER BY v.report_date desc
+           ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="exp_report_header_id"/>
+        <bm:field name="exp_report_number" displayWidth="110" forDisplay="true" forQuery="true" physicalName="EXP_REPORT_NUMBER" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER"/>
+        <bm:field name="expense_report_type_desc" displayWidth="110" forDisplay="true" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE"/>
+        <bm:field name="employee_name" displayWidth="110" forDisplay="true" prompt="EXP_REPORT_HEADERS.EMPLOYEE_NAME"/>
+        <bm:field name="report_date" displayWidth="110" forDisplay="true" forQuery="true" prompt="EXP_REPORT_HEADERS.REPORT_DATE"/>
+        <bm:field name="quarter_num" displayWidth="110" forDisplay="true" prompt="EXP_REPORT_LINES.REPORT_AMOUNT"/>
+        <bm:field name="description" displayWidth="110" forDisplay="true" prompt="EXP_REPORT_HEADERS.DESCRIPTION"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="exp_report_number" queryExpression="v.exp_report_number like ${@exp_report_number}"/>
+        <bm:query-field name="report_date" queryExpression="v.report_date = ${@report_date}"/>
+    </bm:query-fields>
+</bm:model>

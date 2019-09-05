@@ -1,0 +1,348 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="gld.gld_currency_vl" rootPath="currency_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="fnd.EXP3120.fnd_dimensions_vl_seq_lt10" rootPath="fnd_dim_list"/>
+        <a:model-query autoCount="false" model="exp.exp_company_employee_current" rootPath="current_emp"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_report_intergrate_query_result_link" url="${/request/@context_path}/modules/expm/EXP3122/zkc_exp_report_intergrate_query_result.screen"/>
+        <a:link id="exp_report_query_integrate_insert_control_link" url="${/request/@context_path}/modules/expm/EXP3122/zkc_exp_report_query_integrate_insert_control.svc"/>
+        <script><![CDATA[
+			
+			function loadComplete(){
+				var records = $('dim_query_ds').getAll();
+				/*for(var i = 0; i < records.length; i++){
+					var record = records[i];
+					record.getMeta().getField('dim_from_display').setOptions('dim_ds_' + record.get('dimension_sequence'));
+					record.getMeta().getField('dim_to_display').setOptions('dim_ds_' + record.get('dimension_sequence'));
+				}*/
+				// var records1 = $('query_ds').getAt(0);
+				// var emp_display = ${'/model/current_emp/record/@name_code'};
+				// var emp_id = ${'/model/current_emp/record/@employee_id'};
+				// records1.set('exp_report_emp_display',emp_display);
+				// records1.set('bear_employee',employee_id);
+				for(var i = 0; i < records.length; i++){
+					var record = records[i];
+					record.getField('dim_from_display').setLovService('fnd.fnd_dimension_values');
+					record.getField('dim_from_display').setLovPara('dimension_id',record.get('dimension_id'));
+					record.getField('dim_to_display').setLovService('fnd.fnd_dimension_values');
+					record.getField('dim_to_display').setLovPara('dimension_id',record.get('dimension_id'));
+				}
+			}
+			
+			function headUpdateFunction(dataSet,record,name,value,oldValue){
+				if(name == 'payee_category'){
+					var field = record.getMeta().getField('payee_id_display');
+					record.set('payee_id_display','');
+					record.set('payee_id','');
+					field.setReadOnly(false);
+					if(value == 'EMPLOYEE'){
+						field.setLovService('expm.exp_employee_req_lov');
+					}else if(value == 'CUSTOMER'){
+						field.setLovService('expm.exp_customer_req_lov');
+					}else if(value == 'VENDER'){
+						field.setLovService('expm.exp_vender_req_lov');
+					}
+					else{field.setReadOnly(true);}
+				}
+				else if(name == 'unit_id'){
+				    var unit_id = record.get('unit_id');
+                    var resp_center_display = record.getMeta().getField('resp_center_display');
+                    resp_center_display.setLovPara('unit_id',unit_id);
+				}
+			}
+				
+			function payeeIdDisplayCommitFunction(lov,r1,r2){
+				var type = r1.get('payee_category');
+				if(type == 'EMPLOYEE'){
+					r1.set('payee_id_display',r2.get('code_name'));
+					r1.set('payee_id',r2.get('employee_id'));
+				}else if(type == 'CUSTOMER'){
+					r1.set('payee_id_display',r2.get('code_name'));
+					r1.set('payee_id',r2.get('customer_id'));
+				}else{
+					r1.set('payee_id_display',r2.get('code_name'));
+					r1.set('payee_id',r2.get('vender_id'));
+				}
+			}
+			
+			function initOptions(grid,rowNum,name,record){
+				var data = $('dim_ds_' + record.get('dimension_sequence')).data;
+				if(!data || data.length == 0){
+					$('dim_ds_' + record.get('dimension_sequence')).query();
+				}
+			}
+			
+			function queryFunction(){
+				$('queryBtn').disable();
+				var param = $('query_ds').getAt(0).data;
+				for(var fieldName in param){
+					if(!param[fieldName] || param[fieldName] == ''){
+						delete param[fieldName];
+					}
+				}
+				var dim_details = $('dim_query_ds').getJsonData(false);
+				var dim_data = [];
+				for(var i = 0 ; i < dim_details.length ; i ++){
+	                if (dim_details[i]['dim_from'] > dim_details[i]['dim_to']) {
+	                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.DIMENSION_CODE_CHECK}');
+						$('queryBtn').enable();
+	                    return;
+	                }
+	                if(dim_details[i]['dim_from'] || dim_details[i]['dim_to']){
+				        dim_data.push(dim_details[i]);
+				    }
+				}
+				param['details'] = dim_data;
+				Aurora.request({
+					url:/*exp_report_query_integrate_insert_control.svc*/$('exp_report_query_integrate_insert_control_link').getUrl() + '?_ban_remind=Y',
+					para:param,
+					success:function(){
+						new Aurora.Window({
+							url:/*exp_report_intergrate_query_result.screen*/$('exp_report_intergrate_query_result_link').getUrl() + '?_ban_remind=Y',
+							id:'exp_report_intergrate_query_result_screen',
+							title:'${l:EXPENSE_INTEGRATE_QUERY}',
+							width:980,
+							height:510
+						});
+						$('queryBtn').enable();
+					},
+					failure:function(){
+						$('queryBtn').enable();
+					},
+					scope:this
+				});
+				
+			}
+			
+			function resetFunction(){
+				$('query_ds').getCurrentRecord().getField('payee_id_display').setReadOnly(true);
+				$('query_ds').reset();
+				var allRecords = $('dim_query_ds').getAll();
+				for(var i = 0 ;i < allRecords.length; i++){
+					var record = allRecords[i];
+					record.set('dim_from_display','');
+					record.set('dim_to_display','');
+					record.set('dim_from','');
+					record.set('dim_to','');
+				}
+			}
+			
+		]]></script>
+        <a:dataSets>
+            <a:dataSet id="currency_list_ds">
+                <a:datas dataSource="/model/currency_list"/>
+            </a:dataSet>
+            <a:placeHolder id="dim_ds_places"/>
+            <a:dataSet id="approve_status_list_ds" lookupCode="EXP_EXPENSE_REPORT_STATUS"/>
+            <a:dataSet id="payee_category_list_ds" lookupCode="PAYMENT_OBJECT"/>
+            <a:dataSet id="query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="exp_report_type_display" lovGridHeight="320" lovHeight="480" lovService="exp.exp_expense_report_types_new_vl" lovWidth="500" prompt="EXP_EXPENSE_REQ_TYPES.EXPENSE_REPORT_TYPE" title="EXP_EXPENSE_REQ_TYPES.EXPENSE_REPORT_TYPE">
+                        <a:mapping>
+                            <a:map from="code_name" to="exp_report_type_display"/>
+                            <a:map from="expense_report_type_code" to="exp_report_type"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exp_report_type"/>
+                    <a:field name="exp_report_emp_display" defaultValue="${/model/current_emp/record/@name_code}" prompt="EXP_REPORT_HEADERS.EMPLOYEE_NAME" readOnly="true">
+                        <!-- <a:mapping>
+                            <a:map from="name_code" to="exp_report_emp_display"/>
+                            <a:map from="employee_id" to="exp_report_emp"/>
+                        </a:mapping> --><![CDATA[
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                    ]]></a:field>
+                    <a:field name="exp_report_emp" defaultValue="${/model/current_emp/record/@employee_id}"/>
+                    <a:field name="report_date_from" prompt="EXP_EXPENSE_REPORT_AUDIT.REPORT_DATE_F"/>
+                    <a:field name="report_date_to" prompt="EXP_EXPENSE_REPORT_AUDIT.REPORT_DATE_T"/>
+                    <a:field name="company_id_display" autoComplete="true" autoCompleteField="company_short_name" lovGridHeight="320" lovHeight="450" lovService="fnd.fnd_companies_tree" lovWidth="500" prompt="ACP_ACP_REQUISITION_HDS.COMPANY_ID" title="COMPANY_SELECTED">
+                        <a:mapping>
+                            <a:map from="company_name" to="company_id_display"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id"/>
+                    <a:field name="resp_center_display" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="fnd.fnd_responsibility_center_emp_vl" lovWidth="500" prompt="BUDGET_MANAGE_DPT" title="ACP_INVOICE_LINES.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="code_name" to="resp_center_display"/>
+                            <a:map from="responsibility_center_id" to="resp_center"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="resp_center"/>
+                    <a:field name="internal_period_num_from_display" autoComplete="true" autoCompleteField="period_name" lovGridHeight="320" lovHeight="450" lovService="gld.EXP3120.gld_period_status_lov" lovWidth="500" prompt="AUDIT_PERIOD_FROM" title="PROMPT.PERIOD_QUERY">
+                        <a:mapping>
+                            <a:map from="period_name" to="internal_period_num_from_display"/>
+                            <a:map from="internal_period_num" to="internal_period_num_from"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="internal_period_num_from"/>
+                    <a:field name="internal_period_num_to_display" autoComplete="true" autoCompleteField="period_name" lovGridHeight="320" lovHeight="450" lovService="gld.EXP3120.gld_period_status_lov" lovWidth="500" prompt="AUDIT_PERIOD_TO" title="PROMPT.PERIOD_QUERY">
+                        <a:mapping>
+                            <a:map from="period_name" to="internal_period_num_to_display"/>
+                            <a:map from="internal_period_num" to="internal_period_num_to"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="internal_period_num_to"/>
+                    <a:field name="budget_item_display" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="bgt.bgt_budget_items_lov" lovWidth="500" prompt="EXP_EXPENSE_ITEMS.BUDGET_ITEM_ID" title="EXP_EXPENSE_ITEMS.BUDGET_ITEM_ID">
+                        <a:mapping>
+                            <a:map from="code_description" to="budget_item_display"/>
+                            <a:map from="budget_item_id" to="budget_item"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="budget_item"/>
+                    <a:field name="expense_item_display" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="expm.EXP3120.exp_expense_items_vl?company_id=${/session/@company_id}" lovWidth="500" prompt="EXP_EXPENSE_ITEMS.EXPENSE_ITEM_ID" title="EXP_EXPENSE_ITEMS.EXPENSE_ITEM_ID">
+                        <a:mapping>
+                            <a:map from="code_description" to="expense_item_display"/>
+                            <a:map from="expense_item_id" to="expense_item"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="expense_item"/>
+                    <a:field name="unit_id_display" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="exp.EXP3120.exp_org_emp_dpt" lovWidth="500" prompt="BUDGET_USE_DPT" title="ACP_ACP_REQUISITION_HDS.UNIT_ID">
+                        <a:mapping>
+                            <a:map from="unit_id_display" to="unit_id_display"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_id"/>
+                    <a:field name="bear_employee_display" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="exp.EXP3120.exp_company_employee_new_vl" lovWidth="500" prompt="BEAR_EMPLOYEE" title="BEAR_EMPLOYEE_QUERY">
+                        <a:mapping>
+                            <a:map from="code_name" to="bear_employee_display"/>
+                            <a:map from="employee_id" to="bear_employee"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bear_employee"/>
+                    <a:field name="exp_report_number" prompt="ACP_REQUISITION.REF_DOCUMENT_ID_DISPLAY"/>
+                    <a:field name="approval_status_display" displayField="code_value_name" options="approve_status_list_ds" prompt="APPROVE_STATUS" returnField="approval_status" valueField="code_value"/>
+                    <a:field name="approval_status"/>
+                    <a:field name="currency_code_display" displayField="currency_name" options="currency_list_ds" prompt="EXP_EXPENSE_ITEMS.CURRENCY_CODE" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="contain_unaudit_flag" checkedValue="Y" defaultValue="N" prompt="包含未审核" uncheckedValue="N"/>
+                    <a:field name="payee_category_display" displayField="code_value_name" options="payee_category_list_ds" prompt="EXP_REQUISITION_LINES.PAYEE_CATEGORY" returnField="payee_category" valueField="code_value"/>
+                    <a:field name="payee_category"/>
+                    <a:field name="payee_id_display" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="420" lovWidth="500" prompt="EXP_REQUISITION_LINES.PAYEE_ID" readOnly="true" title="PROMPT.PAYEE_QUERY"/>
+                    <a:field name="payee_id"/>
+                    <a:field name="all_company_flag" checkedValue="Y" defaultValue="N" prompt="CONTAIN_SUB_COMPANY" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="headUpdateFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="dim_query_ds">
+                <a:datas dataSource="/model/fnd_dim_list"/>
+                <a:fields>
+                    <a:field name="description" prompt="ACP_INVOICE_CREATE_SERVICE.DIMENSION"/>
+                    <a:field name="dim_from_display" autoComplete="true" autoCompleteField="dimension_value_code" lovGridHeight="320" lovHeight="450" lovWidth="500" prompt="PROMPT.FROM" title="PROMPT.FROM">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="dim_from_display"/>
+                            <a:map from="dimension_value_code" to="dim_from"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="dim_from"/>
+                    <a:field name="dim_to_display" autoComplete="true" autoCompleteField="dimension_value_code" lovGridHeight="320" lovHeight="450" lovWidth="500" prompt="PROMPT.TO" title="PROMPT.TO">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="dim_to_display"/>
+                            <a:map from="dimension_value_code" to="dim_to"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="dim_to"/>
+                    <a:field name="dimension_id"/>
+                    <a:field name="dimension_code"/>
+                    <a:field name="dimension_sequence"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton id="queryBtn" click="queryFunction" text="HAP_QUERY" width="80"/>
+                <a:toolbarButton click="resetFunction" text="HAP_RESET" width="80"/>
+            </a:screenTopToolbar>
+            <a:form id="form" column="1" title="EMP_EXPENSE_INTEGRATE_QUERY">
+                <a:box column="4" style="width:100%;">
+                    <a:lov name="exp_report_type_display" bindTarget="query_ds"/>
+                    <a:lov name="exp_report_emp_display" bindTarget="query_ds"/>
+                    <a:datePicker name="report_date_from" bindTarget="query_ds"/>
+                    <a:datePicker name="report_date_to" bindTarget="query_ds"/>
+                    <!-- <a:lov name="company_id_display" bindTarget="query_ds"/>
+            <a:lov name="resp_center_display" bindTarget="query_ds"/>
+            <a:lov name="unit_id_display" bindTarget="query_ds"/> -->
+                    <a:lov name="internal_period_num_from_display" bindTarget="query_ds"/>
+                    <a:lov name="internal_period_num_to_display" bindTarget="query_ds"/>
+                    <a:lov name="budget_item_display" bindTarget="query_ds"/>
+                    <a:lov name="expense_item_display" bindTarget="query_ds"/>
+                    <!-- <a:lov name="bear_employee_display" bindTarget="query_ds"/> -->
+                    <a:comboBox name="approval_status_display" bindTarget="query_ds"/>
+                    <!-- <a:comboBox name="currency_code_display" bindTarget="query_ds"/> -->
+                    <a:comboBox name="payee_category_display" bindTarget="query_ds"/>
+                    <a:lov name="payee_id_display" bindTarget="query_ds">
+                        <a:events>
+                            <a:event name="commit" handler="payeeIdDisplayCommitFunction"/>
+                        </a:events>
+                    </a:lov>
+                    <a:checkBox name="contain_unaudit_flag" bindTarget="query_ds"/>
+                    <!-- <a:checkBox name="all_company_flag" bindTarget="query_ds"/> -->
+                </a:box>
+            </a:form>
+            <!-- <a:hBox style="margin:10px;">
+            <a:button id="queryBtn" click="queryFunction" text="HAP_QUERY"/>
+            <a:button click="resetFunction" text="HAP_RESET"/>
+        </a:hBox> -->
+            <a:grid id="grid" bindTarget="dim_query_ds" marginHeight="200">
+                <a:columns>
+                    <a:column name="description" align="left" width="200"/>
+                    <a:column name="dim_from_display" editor="lov_editor" width="200"/>
+                    <a:column name="dim_to_display" editor="lov_editor" width="200"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="lov_editor"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="initOptions"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        	loadComplete();
+        	 function EXP3122_InitSize() {
+                    //描述宽度
+                    var labelWidth = 75;
+                    //标签宽度,5 = 3padding + 2border-spacing
+                    var tagWidth = 150 + 5;
+                    //页面宽度、高度
+                    var vw = $A.getViewportWidth();
+                    var vh = $A.getViewportHeight();
+                    //留白宽度
+                    var marginWidth = 35;
+                    //自适应宽度
+                    var autoWidth = vw - marginWidth;
+                    //Form内部宽度，-2border
+                    var formInnerWidth = autoWidth - 2;
+                    //所占列数
+                    var colSpan = 4;
+                    //设置组件的自适应宽度
+                    Ext.get('form').setWidth(autoWidth + 4);
+                    $('grid').setWidth(autoWidth);
+                    //设置TextArea的自适应宽度,别问我最后那个6是哪里来的，试出来的
+                }
+                //Ext.fly(window).on('resize', EXP3122_InitSize);
+                EXP3122_InitSize();
+        ]]></script>
+    </a:view>
+    <a:view-config>
+        <c:batch-config source="/model/fnd_dim_list" targetId="dim_ds_places">
+            <a:dataSet id="dim_ds_${@dimension_sequence}" queryUrl="${/request/@context_path}/autocrud/fnd.fnd_dimension_values/query?dimension_id=${@dimension_id}"/>
+        </c:batch-config>
+    </a:view-config>
+</a:screen>

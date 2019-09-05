@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+               select v.* from ( WITH
+                    comp_temp AS
+                    (SELECT
+                        fc.company_id
+                    FROM
+                        fnd_companies fc
+                    WHERE
+                        fc.company_id = ${/session/@company_id}
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id  = ${/session/@company_id} AND
+                        ${@include_child_flag} = 'Y'
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id IN
+                        (SELECT
+                            fc3.company_id
+                        FROM
+                            fnd_companies fc3
+                        WHERE
+                            fc3.parent_company_id = ${/session/@company_id}
+                        ) AND
+                        ${@include_child_flag} = 'Y'
+                    )
+                SELECT
+                    gl_interface_id,
+                    batch_id,
+                    batch_description,
+                    status,
+                    set_of_books_id,
+                    TO_CHAR(accounting_date,'YYYY-MM-DD') AS accounting_date,
+                    currency_code,
+                    user_je_category_name,
+                    user_je_source_name,
+                    TO_CHAR(currency_conversion_date,'YYYY-MM-DD') AS currency_conversion_date,
+                    user_currency_conversion_type,
+                    currency_conversion_rate,
+                    segment1,
+                    (select f.company_code||'-'||f.company_short_name from fnd_companies_vl f where f.company_code = segment1)segment1_desc,
+                    segment2,
+                    (select f.responsibility_center_code||'-'||f.responsibility_center_name from fnd_responsibility_centers_vl f where f.responsibility_center_code = t.segment2 and f.company_id = t.hec_company_id )segment2_desc,
+                    segment3,
+                    (select g.ACCOUNT_CODE||'-'||g.DESCRIPTION from gld_accounts_vl g where g.ACCOUNT_CODE = t.segment3)segment3_desc,
+                    segment4,
+                    (SELECT t.detail_code||'-'||t.description from cux_gl_details t where t.detail_code = t.segment4)segment4_desc,
+                    segment5,
+                    (select b.dimension_value_code||'-'||b.description from fnd_dimensions a,fnd_dimension_values_vl b where a.dimension_id = b.dimension_id and a.dimension_code = 'RELATED' and b.dimension_value_code = t.segment5)segment5_desc,
+                    segment6,
+                    (select b.dimension_value_code||'-'||b.description from fnd_dimensions a,fnd_dimension_values_vl b where a.dimension_id = b.dimension_id and a.dimension_code = 'PRODUCT' and b.dimension_value_code = t.segment6)segment6_desc,
+                    segment7,
+                    (select b.dimension_value_code||'-'||b.description from fnd_dimensions a,fnd_dimension_values_vl b where a.dimension_id = b.dimension_id and a.dimension_code = 'CHANNEL' and b.dimension_value_code = t.segment7)segment7_desc,
+                    segment8,
+                    segment9,
+                    (select v.cash_flow_line_number ||'-'||v.description  from   csh_cash_flow_items_vl v  where  v.cash_flow_line_number=t.segment9)segment9_desc,
+                    segment10,
+                    segment11,
+                    segment19,
+                    segment20, 
+                    attribute1,
+                    entered_dr,
+                    entered_cr,
+                    accounted_dr,
+                    accounted_cr,
+                    period_name,
+                    reference4,
+                    line_desc,
+                    accounting_period_num,
+                    currency_conversion_type,
+                    imported_flag,
+                    gl_request_id,
+                    TO_CHAR(process_date,'YYYY-MM-DD hh24:mi:ss') AS process_date,
+                    error_status,
+                    error_description,
+                    je_batch_id,
+                    je_header_id,
+                    je_line_num,
+                    TO_CHAR(creation_date,'YYYY-MM-DD hh24:mi:ss') AS creation_date,
+                    created_by,
+                    TO_CHAR(last_update_date,'YYYY-MM-DD hh24:mi:ss') AS last_update_date,
+                    last_update_by,
+                    hec_company_id,
+                    (SELECT
+                        company_short_name
+                    FROM
+                        fnd_companies_vl fcv
+                    WHERE
+                        fcv.company_id = hec_company_id
+                    ) AS company_name,
+                    sys_code_pkg.get_sys_code_value_name('EBS_IMPORTED_FLAG',imported_flag) as imported_flag_desc,
+                    sys_code_pkg.get_sys_code_value_name('EBS_DATA_STATUS',status) status_desc
+                FROM
+                    ebs_hec_gl_interface t
+                    where t.hec_company_id in (select * from comp_temp)
+                   )v #WHERE_CLAUSE#
+                    order by gl_interface_id desc
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+            begin
+                cux_gl_interface_pkg.update_gl_interface(p_gl_interface_id => ${@gl_interface_id},
+                                           p_accounting_date => to_date(${@accounting_date},'YYYY-MM-DD'),
+                                           p_period_name => ${@period_name},
+                                           p_period_num => ${@accounting_period_num},
+                                           p_segment1 => ${@segment1},
+                                           p_segment2 => ${@segment2},
+                                           p_segment3 => ${@segment3},
+                                           p_segment4 => ${@segment4},
+                                           p_segment5 => ${@segment5},
+                                           p_segment6 => ${@segment6},
+                                           p_segment7 => ${@segment7},
+                                           p_segment8 => ${@segment8},
+                                           p_segment9 => ${@segment9},
+                                           p_segment10 => ${@segment10},
+                                           p_segment11 => ${@segment11},
+                                           p_user_id => ${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="company_id" queryExpression="v.hec_company_id = ${@company_id}"/>
+        <bm:query-field name="imported_flag" queryExpression="v.imported_flag = ${@imported_flag}"/>
+        <bm:query-field name="status" queryExpression="v.status = ${@status}"/>
+        <bm:query-field name="batch_id" queryExpression="v.batch_id =${@batch_id}"/>
+        <bm:query-field name="reference4" queryExpression="v.reference4 =${@reference4}"/>
+        <bm:query-field name="attribute1" queryExpression="v.attribute1 like &apos;%&apos;||${@attribute1}||&apos;%&apos;"/>
+        <bm:query-field name="accounting_date_from" queryExpression="to_date(v.accounting_date,&apos;YYYY-MM-DD&apos;) &gt;= to_date(${@accounting_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="accounting_date_to" queryExpression="to_date(v.accounting_date,&apos;YYYY-MM-DD&apos;) &lt;= to_date(${@accounting_date_to},&apos;YYYY-MM-DD&apos;)"/>
+    </bm:query-fields>
+    <bm:fields>
+        <bm:field name="gl_interface_id" physicalName="GL_INTERFACE_ID"/>
+        <bm:field name="batch_id" physicalName="BATCH_ID"/>
+        <bm:field name="batch_description" physicalName="BATCH_DESCRIPTION"/>
+        <bm:field name="status" physicalName="STATUS"/>
+        <bm:field name="status_desc"/>
+        <bm:field name="set_of_books_id" physicalName="SET_OF_BOOKS_ID"/>
+        <bm:field name="accounting_date" physicalName="ACCOUNTING_DATE"/>
+        <bm:field name="currency_code" physicalName="CURRENCY_CODE"/>
+        <bm:field name="user_je_category_name" physicalName="USER_JE_CATEGORY_NAME"/>
+        <bm:field name="user_je_source_name" physicalName="USER_JE_SOURCE_NAME"/>
+        <bm:field name="currency_conversion_date" physicalName="CURRENCY_CONVERSION_DATE"/>
+        <bm:field name="user_currency_conversion_type" physicalName="USER_CURRENCY_CONVERSION_TYPE"/>
+        <bm:field name="currency_conversion_rate" physicalName="CURRENCY_CONVERSION_RATE"/>
+        <bm:field name="attribute1"/>
+        <bm:field name="segment1" prompt="公司段"/>
+        <bm:field name="segment1_desc" prompt="公司段"/>
+        <bm:field name="segment2" prompt="成本中心段"/>
+        <bm:field name="segment2_desc" prompt="成本中心段"/>
+        <bm:field name="segment3" prompt="科目段"/>
+        <bm:field name="segment3_desc" prompt="科目段"/>
+        <bm:field name="segment4" prompt="明细段"/>
+        <bm:field name="segment4_desc" prompt="明细段"/>
+        <bm:field name="segment5" prompt="关联单位段"/>
+        <bm:field name="segment5_desc" prompt="关联单位段"/>
+        <bm:field name="segment6" prompt="产品段"/>
+        <bm:field name="segment6_desc" prompt="产品段"/>
+        <bm:field name="segment7" prompt="渠道段"/>
+        <bm:field name="segment7_desc" prompt="渠道段"/>
+        <bm:field name="segment8" prompt="资金段"/>
+        <bm:field name="segment9" prompt="现金流量项段"/>
+        <bm:field name="segment9_desc" prompt="现金流量项段"/>
+        <bm:field name="segment10" prompt="备用段1"/>
+        <bm:field name="segment11" prompt="备用段2"/>
+        <bm:field name="segment20" prompt="资金支付批次号"/>
+        <bm:field name="entered_dr" prompt="原币借方金额"/>
+        <bm:field name="entered_cr" prompt="原币贷方金额"/>
+        <bm:field name="accounted_dr" prompt="本币借方金额"/>
+        <bm:field name="accounted_cr" prompt="本币贷方金额"/>
+        <bm:field name="period_name" prompt="入账期间"/>
+        <bm:field name="reference4" prompt="费控单据号"/>
+        <bm:field name="line_desc" prompt="行描述"/>
+        <bm:field name="accounting_period_num" prompt="入账期间"/>
+        <bm:field name="currency_conversion_type" prompt="汇率类型"/>
+        <bm:field name="imported_flag" prompt="导入状态"/>
+        <bm:field name="gl_request_id" prompt="总账请求ID"/>
+        <bm:field name="process_date" prompt="处理时间"/>
+        <bm:field name="error_status" prompt="错误状态"/>
+        <bm:field name="error_description" prompt="错误描述"/>
+        <bm:field name="je_batch_id" prompt="总账批次ID"/>
+        <bm:field name="je_header_id" prompt="凭证头ID"/>
+        <bm:field name="je_line_num" prompt="凭证行号"/>
+        <bm:field name="creation_date" prompt="创建日期"/>
+        <bm:field name="created_by" prompt="创建人"/>
+        <bm:field name="last_update_date" prompt="更新日期"/>
+        <bm:field name="last_update_by" prompt="最后更新人"/>
+        <bm:field name="hec_company_id" prompt="公司ID"/>
+        <bm:field name="company_name" prompt="公司"/>
+        <bm:field name="imported_flag_desc" prompt="导入状态"/>
+    </bm:fields>
+</bm:model>

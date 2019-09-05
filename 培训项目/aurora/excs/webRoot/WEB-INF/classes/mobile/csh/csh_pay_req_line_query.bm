@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--20130225 添加 cash_flow_item_description 现金流量项描述  cash_flow_code 现金流量项id-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select v.*,
+               decode(payment_requisition_line_type,
+					  'EXP_REQUISITION',
+					  requisition_need_pay_amount - requisited_amount,
+					  null) need_payment_amount,
+			   decode(payment_requisition_line_type,
+					  'EXP_REQUISITION',
+					  requisited_amount - requisited_payment_amount,
+					  null) requisited_unpayment_amount,
+			   (select cch.contract_number
+				  from con_contract_headers cch
+				 where cch.contract_header_id = v.contract_header_id) contract_number,
+				 
+				(select conl.payment_schedule_line_id 
+                   from con_payment_schedules conl
+                  where conl.payment_schedule_line_id =  v.contract_l_id)  payment_schedule_line_id,
+				 
+				(select conl.payment_schedule_line_number 
+                   from con_payment_schedules conl
+                  where conl.payment_schedule_line_id = v.contract_l_id)    payment_schedule_line_number
+			  from (select cprl.payment_requisition_header_id,
+			           cprl.expect_date,
+					   cprl.payment_requisition_line_id,
+					   cprl.payment_requisition_line_type,
+					   (select b.code_value_name
+						  from sys_codes_vl a, sys_code_values_vl b
+						 where a.code_id = b.code_id
+						   and a.code = 'PAYMENT_REQ_DOC_CATEGORY'
+						   and b.code_value = cprl.payment_requisition_line_type) p_payment_req_line_type,
+				(select e.description from csh_payment_methods_vl e where e.payment_method_id=cprl.payment_method) payment_method_id_display,
+					   cprl.payment_method payment_method_id,
+					   cprl.amount,
+					   cprl.description,
+					   cprl.ref_document_id,
+					   cprl.account_number,
+					   cprl.account_name,
+					   cprl.bank_code,
+					   cprl.bank_name,
+					   cprl.bank_location_code,
+					   cprl.bank_location_name,
+					   cprl.province_code,
+					   cprl.province_name,
+					   cprl.city_code,
+					   cprl.city_name,
+					   (select erh.exp_requisition_number
+						  from exp_requisition_headers erh
+						 where erh.exp_requisition_header_id =cprl.ref_document_id) ref_document_id_display,
+					   decode(payment_requisition_line_type,
+							  'EXP_REQUISITION',
+							  (select nvl(sum(erl.requisition_amount), 0)
+								 from exp_requisition_lines erl
+								where erl.exp_requisition_header_id =
+									  cprl.ref_document_id
+								  and erl.payment_flag = 'Y'),
+							  null) requisition_need_pay_amount,
+					   decode(cprl.payment_requisition_line_type,
+							  'EXP_REQUISITION',
+							  (select nvl(sum(cprl1.amount), 0)
+								 from csh_payment_requisition_lns cprl1,
+									  csh_payment_requisition_hds cprh
+								where cprl1.ref_document_id = cprl.ref_document_id
+								  and cprh.payment_requisition_header_id =
+									  cprl1.payment_requisition_header_id
+								  and cprh.status not in ('GENERATE'  ,'REJECTED' ,'TAKEN_BACK' )),
+							  null) requisited_amount,
+					   decode(cprl.payment_requisition_line_type,
+							  'EXP_REQUISITION',
+							  (select nvl(sum(cprr.amount), 0)
+								 from csh_payment_requisition_lns  cprl2,
+									  csh_payment_requisition_refs cprr,
+									  csh_transaction_lines        ctl,
+									  csh_transaction_headers      cth
+								where cprl2.ref_document_id = cprl.ref_document_id
+								  and cprl2.payment_requisition_line_id =
+									  cprr.payment_requisition_line_id
+								  and cprr.csh_transaction_line_id =
+									  ctl.transaction_line_id
+								  and ctl.transaction_header_id =
+									  cth.transaction_header_id
+								  and cth.posted_flag = 'Y'),
+							  null) requisited_payment_amount,
+					   (select cdf.document_id 
+						  from con_document_flows cdf
+						 where cdf.document_type = 'CON_CONTRACT' 
+						   and cdf.source_document_type =
+							   'CSH_PAYMENT_REQUISITION_LNS' 
+						   and cdf.source_document_id =
+							   cprl.payment_requisition_header_id
+						   and cdf.source_document_line_id = 
+						       cprl.payment_requisition_line_id	 ) contract_header_id ,
+					  (select cdf.document_line_id 
+						  from con_document_flows cdf
+						 where cdf.document_type = 'CON_CONTRACT' 
+						   and cdf.source_document_type =
+							   'CSH_PAYMENT_REQUISITION_LNS' 
+						   and cdf.source_document_id =
+							   cprl.payment_requisition_header_id
+						   and cdf.source_document_line_id = 
+						       cprl.payment_requisition_line_id	   ) contract_l_id,
+			       (select  name
+                                    from (select cev.employee_id id,
+                                                 cev.company_id,
+                                                 cev.name || '-' || cev.employee_code name,
+                                                 cev.employee_code,
+                                                 'EMPLOYEE' partner_category
+                                            from exp_company_employees_v cev
+                                           where cev.employee_enabled_flag = 'Y'                                             
+                                           union
+                                          select svv.vender_id,
+                                                 cv.company_id ,
+                                                 svv.description || '-' || svv.vender_code,
+                                                 svv.vender_code,
+                                                 'VENDER' partner_category
+                                            from pur_company_venders cv, pur_system_venders_vl svv
+                                           where cv.vender_id = svv.vender_id
+                                             and cv.enabled_flag = 'Y'
+                                           union
+                                          select cv.customer_id,
+                                                 cc.company_id,
+                                                 cv.description || '-' || cv.customer_code,
+                                                 cv.customer_code,
+                                                 'CUSTOMER' partner_category
+                                            from ord_company_customers cc, ord_system_customers_vl cv
+                                           where cc.customer_id = cv.customer_id
+                                             and cc.enabled_flag = 'Y') cat
+                                             
+                                           where partner_category = cprl.partner_category
+                                             and   id = cprl.partner_id
+                                             and  cprl.company_id = company_id
+                                             )  p_partner_name, 			       
+	           cprl.company_id,
+	           cprl.partner_category,
+	           (select v.code_value_name from sys_codes s ,sys_code_values_vl v where s.code = 'PAYMENT_OBJECT' and s.code_id = v.code_id and v.code_value = cprl.partner_category) as partner_category_name, 
+	           cprl.partner_id,
+	           cprl.csh_transaction_class_code,
+	           
+	            (SELECT ccf.description
+		                          FROM csh_cash_flow_items_vl ccf
+		                         WHERE ccf.cash_flow_item_id = cprl.cash_flow_code) cash_flow_item_description,
+		                         cprl.cash_flow_code,
+	           
+	           (select   a.description
+	           from csh_transaction_classes_vl a
+	          where a.csh_transaction_type_code = 'PREPAYMENT'
+	            and a.enabled_flag = 'Y'
+	            and a.csh_transaction_class_code = cprl.csh_transaction_class_code) cls_des
+	         
+	          from csh_payment_requisition_lns cprl) v
+
+			#WHERE_CLAUSE# 
+			order by payment_requisition_line_id
+		]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="expect_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="EXPECT_DATE" prompt="CSH_PAYMENT_REQUISITION_LNS.EXPECT_DATE"/>
+        <bm:field name="payment_requisition_header_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PAYMENT_REQUISITION_HEADER_ID"/>
+        <bm:field name="payment_requisition_line_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PAYMENT_REQUISITION_LINE_ID"/>
+        <bm:field name="payment_requisition_line_type" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PAYMENT_REQUISITION_LINE_TYPE"/>
+        <bm:field name="p_payment_req_line_type" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="P_PAYMENT_REQ_LINE_TYPE"/>
+        <bm:field name="amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="AMOUNT"/>
+        <bm:field name="description" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DESCRIPTION"/>
+        <bm:field name="ref_document_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="REF_DOCUMENT_ID"/>
+        <bm:field name="ref_document_id_display" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="REF_DOCUMENT_ID_DISPLAY"/>
+        <bm:field name="need_payment_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="NEED_PAYMENT_AMOUNT"/>
+        <bm:field name="requisited_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="REQUISITED_AMOUNT"/>
+        <bm:field name="requisited_payment_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="REQUISITED_PAYMENT_AMOUNT"/>
+        <bm:field name="contract_header_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="CONTRACT_HEADER_ID"/>
+        <bm:field name="contract_l_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="CONTRACT_L_ID"/>
+        <bm:field name="p_partner_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="P_PARTNER_NAME"/>
+        <bm:field name="company_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="COMPANY_ID"/>
+        <bm:field name="partner_category" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PARTNER_CATEGORY"/>
+        <bm:field name="partner_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PARTNER_ID"/>
+        <bm:field name="csh_transaction_class_code" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CSH_TRANSACTION_CLASS_CODE"/>
+        <bm:field name="cls_des" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CLS_DES"/>
+        <bm:field name="requisited_unpayment_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="REQUISITED_UNPAYMENT_AMOUNT"/>
+        <bm:field name="contract_number" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CONTRACT_NUMBER"/>
+        <bm:field name="payment_method_id_display"/>
+        <bm:field name="payment_method_id"/>
+        <bm:field name="account_number"/>
+        <bm:field name="account_name"/>
+        <bm:field name="payment_schedule_line_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PAYMENT_SCHEDULE_LINE_ID"/>
+        <bm:field name="payment_schedule_line_number" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PAYMENT_SCHEDULE_LINE_NUMBER"/>
+        <bm:field name="partner_category_name"/>
+        <bm:field name="cash_flow_item_description"/>
+        <bm:field name="cash_flow_code"/>
+        <bm:field name="bank_code"/>
+        <bm:field name="bank_name"/>
+        <bm:field name="bank_location_code"/>
+        <bm:field name="bank_location_name"/>
+        <bm:field name="province_code"/>
+        <bm:field name="province_name"/>
+        <bm:field name="city_code"/>
+        <bm:field name="city_name"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="payment_requisition_header_id" queryOperator="="/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="payment_requisition_header_id=${/parameter/@payment_requisition_header_id}"/>
+    </bm:data-filters>
+</bm:model>

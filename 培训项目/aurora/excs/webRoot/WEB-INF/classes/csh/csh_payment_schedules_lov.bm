@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select * from (
+				SELECT CCH.CONTRACT_HEADER_ID,
+		       CCH.CONTRACT_NUMBER,
+		       CPS.PAYMENT_SCHEDULE_LINE_ID,
+		       CPS.PAYMENT_SCHEDULE_LINE_NUMBER,
+		       CPS.AMOUNT SCHEDULE_AMOUNT,
+		       CPS.AMOUNT,
+		       TO_CHAR(CPS.DUE_DATE, 'YYYY-MM-DD') DUE_DATE,
+		       (SELECT NVL(SUM(CCTPS.AMOUNT), 0)
+		          FROM CON_CASH_TRX_PMT_SCHEDULE_LNS CCTPS,
+		               CSH_TRANSACTION_LINES         CTL,
+		               CSH_TRANSACTION_HEADERS       CTH
+		         WHERE CCTPS.CSH_TRANSACTION_LINE_ID = CTL.TRANSACTION_LINE_ID
+		           AND CTL.TRANSACTION_HEADER_ID = CTH.TRANSACTION_HEADER_ID
+		           AND CTH.POSTED_FLAG = 'Y'
+		           AND CCTPS.PAYMENT_SCHEDULE_LINE_ID = CPS.PAYMENT_SCHEDULE_LINE_ID) PAYMENT_AMOUNT,
+		       (select code_value_name
+		          from sys_code_values_vl b, sys_codes a
+		         where b.code_id = a.code_id
+		           and a.code = 'PAYMENT_OBJECT'
+		           and b.code_value = cps.PARTNER_CATEGORY) PARTNER_CATEGORY1,
+		       decode(CPS. PARTNER_CATEGORY,
+		              'EMPLOYEE',
+		              (select name || '-' || employee_code
+		                 from exp_employees ee
+		                where ee.employee_id = CPS.partner_id),
+		              'CUSTOMER',
+		              (select vc.DESCRIPTION || '-' || vc.CUSTOMER_CODE
+		                 from ord_system_customers_vl vc
+		                where vc.CUSTOMER_ID = CPS.partner_id),
+		              (select vv.DESCRIPTION || '-' || vv.VENDER_CODE
+		                 from pur_system_venders_vl vv
+		                where vv.VENDER_ID = CPS.partner_id)) partner_id
+		  FROM CON_PAYMENT_SCHEDULES CPS, CON_CONTRACT_HEADERS CCH
+		 where CCH.CONTRACT_HEADER_ID = CPS.CONTRACT_HEADER_ID
+		   AND CCH.STATUS = 'CONFIRM'
+		   AND CCH.CURRENCY_CODE =
+		       nvl(${@currency_code}, CCH.CURRENCY_CODE)
+		   AND CPS.PARTNER_CATEGORY =
+		       nvl(${@partner_category}, CPS.PARTNER_CATEGORY)
+		   AND CPS.PARTNER_ID = nvl(${@partner_id}, CPS.PARTNER_ID)
+		   AND CCH.CONTRACT_HEADER_ID = ${@contract_header_id}
+		 ORDER BY CPS.PAYMENT_SCHEDULE_LINE_NUMBER)
+		 #WHERE_CLAUSE#]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="contract_header_id"/>
+        <bm:field name="contract_number" displayWidth="100" forDisplay="true" forQuery="true" prompt="CON_CONTRACT_HEADERS.DOCUMENT_NUMBER" queryExpression="CONTRACT_NUMBER like upper(&apos;%&apos;||${@contract_number}||&apos;%&apos;)"/>
+        <bm:field name="payment_schedule_line_id"/>
+        <bm:field name="payment_schedule_line_number" displayWidth="100" forDisplay="true" forQuery="true" prompt="CON_PAYMENT_SCHEDULES.PAYMENT_SCHEDULE_LINE_NUMBER" queryExpression="PAYMENT_SCHEDULE_LINE_NUMBER like upper(&apos;%&apos;||${@payment_schedule_line_number}||&apos;%&apos;)"/>
+        <bm:field name="schedule_amount" displayWidth="60" forDisplay="true" prompt="CON_PAYMENT_SCHEDULES.AMOUNT"/>
+        <bm:field name="due_date" displayWidth="70" forDisplay="true" prompt="CON_PAYMENT_SCHEDULES.DUE_DATE"/>
+        <bm:field name="payment_amount" displayWidth="60" forDisplay="true" prompt="CON_PAYMENT_SCHEDULES.PAYMENT_AMOUNT"/>
+        <bm:field name="partner_category1" displayWidth="80" forDisplay="true" prompt="CON_PAYMENT_SCHEDULES.PARTNER_CATEGORY"/>
+        <bm:field name="partner_id" displayWidth="80" forDisplay="true" prompt="CON_PAYMENT_SCHEDULES.PARTNER_ID"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="amount" queryExpression="schedule_amount like ${@amount}"/>
+        <bm:query-field field="payment_schedule_line_number" queryOperator="like"/>
+        <bm:query-field field="contract_number" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

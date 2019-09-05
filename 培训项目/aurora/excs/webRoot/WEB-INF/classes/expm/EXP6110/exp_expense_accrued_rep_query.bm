@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.exp_report_header_id,
+                        h.period_name,
+                        v.company_code,
+                        h.employee_id,
+                        h.exp_report_type_id,
+                        h.company_id,
+                        v.company_code
+                        || '-'
+                        || v.company_short_name company,
+                        h.exp_report_number,
+                        (SELECT
+                            ertv.expense_report_type_code
+                        FROM
+                            exp_expense_report_types_vl ertv
+                        WHERE
+                            ertv.expense_report_type_id = h.exp_report_type_id
+                        ) type_code,
+                        (SELECT
+                            ertv.description
+                        FROM
+                            exp_expense_report_types_vl ertv
+                        WHERE
+                            ertv.expense_report_type_id = h.exp_report_type_id
+                        ) type_description,
+                        (SELECT
+                            ee.name
+                            || '-'
+                            || ee.employee_code
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id = h.employee_id
+                        ) employee_name,
+                        h.currency_code,
+                        (SELECT
+                            SUM(l.report_amount)
+                        FROM
+                            exp_report_lines l
+                        WHERE
+                            l.exp_report_header_id = h.exp_report_header_id
+                        ) report_amount,
+                        TO_CHAR(h.report_date, 'YYYY-MM-DD') report_date,
+                        h.report_status,
+                        (SELECT
+                            scvv.code_value_name
+                        FROM
+                            sys_code_values_v scvv
+                        WHERE
+                            scvv.code       = 'EXP_EXPENSE_REPORT_STATUS' AND
+                            scvv.code_value = h.report_status
+                        ) report_status_desc,
+                        h.description
+                    FROM
+                        exp_report_headers h,
+                        exp_report_lines erl,
+                        exp_report_dists erd,
+                        fnd_companies_vl v
+                    WHERE
+                    	h.audit_flag = 'N' and
+                        h.company_id           = v.company_id AND
+                        h.report_status       IN (${@rep_generate}, ${@rep_submit}, ${@rep_approved}) AND
+                        h.exp_report_header_id = erl.exp_report_header_id AND
+                        erl.exp_report_line_id = erd.exp_report_line_id AND
+                        erd.period_name       <= ${@period_name}
+                    ) a
+                WHERE
+                    (
+                        ${@company_code_from} IS NULL OR
+                        a.company_code        >= SUBSTR(${@company_code_from},0,instr(${@company_code_from},' ') - 1)
+                    )
+                    AND
+                    (
+                        ${@company_code_to} IS NULL OR
+                        a.company_code      <= SUBSTR(${@company_code_to},0,instr(${@company_code_to},' ') - 1)
+                    )
+                    AND
+                    (
+                        ${@document_type2} IS NULL OR
+                        a.type_code         = ${@document_type2}
+                    )
+                    AND
+                    (
+                        ${@document_number2} IS NULL OR
+                        a.exp_report_number   = ${@document_number2}
+                    )
+                ORDER BY
+                    a.exp_report_number DESC
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="rep_generate"/>
+                <bm:parameter name="rep_submit"/>
+                <bm:parameter name="rep_approved"/>
+                <bm:parameter name="period_name"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <!-- <bm:query-fields> -->
+    <!-- <bm:query-field name="company_code_from" queryExpression="a.company_code &gt;= ${@company_code_from}"/>
+        <bm:query-field name="company_code_to" queryExpression="a.company_code &lt;= ${@company_code_to}"/> -->
+    <!-- <bm:query-field name="document_type2" queryExpression="a.type_code = ${@document_type2}"/>
+        <bm:query-field name="document_number2" queryExpression="a.exp_report_number = ${@document_number2}"/> -->
+    <!-- </bm:query-fields> -->
+</bm:model>

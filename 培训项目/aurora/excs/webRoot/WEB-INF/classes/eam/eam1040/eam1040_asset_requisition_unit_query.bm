@@ -1,0 +1,768 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        rh.ast_requisition_type_id,
+                        rh.requisition_header_id,
+                        rh.asset_book_id,
+                        ert.base_trx_category,
+                        ert.ast_requisition_type_code,
+                        (SELECT
+                            v.AST_REQUISITION_TYPE_NAME
+                        FROM
+                            eam_requisition_types_vl v
+                        WHERE
+                            v.AST_REQUISITION_TYPE_ID = ert.ast_requisition_type_id
+                        ) ast_requisition_type_name,
+                        rh.requisition_number,
+                        eah.status,
+                        rh.requisition_status,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_code_values_v v
+                        WHERE
+                            v.code       = 'EAM_REQUISITION_STATUS' AND
+                            v.code_value = rh.requisition_status
+                        ) req_status_desc,
+                        rh.employee_id,
+                        (SELECT
+                            e.employee_code
+                            || '-'
+                            || e.name
+                        FROM
+                            exp_employees e
+                        WHERE
+                            e.employee_id = rh.employee_id
+                        ) employee_name,
+                        rh.value_type,
+                        CASE
+                            WHEN ert.base_trx_category = 'RET' OR
+                                ert.base_trx_category  = 'REC' OR
+                                ert.base_trx_category  = 'REB'
+                            THEN ''
+                            ELSE
+                                (SELECT
+                                    v.code_value_name
+                                FROM
+                                    sys_code_values_v v
+                                WHERE
+                                    v.code       = 'EAM_VALUE_TYPE' AND
+                                    v.code_value = rh.value_type
+                                )
+                        END value_type_desc, --价值类型
+                        TO_CHAR(rh.requisition_date, 'yyyy-mm-dd') requisition_date,
+                        rl.RETIREMRNT_TYPE retirement_type,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_code_values_v v
+                        WHERE
+                            v.code       = 'RETIREMENT_TYPE' AND
+                            v.code_value = rl.RETIREMRNT_TYPE
+                        ) retirement_type_desc, -- 报废类型
+                        eah.tag_number,
+                        (SELECT DISTINCT
+                            v.ASSET_NAME
+                        FROM
+                            eam_asset_headers_vl v
+                        WHERE
+                            v.asset_id = eah.asset_id
+                        ) asset_name,
+                        rh.description,
+                        rl.contract_id,
+                        (SELECT
+                            cch.contract_number
+                        FROM
+                            con_contract_headers cch
+                        WHERE
+                            cch.contract_header_id = rl.contract_id
+                        ) contract_number, --合同编号
+                        (SELECT
+                            cch.document_desc
+                        FROM
+                            con_contract_headers cch
+                        WHERE
+                            cch.contract_header_id = rl.contract_id
+                        ) contract_name, --合同名称
+                        rl.currency_code,
+                        CASE
+                            WHEN ert.base_trx_category = 'RCL' OR
+                                ert.base_trx_category  = 'ADD' OR
+                                ert.base_trx_category  = 'ADJ' OR
+                                ert.base_trx_category  = 'REV' OR
+                                ert.base_trx_category  = 'TRA' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'DEP'
+                            THEN ''
+                            WHEN ert.base_trx_category = 'STL'
+                            THEN
+                                (SELECT
+                                    v.currency_name
+                                FROM
+                                    gld_currency_vl v
+                                WHERE
+                                    v.currency_code = eah.currency_code
+                                )
+                            ELSE
+                                (SELECT
+                                    gvl.currency_name
+                                FROM
+                                    gld_currency_vl gvl
+                                WHERE
+                                    gvl.currency_code = rl.currency_code
+                                )
+                        END currency_desc, -- 币种
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'RCL' OR
+                                ert.base_trx_category  = 'RET' OR
+                                ert.base_trx_category  = 'REC' OR
+                                ert.base_trx_category  = 'REB' OR
+                                ert.base_trx_category  = 'TRA' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'DEP'
+                            THEN NULL
+                            ELSE rl.quantity
+                        END quantity, -- 数量
+                        CASE
+                            WHEN ert.base_trx_category = 'RCL'
+                            THEN NULL
+                            ELSE rl.price
+                        END price, -- 单价
+                        CASE
+                            WHEN ert.base_trx_category = 'RCL' OR
+                                ert.base_trx_category  = 'RET' OR
+                                ert.base_trx_category  = 'REC' OR
+                                ert.base_trx_category  = 'REB' OR
+                                ert.base_trx_category  = 'ADJ' OR
+                                ert.base_trx_category  = 'REV' OR
+                                ert.base_trx_category  = 'TRA' OR
+                                ert.base_trx_category  = 'STL' OR
+                                ert.base_trx_category  = 'DEP'
+                            THEN NULL
+                            ELSE rl.amount
+                        END amount, -- 金额
+                        CASE
+                            WHEN ert.base_trx_category = 'RCL'
+                            THEN ''
+                            ELSE TO_CHAR(rl.accptn_check_date, 'yyyy-mm-dd')
+                        END accptn_check_date, -- 验收日期
+                        CASE
+                            WHEN ert.base_trx_category = 'RCL' OR
+                                ert.base_trx_category  = 'REC' OR
+                                ert.base_trx_category  = 'REB' OR
+                                ert.base_trx_category  = 'ADD' OR
+                                ert.base_trx_category  = 'LER' OR
+                                ert.base_trx_category  = 'ADJ' OR
+                                ert.base_trx_category  = 'REV' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'STL'
+                            THEN ''
+                            ELSE TO_CHAR(eah.start_use_date, 'yyyy-mm-dd')
+                        END start_use_date, -- 启用日期
+                        CASE
+                            WHEN ert.base_trx_category = 'LER'
+                            THEN
+                                (SELECT
+                                    eali.cash_pledge
+                                FROM
+                                    eam_asset_lease_info eali
+                                WHERE
+                                    eali.asset_id = eah.asset_id
+                                )
+                            ELSE NULL
+                        END cash_pledge, --  押金
+                        CASE
+                            WHEN ert.base_trx_category = 'LER'
+                            THEN
+                                (SELECT
+                                    TO_CHAR(eali.rent_date_from, 'yyyy-mm-dd')
+                                FROM
+                                    eam_asset_lease_info eali
+                                WHERE
+                                    eali.asset_id = eah.asset_id
+                                )
+                            ELSE ''
+                        END rent_date_from, --  出租日期从
+                        CASE
+                            WHEN ert.base_trx_category = 'LER'
+                            THEN
+                                (SELECT
+                                    TO_CHAR(eali.rent_date_to, 'yyyy-mm-dd')
+                                FROM
+                                    eam_asset_lease_info eali
+                                WHERE
+                                    eali.asset_id = eah.asset_id
+                                )
+                            ELSE ''
+                        END rent_date_to, --  出租日期从
+                        CASE
+                            WHEN ert.base_trx_category = 'LER'
+                            THEN rl.return_address
+                            ELSE ''
+                        END revert_address,                                -- 归还位置
+                        TO_CHAR(rl.return_date, 'yyyy-mm-dd') revert_date, -- 归还日期
+                        rl.to_unit_id,
+                        CASE
+                            WHEN ert.base_trx_category = 'RET' OR
+                                ert.base_trx_category  = 'REC' OR
+                                ert.base_trx_category  = 'LER' OR
+                                ert.base_trx_category  = 'ADJ' OR
+                                ert.base_trx_category  = 'REV' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'STL' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'LND'
+                            THEN ''
+                            WHEN ert.base_trx_category = 'TRA' OR
+                                ert.base_trx_category  = 'DEP'
+                            THEN
+                                (SELECT
+                                    eou.description
+                                FROM
+                                    exp_org_unit_vl eou
+                                WHERE
+                                    eou.unit_id = rl.to_unit_id
+                                )
+                            ELSE
+                                (SELECT
+                                    eou.description
+                                FROM
+                                    exp_org_unit_vl eou
+                                WHERE
+                                    eou.unit_id = eah.using_unit_id
+                                )
+                        END unit_name, -- 使用部门
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'RCL' OR
+                                ert.base_trx_category  = 'REC' OR
+                                ert.base_trx_category  = 'REB' OR
+                                ert.base_trx_category  = 'ADD' OR
+                                ert.base_trx_category  = 'LER' OR
+                                ert.base_trx_category  = 'ADJ' OR
+                                ert.base_trx_category  = 'REV' OR
+                                ert.base_trx_category  = 'TRA' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'STL' OR
+                                ert.base_trx_category  = 'DEP'
+                            THEN NULL
+                            ELSE
+                                (SELECT
+                                    fi.original_cost
+                                FROM
+                                    eam_asset_finance_info fi
+                                WHERE
+                                    fi.asset_id = rl.asset_id
+                                )
+                        END original_cost, -- 原始成本
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'RCL' OR
+                                ert.base_trx_category  = 'ADD' OR
+                                ert.base_trx_category  = 'LER' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK'
+                            THEN NULL
+                            ELSE rl.from_cost
+                        END current_cost, -- 当前成本
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'RCL' OR
+                                ert.base_trx_category  = 'RET' OR
+                                ert.base_trx_category  = 'REC' OR
+                                ert.base_trx_category  = 'REB' OR
+                                ert.base_trx_category  = 'ADD' OR
+                                ert.base_trx_category  = 'LER' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK'
+                            THEN NULL
+                            WHEN ert.base_trx_category = 'TRA' OR
+                                ert.base_trx_category  = 'DEP'
+                            THEN
+                                (SELECT
+                                    NVL(i.accumulated_dep_amt,0)
+                                FROM
+                                    eam_asset_finance_info i
+                                WHERE
+                                    i.asset_id   = eah.asset_id AND
+                                    eah.asset_id = rl.asset_id
+                                )
+                            ELSE rl.accumulated_dep_amt
+                        END accumulated_dep_amt, -- 累计折旧
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'RCL' OR
+                                ert.base_trx_category  = 'RET' OR
+                                ert.base_trx_category  = 'REC' OR
+                                ert.base_trx_category  = 'REB' OR
+                                ert.base_trx_category  = 'ADD' OR
+                                ert.base_trx_category  = 'LER' OR
+                                ert.base_trx_category  = 'TRA' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK'
+                            THEN NULL
+                            ELSE rl.impairment_loss_amt
+                        END impairment_loss_amt, -- 减值准备
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'RCL' OR
+                                ert.base_trx_category  = 'REB' OR
+                                ert.base_trx_category  = 'ADD' OR
+                                ert.base_trx_category  = 'LER' OR
+                                ert.base_trx_category  = 'ADJ' OR
+                                ert.base_trx_category  = 'REV' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'STL'
+                            THEN NULL
+                            WHEN ert.base_trx_category = 'REC'
+                            THEN
+                                (SELECT
+                                    fi.current_cost - fi.accumulated_dep_amt
+                                FROM
+                                    eam_asset_finance_info fi
+                                WHERE
+                                    fi.asset_id = rl.asset_id
+                                )
+                            WHEN ert.base_trx_category = 'RET'
+                            THEN
+                                (SELECT
+                                    NVL(rl.current_value,(fi.current_cost - fi.accumulated_dep_amt))
+                                FROM
+                                    eam_asset_finance_info fi
+                                WHERE
+                                    fi.asset_id = rl.asset_id
+                                )
+                            ELSE
+                                (SELECT
+                                    fi.current_cost - fi.accumulated_dep_amt - fi.impairment_loss_amt
+                                FROM
+                                    eam_asset_finance_info fi
+                                WHERE
+                                    fi.asset_id = rl.asset_id
+                                )
+                        END net_cost,                                      -- 净值
+                        TO_CHAR(rl.retire_date, 'yyyy-mm-dd') retire_date, -- 报废日期
+                        CASE
+                            WHEN ert.ast_requisition_type_code = 'CZ001' OR
+                                ert.ast_requisition_type_code  = 'CZ003' OR
+                                ert.ast_requisition_type_code  = 'CZ005'
+                            THEN rl.expense_amount
+                            ELSE NULL
+                        END retire_expense, -- 报废费用
+                        CASE
+                            WHEN ert.ast_requisition_type_code = 'CZ001' OR
+                                ert.ast_requisition_type_code  = 'CZ003' OR
+                                ert.ast_requisition_type_code  = 'CZ005'
+                            THEN rl.revenue_amount
+                            ELSE NULL
+                        END retire_revenue, -- 报废收入
+                        CASE
+                            WHEN ert.ast_requisition_type_code = 'CZ001' OR
+                                ert.ast_requisition_type_code  = 'CZ003' OR
+                                ert.ast_requisition_type_code  = 'CZ005'
+                            THEN rl.pl_amount
+                            ELSE NULL
+                        END retire_amount, -- 报废金额
+                        CASE
+                            WHEN ert.ast_requisition_type_code = 'CZ005'
+                            THEN TO_CHAR(rl.dispose_date, 'yyyy-mm-dd')
+                            ELSE ''
+                        END rebuild_date, -- 重建日期
+                        /*CASE
+                            WHEN ert.base_trx_category = 'REB'
+                            THEN
+                                (SELECT
+                                    v.code_value_name
+                                FROM
+                                    sys_code_values_v v
+                                WHERE
+                                    v.code      = 'EAM_ASSET_STATUS' AND
+                                    v.code_value=eah.status
+                                )
+                            ELSE ''
+                        END status_desc,*/ --资产状态 modify by whf 20151218 
+                        (SELECT
+                                    v.code_value_name
+                                FROM
+                                    sys_code_values_v v
+                                WHERE
+                                    v.code      = 'EAM_ASSET_STATUS' AND
+                                    v.code_value=eah.status
+                                )status_desc,
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'RET' OR
+                                ert.base_trx_category  = 'REC' OR
+                                ert.base_trx_category  = 'REB' OR
+                                ert.base_trx_category  = 'ADD' OR
+                                ert.base_trx_category  = 'LER' OR
+                                ert.base_trx_category  = 'ADJ' OR
+                                ert.base_trx_category  = 'REV' OR
+                                ert.base_trx_category  = 'TRA' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'STL' OR
+                                ert.base_trx_category  = 'DEP'
+                            THEN NULL
+                            WHEN ert.base_trx_category = 'RCL'
+                            THEN rl.used_month
+                            ELSE
+                                (SELECT
+                                    fi.life_in_month
+                                FROM
+                                    eam_asset_finance_info fi
+                                WHERE
+                                    fi.asset_id = rl.asset_id
+                                )
+                        END used_month, -- 使用月数
+                        CASE
+                            WHEN ert.base_trx_category = 'REC'
+                            THEN
+                                (SELECT
+                                    (fi.life_in_month - fi.remaining_life_in_month)
+                                FROM
+                                    eam_asset_finance_info fi
+                                WHERE
+                                    fi.asset_id = rl.asset_id
+                                )
+                            ELSE NULL
+                        END use_month, -- 已用月数
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'RET' OR
+                                ert.base_trx_category  = 'REB' OR
+                                ert.base_trx_category  = 'ADD' OR
+                                ert.base_trx_category  = 'LER' OR
+                                ert.base_trx_category  = 'ADJ' OR
+                                ert.base_trx_category  = 'REV' OR
+                                ert.base_trx_category  = 'TRA' OR
+                                ert.base_trx_category  = 'BAC' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'STL' OR
+                                ert.base_trx_category  = 'DEP'
+                            THEN NULL
+                            WHEN ert.base_trx_category = 'RCL'
+                            THEN rl.remaining_life_in_month
+                            ELSE
+                                (SELECT
+                                    fi.remaining_life_in_month
+                                FROM
+                                    eam_asset_finance_info fi
+                                WHERE
+                                    fi.asset_id = rl.asset_id
+                                )
+                        END remaining_life_in_month, -- 剩余月数
+                        CASE
+                            WHEN ert.ast_requisition_type_code = 'CZ002' OR
+                                ert.ast_requisition_type_code  = 'CZ004'
+                            THEN TO_CHAR(rl.dispose_date, 'yyyy-mm-dd')
+                            ELSE ''
+                        END dispose_date, -- 处置日期
+                        CASE
+                            WHEN ert.ast_requisition_type_code = 'CZ002' OR
+                                ert.ast_requisition_type_code  = 'CZ004'
+                            THEN rl.expense_amount
+                            ELSE NULL
+                        END dispose_expense, -- 预计费用
+                        CASE
+                            WHEN ert.ast_requisition_type_code = 'CZ002' OR
+                                ert.ast_requisition_type_code  = 'CZ004'
+                            THEN rl.revenue_amount
+                            ELSE NULL
+                        END dispose_revenue, -- 预计收入
+                        CASE
+                            WHEN ert.ast_requisition_type_code = 'CZ002' OR
+                                ert.ast_requisition_type_code  = 'CZ004'
+                            THEN rl.pl_amount
+                            ELSE NULL
+                        END dispose_amount,                                      -- 净损值
+                        TO_CHAR(rl.value_adj_date, 'yyyy-mm-dd') value_adj_date, -- 调整日期
+                        CASE
+                            WHEN ert.base_trx_category = 'REV' OR
+                                ert.base_trx_category  = 'ADJ'
+                            THEN rl.pl_amount
+                            ELSE NULL
+                        END adjust_amount, -- 调整金额
+                        CASE
+                            WHEN ert.base_trx_category = 'STL'
+                            THEN TO_CHAR(rl.start_date, 'yyyy-mm-dd')
+                            ELSE ''
+                        END setlement_date, --决算日期
+                        CASE
+                            WHEN ert.base_trx_category = 'STL'
+                            THEN rl.to_cost -
+                                (SELECT
+                                    s.cost
+                                FROM
+                                    eam_document_req_releases r,
+                                    eam_asset_cost_sources s
+                                WHERE
+                                    r.source_document_category = 'EAM_COST_SOURCE' AND
+                                    r.requisition_header_id    = rl.requisition_header_id AND
+                                    s.cost_source_id           = r.source_document_id AND
+                                    s.asset_id                 = rl.asset_id AND
+                                    r.requisition_line_id      = rl.requisition_line_id
+                                )
+                            ELSE NULL
+                        END final_cost, --决算调整金额
+                        CASE
+                            WHEN ert.base_trx_category = 'DEP' OR
+                                ert.base_trx_category  = 'TRA' OR
+                                ert.base_trx_category  = 'LER'
+                            THEN rl.current_location_address
+                            WHEN ert.base_trx_category = 'RNT' OR
+                                ert.base_trx_category  = 'LND' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'BAC'
+                            THEN
+                                (SELECT
+                                    TO_CHAR(his.install_position)
+                                FROM
+                                    eam_asset_location_his his
+                                WHERE
+                                    his.location_id = rl.from_location_id
+                                )
+                            ELSE ''
+                        END current_location_address, -- 当前位置
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'BAC'
+                            THEN rl.partner_name
+                            ELSE ''
+                        END objective, -- 目标方
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'DEP' OR
+                                ert.base_trx_category  = 'TRA'
+                            THEN rl.to_location_address
+                            ELSE ''
+                        END objective_address, -- 目标位置
+                        rl.to_employee_id,
+                        CASE
+                            WHEN ert.base_trx_category = 'ADD'
+                            THEN ''
+                            ELSE
+                                (SELECT
+                                    e.employee_code
+                                    || '-'
+                                    || e.name
+                                FROM
+                                    exp_employees e
+                                WHERE
+                                    e.employee_id = rl.to_employee_id
+                                )
+                        END to_employee_name, -- 接收人
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'BAC'
+                            THEN TO_CHAR(rl.start_date, 'yyyy-mm-dd')
+                            ELSE ''
+                        END start_date, --租借起始日期
+                        CASE
+                            WHEN ert.base_trx_category = 'LND' OR
+                                ert.base_trx_category  = 'RNT' OR
+                                ert.base_trx_category  = 'LBK' OR
+                                ert.base_trx_category  = 'BAC'
+                            THEN TO_CHAR(rl.end_date, 'yyyy-mm-dd')
+                            ELSE ''
+                        END end_date， --预计收回日期日期
+                        CASE
+                            WHEN ert.base_trx_category = 'LBK' OR
+                                ert.base_trx_category  = 'BAC'
+                            THEN rl.to_location_address
+                            ELSE ''
+                        END to_location_address,                                    -- 收回位置
+                        TO_CHAR(rl.acceptance_date, 'yyyy-mm-dd') acceptance_date ， -- 收回日期
+                        rl.from_entity_class_id,
+                        (SELECT DISTINCT
+                            v.DESCRIPTION
+                        FROM
+                            eam_asset_entity_classes_vl v
+                        WHERE
+                            v.class_id = rl.from_entity_class_id
+                        ) entity_class_desc, -- 原类别
+                        CASE
+                            WHEN ert.base_trx_category = 'RCL'
+                            THEN
+                                (SELECT
+                                    fi.life_in_month / 12
+                                FROM
+                                    eam_asset_finance_info fi
+                                WHERE
+                                    fi.asset_id = rl.asset_id
+                                )
+                            ELSE NULL
+                        END depr_year, --原折旧年限
+                        rl.to_entity_class_id,
+                        (SELECT DISTINCT
+                            v.DESCRIPTION
+                        FROM
+                            eam_asset_entity_classes_vl v
+                        WHERE
+                            v.class_id = rl.to_entity_class_id
+                        ) to_entity_class_desc, -- 新类别
+                        rl.new_dep_flag,        -- 执行新类别折旧规则
+                        rl.copy_flag,           -- 复制特性参数
+                        rl.adjustment_flag,     -- 追溯调整
+                        eah.lock_flag,          -- 锁定标识
+                        rh.company_id,
+                        rl.line_number,
+                        (SELECT
+                            fcv.company_short_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.COMPANY_ID = rh.company_id
+                        ) company_name
+                    FROM
+                        eam_requisition_headers rh,
+                        eam_requisition_lines rl,
+                        eam_asset_headers eah,
+                        eam_requisition_types ert
+                    WHERE
+                        rh.requisition_header_id    = rl.requisition_header_id AND
+                        eah.asset_id                = rl.asset_id AND
+                        ert.ast_requisition_type_id = rh.ast_requisition_type_id AND
+                        ert.ENABLED_FLAG            = 'Y' AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            sys_user su,
+                            exp_employee_assigns eea,
+                            exp_org_position eop
+                        WHERE
+                            eea.employee_id  = su.employee_id AND
+                            eea.position_id  = eop.position_id AND
+                            rh.unit_id       = eop.unit_id AND
+                            eea.enabled_flag = 'Y' AND
+                            su.user_id       = ${/session/@user_id}
+                        )
+                    ) ssv #WHERE_CLAUSE#
+                ORDER BY
+                    ssv.requisition_number DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="asset_book_id" prompt=""/>
+        <bm:field name="requisition_header_id" prompt=""/>
+        <bm:field name="ast_requisition_type_id" prompt=""/>
+        <bm:field name="base_trx_category" prompt="ACP_REQUISITION.REQUEST_NO"/>
+        <bm:field name="ast_requisition_type_code"/>
+        <bm:field name="ast_requisition_type_name" prompt="申请类型"/>
+        <bm:field name="requisition_number" prompt="申请单号"/>
+        <bm:field name="requisition_status" prompt=""/>
+        <bm:field name="status" prompt=""/>
+        <bm:field name="req_status_desc" prompt="单据状态"/>
+        <bm:field name="employee_id"/>
+        <bm:field name="employee_name" prompt="申请人"/>
+        <bm:field name="value_type" prompt=""/>
+        <bm:field name="value_type_desc" prompt="价值类型"/>
+        <bm:field name="requisition_date" prompt="申请日期"/>
+        <bm:field name="retirement_type" prompt=""/>
+        <bm:field name="retirement_type_desc" prompt="报废类型"/>
+        <bm:field name="tag_number" prompt="卡片号"/>
+        <bm:field name="asset_name" prompt="资产名称"/>
+        <bm:field name="description" prompt="备注说明"/>
+        <bm:field name="contract_id" prompt=""/>
+        <bm:field name="contract_number" prompt="合同编号"/>
+        <bm:field name="contract_name" prompt="合同名称"/>
+        <bm:field name="currency_code" prompt=""/>
+        <bm:field name="currency_desc" prompt="币种"/>
+        <bm:field name="quantity" prompt="数量"/>
+        <bm:field name="price" prompt="单价"/>
+        <bm:field name="amount" prompt="金额"/>
+        <bm:field name="accptn_check_date" prompt="验收日期"/>
+        <bm:field name="start_use_date" prompt="启用日期"/>
+        <bm:field name="cash_pledge" prompt="押金"/>
+        <bm:field name="rent_date_from" prompt="租入日期从"/>
+        <bm:field name="rent_date_to" prompt="租入日期至"/>
+        <bm:field name="revert_address" prompt="归还位置"/>
+        <bm:field name="revert_date" prompt="归还日期"/>
+        <bm:field name="to_unit_id" prompt=""/>
+        <bm:field name="unit_name" prompt="使用部门"/>
+        <bm:field name="original_cost" prompt="原始成本"/>
+        <bm:field name="current_cost" prompt="当前成本"/>
+        <bm:field name="accumulated_dep_amt" prompt="累计折旧"/>
+        <bm:field name="impairment_loss_amt" prompt="减值准备"/>
+        <bm:field name="net_cost" prompt="净值"/>
+        <bm:field name="retire_date" prompt="报废日期"/>
+        <bm:field name="retire_expense" prompt="报废费用"/>
+        <bm:field name="retire_revenue" prompt="报废收入"/>
+        <bm:field name="retire_amount" prompt="报废金额"/>
+        <bm:field name="rebuild_date" prompt="重建日期"/>
+        <bm:field name="status_desc" prompt="资产状态"/>
+        <bm:field name="used_month" prompt="使用月数"/>
+        <bm:field name="use_month" prompt="已用月数"/>
+        <bm:field name="remaining_life_in_month" prompt="剩余月数"/>
+        <bm:field name="dispose_date" prompt="处置日期"/>
+        <bm:field name="dispose_expense" prompt="预计费用"/>
+        <bm:field name="dispose_revenue" prompt="预计收入"/>
+        <bm:field name="dispose_amount" prompt="净损值"/>
+        <bm:field name="value_adj_date" prompt="调整日期"/>
+        <bm:field name="adjust_amount" prompt="调整金额"/>
+        <bm:field name="setlement_date" prompt="决算日期"/>
+        <bm:field name="final_cost" prompt="决算调整金额"/>
+        <bm:field name="current_location_address" prompt="当前位置"/>
+        <bm:field name="objective" prompt="目标方"/>
+        <bm:field name="objective_address" prompt="目标位置"/>
+        <bm:field name="to_employee_name" prompt="接收人"/>
+        <bm:field name="start_date" prompt="租借起始日期"/>
+        <bm:field name="end_date" prompt="预计收回日期日期"/>
+        <bm:field name="to_location_address" prompt="收回位置"/>
+        <bm:field name="acceptance_date" prompt="收回日期"/>
+        <bm:field name="from_entity_class_id" prompt=""/>
+        <bm:field name="entity_class_desc" prompt="原类别"/>
+        <bm:field name="depr_year" prompt="原折旧年限"/>
+        <bm:field name="to_entity_class_id" prompt=""/>
+        <bm:field name="to_entity_class_desc" prompt="新类别"/>
+        <bm:field name="new_dep_flag" prompt="执行新类别折旧规则"/>
+        <bm:field name="copy_flag" prompt="复制特性参数"/>
+        <bm:field name="adjustment_flag" prompt="追溯调整"/>
+        <bm:field name="lock_flag" prompt="锁定标识"/>
+        <bm:field name="company_id" prompt="机构id"/>
+        <bm:field name="company_name" prompt="机构"/>
+        <bm:field name="line_number" prompt="申请单行号"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="status" queryOperator="="/>
+        <bm:query-field field="tag_number" queryOperator="like"/>
+        <bm:query-field field="asset_book_id" queryOperator="="/>
+        <bm:query-field field="asset_name" queryOperator="like"/>
+        <bm:query-field field="employee_id" queryOperator="="/>
+        <bm:query-field field="ast_requisition_type_id" queryOperator="="/>
+        <bm:query-field field="requisition_status" queryOperator="="/>
+        <bm:query-field field="requisition_number" queryOperator="like"/>
+        <bm:query-field name="req_date_from" queryExpression="ssv.requisition_date &gt;= ${@req_date_from}"/>
+        <bm:query-field name="req_date_to" queryExpression="ssv.requisition_date &lt;= ${@req_date_to}"/>
+        <bm:query-field field="retirement_type" queryOperator="="/>
+        <bm:query-field field="status_desc" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: dingzhichao 
+    $Date: 2013-2-27 下午5:24:46  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_exchange_type_init" rootPath="exchange_type"/>
+        <a:model-query autoCount="false" fetchAll="true" model="csh.CSH5425.get_function_currency_code" rootPath="function_currency"/>
+        <a:model-query autoCount="false" defaultWhereClause=" user_id = ${/session/@user_id}" fetchAll="true" model="sys.sys_user_employee" rootPath="employee"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="get_exchange_rate_link_16" model="expm.get_exchange_rate" modelaction="query"/>
+        <a:link id="currency_exchange_trans_save_link" model="db.csh_exchange_trans_pkg.create_csh_transaction_head" modelaction="execute"/>
+        <a:link id="csh_cash_currency_exchange_maintian_link" url="${/request/@context_path}/modules/csh/CSH5425/csh_cash_currency_exchange_maintian.screen"/>
+        <a:link id="get_period_name_link" model="db.gld_common_pkg.get_gld_period_name" modelaction="execute"/>
+        <a:link id="csh_currency_exchange_maintian_save_link" url="${/request/@context_path}/modules/csh/CSH5425/csh_cash_currency_exchange_maintain.svc"/>
+        <script><![CDATA[
+            function getExchangeRate(param, record) {
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/
+                    $('get_exchange_rate_link_16').getUrl(),
+                    para: {
+                        from_currency: param.fromCur,
+                        to_currency: param.toCur,
+                        exchange_date: param.exchangeDate,
+                        exchange_period_name: param.periodName,
+                        exchange_rate_type: param.exchangeRateType
+                    },
+                    success: function(res) {
+                        if (res && res.result && res.result.record && res.result.record.exchange_rate) {
+                            record.set('exchange_rate', res.result.record.exchange_rate);
+                            record.set('exchange_rate_quotation_name', getDisplayByValue(res.result.record.exchange_rate_quotation, 'code_value', 'code_value_name', 'quotation'));
+                            record.set('exchange_rate_quotation', res.result.record.exchange_rate_quotation);
+                        } else {
+                            Aurora.showWarningMessage('${l:PROMPT}', '当前的汇率类型无法取到可用汇率，请检查！', null, 250, 100);
+                        }
+                    },
+                    scope: this
+                });
+            }
+            
+            function getDisplayByValue(value, valueName, displayName, dsName) {
+                var dataSet = $(dsName);
+                var records = dataSet.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get(valueName) == value) {
+                        return records[i].get(displayName);
+                    }
+                }
+            }
+            
+            function saveFun() {
+                if ($('currency_exchange_head_ds').validate() && $('currency_exchange_in_line_ds').validate() && $('currency_exchange_out_line_ds').validate()) {
+                    var headDs = $('currency_exchange_head_ds');
+                    var headData = headDs.getAt(0).data;
+                    var outLineDs = $('currency_exchange_out_line_ds');
+                    var outLineData = outLineDs.getAt(0).data;
+                    var inLineDs = $('currency_exchange_in_line_ds');
+                    var inLineData = inLineDs.getAt(0).data;
+                    if (headData) {
+                        headData['out'] = [outLineData];
+                        headData['in'] = [inLineData];
+                    }
+                    Aurora.request({
+                        url: $('csh_currency_exchange_maintian_save_link').getUrl(),
+                        para: headData,
+                        success: function(res) {
+                            if (res && res.result && res.result.transaction_header_id) {
+                                new Aurora.Window({
+                                    id: 'cash_currency_exchange_maintain_screen',
+                                    url: $('cash_currency_exchange_maintain_link').getUrl() + '?transaction_header_id=' + res.result.transaction_header_id,
+                                    fullScreen: true
+                                });
+                                $('cash_currency_exchange_create_screen').close();
+                            } else {
+                                Aurora.showWarningMessage('${l:PROMPT}', '新建货币兑换事务 失败，请检查！', null, 250, 100);
+                            }
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function dispatchMaintainFun(id) {
+                $('cash_currency_exchange_create_screen').close();
+                dispatchFun(id);
+            }
+            
+            function updateFun(ds, record, name, value, oldValue) {
+                if (name == "transaction_date") {
+                    updatePeriodName(value);
+                }
+            }
+            
+            function updatePeriodName(transaction_date) {
+                Aurora.request({
+                    url: $('get_period_name_link').getUrl(),
+                    para: {
+                        transaction_date: transaction_date
+                    },
+                    success: function(resp) {
+                        if (resp && resp.result && resp.result.current_period_name) {
+                            $('currency_exchange_head_ds').getAt(0).set('transaction_period', resp.result.current_period_name);
+                        } else {
+                            $('currency_exchange_head_ds').getAt(0).set('transaction_period', '');
+                            Aurora.showWarningMessage('${l:PROMPT}', '当前的事务日期无法找到打开的期间，请检查！', null, 250, 100);
+                        }
+                    },
+                    scope: this
+                });
+            }
+            
+            function updateLineFun(ds, record, name, value, oldValue) {
+                if (name == "bank_account_id") {
+                    var currency_code = record.get("currency_code");
+                    var functional_currency_code = '${/model/function_currency/record/@functional_currency_code}';
+                    var exchange_rate_type_name = '${/model/exchange_type/record/@type_name}';
+                    var exchange_type_code = '${/model/exchange_type/record/@value_code}';
+                    var rate_method_code = '${/model/exchange_type/record/@rate_method_code}';
+                    record.set("exchange_rate_type_name", '');
+                    record.set("exchange_rate_type", '');
+                    record.set("exchange_rate_quotation", '');
+                    record.set("exchange_rate", '');
+                    record.getField('exchange_rate_type_name').setReadOnly(false);
+                    record.getField('exchange_rate_quotation_name').setReadOnly(false);
+                    record.getField('exchange_rate').setReadOnly(false);
+                    if (functional_currency_code == currency_code) {
+                        record.getField('exchange_rate_type_name').setReadOnly(true);
+                        record.getField('exchange_rate_quotation_name').setReadOnly(true);
+                        record.getField('exchange_rate').setReadOnly(true);
+                        record.set("exchange_rate_type_name", '');
+                        record.set("exchange_rate_type", '');
+                        record.set("exchange_rate_quotation_name", '');
+                        record.set("exchange_rate_quotation", '');
+                        record.set("exchange_rate", 1);
+                    } else {
+                        if (exchange_type_code) {
+                            record.set("exchange_rate_type_name", exchange_rate_type_name);
+                            record.set("exchange_rate_type", exchange_type_code);
+                            if (exchange_type_code) {
+                                if (rate_method_code != 'MANUAL') {
+                                    record.getField('exchange_rate_quotation_name').setReadOnly(true);
+                                    record.getField('exchange_rate').setReadOnly(true);
+                                } else {
+                                    record.getField('exchange_rate_quotation_name').setReadOnly(false);
+                                    record.getField('exchange_rate').setReadOnly(false);
+                                }
+                                getExchangeRate({
+                                    fromCur: functional_currency_code,
+                                    toCur: currency_code,
+                                    exchangeRateType: exchange_type_code,
+                                    exchangeDate: transaction_date,
+                                    periodName: transaction_period
+                                }, record);
+                            }
+                        }
+                    }
+                } else if (name == "rate_method_code") {
+                    var functional_currency_code = '${/model/function_currency/record/@functional_currency_code}';
+                    var currency_code = record.get("currency_code");
+                    var exchange_rate_type = record.get("exchange_rate_type");
+                    var headDs = $('currency_exchange_head_ds');
+                    var headRecord = headDs.getAt(0);
+                    var transaction_date = headRecord.get("transaction_date");
+                    var transaction_period = headRecord.get("transaction_period");
+                    if (value != 'MANUAL') {
+                        getExchangeRate({
+                            fromCur: functional_currency_code,
+                            toCur: currency_code,
+                            exchangeRateType: exchange_rate_type,
+                            exchangeDate: transaction_date,
+                            periodName: transaction_period
+                        }, record);
+                        record.getField('exchange_rate_quotation_name').setReadOnly(true);
+                        record.getField('exchange_rate').setReadOnly(true);
+                    } else {
+                        //  [汇率类型] =  ‘手工’时，[汇率标价方法]、[汇率]需要用户手工选择；
+                        record.getField('exchange_rate_quotation_name').setReadOnly(false);
+                        record.getField('exchange_rate').setReadOnly(false);
+                    }
+                } else if (name == 'company_id') {
+                    record.getMeta().getField('bank_account_num').setLovPara('company_id', value);
+                    if(value){
+                        record.getMeta().getField('bank_account_num').setReadOnly(false);
+                    }else{
+                        record.getMeta().getField('bank_account_num').setReadOnly(true);
+                    }
+                }
+            
+                if (name == 'company_name' || name == 'company_code' || name == 'company_id') {
+                    if (ds.id == 'currency_exchange_out_line_ds') {
+                        $('currency_exchange_in_line_ds').getAt(0).set(name, value);
+                        record.set('currency_name','');
+                        record.set('currency_code','');
+                        record.set('bank_account_id','');
+                        record.set('bank_account_num','');
+                        record.set('bank_account_name','');
+                        record.set('bank_name','');
+                        record.set('branch_name','');
+                        record.set('address','');
+                        inRecord = $('currency_exchange_in_line_ds').getAt(0);
+                        inRecord.set('currency_name','');
+                        inRecord.set('currency_code','');
+                        inRecord.set('bank_account_id','');
+                        inRecord.set('bank_account_num','');
+                        inRecord.set('bank_account_name','');
+                        inRecord.set('bank_name','');
+                        inRecord.set('branch_name','');
+                        inRecord.set('address','');
+                    }
+                }
+            
+                if (name == 'transaction_amount' || name == 'handling_charge' || name == 'exchange_rate_quotation' || name == 'exchange_rate') {
+                    var trans_amount = record.get('transaction_amount');
+                    var handling_charge = record.get('handling_charge');
+                    var exchange_rate = record.get('exchange_rate');
+                    var exchange_rate_quotation = record.get('exchange_rate_quotation');
+                    if (isNaN(trans_amount)) {
+                        trans_amount = 0;
+                    }
+                    if (isNaN(handling_charge)) {
+                        handling_charge = 0;
+                    }
+            
+                    if (exchange_rate == 1) {
+                        record.set('trans_function_amount', trans_amount + handling_charge);
+                    } else if (exchange_rate_quotation == 'DIRECT QUOTATION') {
+                        record.set('trans_function_amount', (trans_amount + handling_charge) * exchange_rate);
+                    } else if (exchange_rate_quotation == 'INDIRECT QUOTATION') {
+                        record.set('trans_function_amount', (trans_amount + handling_charge) / exchange_rate);
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="quotation" lookupcode="EXCHANGE_RATE_QUOTATION"/>
+            <a:dataSet id="currency_exchange_head_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="transaction_num" readOnly="true"/>
+                    <a:field name="ebanking_flag" checkedValue="Y" defaultValue="Y" required="true" uncheckedValue="N"/>
+                    <a:field name="transaction_date" required="true"/>
+                    <a:field name="transaction_period" readOnly="true" required="true"/>
+                    <a:field name="employee_name" defaultValue="${/model/employee/record/@employee_name}" readOnly="true" required="true"/>
+                    <a:field name="employee_id" defaultValue="${/model/employee/record/@employee_id}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="currency_exchange_out_line_ds" autoCreate="true" model="csh.CSH5425.csh_currency_exchange_detail_for_query">
+                <a:fields>
+                    <a:field name="bank_account_num" lovGridHeight="310" lovHeight="450" lovService="csh.csh_bank_account_for_lov" lovWidth="600" readOnly="true" required="true" title="兑出账户">
+                        <a:mapping>
+                            <a:map from="currency_name" to="currency_name"/>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="bank_account_id" to="bank_account_id"/>
+                            <a:map from="bank_account_num" to="bank_account_num"/>
+                            <a:map from="bank_account_name" to="bank_account_name"/>
+                            <a:map from="bank_name" to="bank_name"/>
+                            <a:map from="branch_name" to="branch_name"/>
+                            <a:map from="address" to="address"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="transaction_amount" required="true"/>
+                    <a:field name="exchange_rate_type_name" fetchRemote="false" lovGridHeight="320" lovHeight="440" lovWidth="550" lovservice="gld.gld_exchangerate_type_lov" prompt="EXP_REPORT_HEADERS.EXCHANGE_RATE_TYPE" title="EXP_PRE_POST_RO.FEE_TYPE">
+                        <a:mapping>
+                            <a:map from="type_name" to="exchange_rate_type_name"/>
+                            <a:map from="type_code" to="exchange_rate_type"/>
+                            <a:map from="rate_method_code" to="rate_method_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate_quotation_name" displayField="code_value_name" options="quotation" returnField="exchange_rate_quotation" valueField="code_value"/>
+                    <a:field name="company_name" autoComplete="true" autoCompleteField="report_company" lovGridHeight="350" lovHeight="500" lovService="expm.exp_report_companies" lovWidth="500" required="true" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_short_name" to="company_name"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="trans_in_out_type" defaultValue="OUT"/>
+                    <a:field name="transaction_header_id" defaultValue="${/parameter/@transaction_header_id}"/>
+                    <a:field name="exchange_rate" required="true"/>
+                    <a:field name="trans_function_amount" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateLineFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="currency_exchange_in_line_ds" autoCreate="true" model="csh.CSH5425.csh_currency_exchange_detail_for_query">
+                <a:fields>
+                    <a:field name="bank_account_num" lovGridHeight="310" lovHeight="450" lovService="csh.csh_bank_account_for_lov" lovWidth="600" required="true" title="兑入账户">
+                        <a:mapping>
+                            <a:map from="currency_name" to="currency_name"/>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="bank_account_id" to="bank_account_id"/>
+                            <a:map from="bank_account_num" to="bank_account_num"/>
+                            <a:map from="bank_account_name" to="bank_account_name"/>
+                            <a:map from="bank_name" to="bank_name"/>
+                            <a:map from="branch_name" to="branch_name"/>
+                            <a:map from="address" to="address"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="transaction_amount" required="true"/>
+                    <a:field name="exchange_rate_type_name" fetchRemote="false" lovGridHeight="320" lovHeight="440" lovWidth="550" lovservice="gld.gld_exchangerate_type_lov" prompt="EXP_REPORT_HEADERS.EXCHANGE_RATE_TYPE" title="EXP_PRE_POST_RO.FEE_TYPE">
+                        <a:mapping>
+                            <a:map from="type_name" to="exchange_rate_type_name"/>
+                            <a:map from="type_code" to="exchange_rate_type"/>
+                            <a:map from="rate_method_code" to="rate_method_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate_quotation_name" displayField="code_value_name" options="quotation" returnField="exchange_rate_quotation" valueField="code_value"/>
+                    <a:field name="company_name" readOnly="true" required="true"/>
+                    <a:field name="trans_in_out_type" defaultValue="IN"/>
+                    <a:field name="transaction_header_id" defaultValue="${/parameter/@transaction_header_id}"/>
+                    <a:field name="exchange_rate" required="true"/>
+                    <a:field name="trans_function_amount" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateLineFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form labelWidth="100" marginWidth="30" title="货币兑换" width="900">
+                <a:hBox>
+                    <a:textField name="transaction_num" bindTarget="currency_exchange_head_ds" prompt="现金事务号"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:datePicker name="transaction_date" bindTarget="currency_exchange_head_ds" prompt="事务日期"/>
+                    <a:textField name="transaction_period" bindTarget="currency_exchange_head_ds" prompt="事务期间"/>
+                    <a:checkBox name="ebanking_flag" bindTarget="currency_exchange_head_ds" prompt="是否网银"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:textField name="description" bindTarget="currency_exchange_head_ds" prompt="备注" width="617"/>
+                </a:hBox>
+            </a:form>
+            <a:hBox>
+                <a:button click="saveFun" text="保存"/>
+            </a:hBox>
+            <a:tabPanel id="tabs_id" height="360" marginWidth="20" style="width:99%;margin-left:5px">
+                <a:tabs>
+                    <a:tab prompt="兑出账户信息" width="150">
+                        <a:hBox>
+                            <a:lov name="company_name" bindTarget="currency_exchange_out_line_ds" prompt="兑出公司"/>
+                            <a:lov name="bank_account_num" bindTarget="currency_exchange_out_line_ds" prompt="兑出账号"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="bank_account_name" bindTarget="currency_exchange_out_line_ds" prompt="账户名" readOnly="true"/>
+                            <a:textField name="bank_account_num" bindTarget="currency_exchange_out_line_ds" prompt="账号" readOnly="true"/>
+                            <a:textField name="bank_name" bindTarget="currency_exchange_out_line_ds" prompt="银行" readOnly="true"/>
+                            <a:textField name="branch_name" bindTarget="currency_exchange_out_line_ds" prompt="分行" readOnly="true"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="currency_name" bindTarget="currency_exchange_out_line_ds" prompt="币种" readOnly="true"/>
+                            <a:lov name="exchange_rate_type_name" bindTarget="currency_exchange_out_line_ds" prompt="汇率类型"/>
+                            <a:comboBox name="exchange_rate_quotation_name" bindTarget="currency_exchange_out_line_ds" prompt="标价方法"/>
+                            <a:textField name="exchange_rate" bindTarget="currency_exchange_out_line_ds" prompt="汇率"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:numberField name="transaction_amount" bindTarget="currency_exchange_out_line_ds" prompt="兑出金额"/>
+                            <a:numberField name="handling_charge" bindTarget="currency_exchange_out_line_ds" prompt="手续费"/>
+                            <a:numberField name="trans_function_amount" bindTarget="currency_exchange_out_line_ds" prompt="参考本币额"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="address" bindTarget="currency_exchange_out_line_ds" prompt="地址" readOnly="true" width="850"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="description" bindTarget="currency_exchange_out_line_ds" prompt="摘要" width="850"/>
+                        </a:hBox>
+                    </a:tab>
+                    <a:tab prompt="兑入账户信息" width="150">
+                        <a:hBox>
+                            <a:textField name="company_name" bindTarget="currency_exchange_in_line_ds" prompt="兑入公司"/>
+                            <a:lov name="bank_account_num" bindTarget="currency_exchange_in_line_ds" prompt="兑入账号"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="bank_account_name" bindTarget="currency_exchange_in_line_ds" prompt="账户名" readOnly="true"/>
+                            <a:textField name="bank_account_num" bindTarget="currency_exchange_in_line_ds" prompt="账号" readOnly="true"/>
+                            <a:textField name="bank_name" bindTarget="currency_exchange_in_line_ds" prompt="银行" readOnly="true"/>
+                            <a:textField name="branch_name" bindTarget="currency_exchange_in_line_ds" prompt="分行" readOnly="true"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="currency_name" bindTarget="currency_exchange_in_line_ds" prompt="币种" readOnly="true"/>
+                            <a:lov name="exchange_rate_type_name" bindTarget="currency_exchange_in_line_ds" prompt="汇率类型"/>
+                            <a:comboBox name="exchange_rate_quotation_name" bindTarget="currency_exchange_in_line_ds" prompt="标价方法"/>
+                            <a:textField name="exchange_rate" bindTarget="currency_exchange_in_line_ds" prompt="汇率"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:numberField name="transaction_amount" bindTarget="currency_exchange_in_line_ds" prompt="兑入金额"/>
+                            <a:numberField name="trans_function_amount" bindTarget="currency_exchange_in_line_ds" prompt="参考本币额"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="address" bindTarget="currency_exchange_in_line_ds" prompt="地址" readOnly="true" width="850"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="description" bindTarget="currency_exchange_in_line_ds" prompt="摘要" width="850"/>
+                        </a:hBox>
+                    </a:tab>
+                    <a:tab disabled="true" prompt="财务信息" width="150"/>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="csh_pay_req_query_detail_link_14" url="${/request/@context_path}/modules/csh/public/csh_pay_req_query_detail.screen"/>
+        <a:link id="exp_report_readonly_wfl_link_7" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl.screen"/>
+        <a:link id="acp_acp_req_maintain_view_link" url="${/request/@context_path}/modules/acp/public/acp_acp_req_maintain_view.screen"/>
+        <a:link id="post_itf_to_zj_link" model="db.cux_payment_pkg.post_itf_to_zj" modelaction="batch_update"/>
+        <script><![CDATA[
+            function documentNumberRenderer(value, record, name) {
+                if (name == 'document_number') {
+                    if (record.get('document_category') == 'EXP_REPORT') {
+                        return '<a href="javascript:openReportDetil(' + record.get('document_id') + ')">' + value + '</a>';
+                    } else if (record.get('document_category') == 'PAYMENT_REQUISITION') {
+                        return '<a href = "javascript:reqNumDispatch(' + record.get('document_id') + ')">' + value + '</a>';
+                    } else if (record.get('document_category') == 'ACP_REQUISITION') {
+                        return '<a href = "javascript:acpReqDetail(' + record.get('document_id') + ')">' + value + '</a>';
+                    }
+                }
+            }
+            
+            function openReportDetil(id) {
+                new Aurora.Window({
+                    id: 'sys_function_service_assign_window',
+                    url: $('exp_report_readonly_wfl_link_7').getUrl() + '?exp_report_header_id=' + id,
+                    title: '',
+                    fullScreen: true
+                });
+            }
+            
+            function reqNumDispatch(header_id) {
+                new Aurora.Window({
+                    id: 'csh_pay_req_query_detail_window',
+                    url: $('csh_pay_req_query_detail_link_14').getUrl() + '?payment_requisition_header_id=' + header_id,
+                    title: '${l:CSH_RECEIVABLE_AGING_QUERY.CSHREQDETAIL}',
+                    fullScreen: true
+                });
+            }
+            
+            function acpReqDetail(header_id) {
+                new Aurora.Window({
+                    id: 'acp_acp_req_maintain_view_window',
+                    url: $('acp_acp_req_maintain_view_link').getUrl() + '?acp_requisition_header_id=' + header_id,
+                    title: '付款申请单',
+                    fullScreen: true
+                });
+            }
+            
+            function confirmResetFun() {
+                $('csh_ebank_pay_failed_confirm_query_ds').reset();
+            }
+            
+            function confirmToZJ() {
+                var records = $('zj_need_pay_data_confirm_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showInfoMessage('错误', '请选择需确认行后再点击确认按钮!');
+                    return;
+                }
+            
+                var param = [];
+                for (var i = 0;i < records.length;i++) {
+                    param.push({
+                        info_id: records[i].get('info_id'),
+                        _status: 'execute'
+                    });
+                }
+            
+                Aurora.request({
+                    url: $('post_itf_to_zj_link').getUrl(),
+                    para: param,
+                    success: function() {
+                        queryConfirmData();
+                    }
+                });
+            }
+            
+            function queryConfirmData() {
+                $('zj_need_pay_data_confirm_ds').query();
+            }
+            
+            function confrimQueryUpdate(ds, record, name, value, oldValue) {
+                if (name == 'payee_category') {
+                    var payeeNameField = record.getMeta().getField('payee_name');
+                    if (value) {
+                        payeeNameField.setLovPara('partner_category', value);
+                        payeeNameField.setLovService('csh.csh_company_employee_vender_customer_lov');
+                        payeeNameField.setReadOnly(false);
+                    } else {
+                        payeeNameField.setLovService('');
+                        payeeNameField.setReadOnly(true);
+                    }
+                    record.set('payee_id', '');
+                    record.set('payee_name', '');
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="document_category_ds">
+                <a:datas>
+                    <a:record name="费用报销单" value="EXP_REPORT"/>
+                    <a:record name="借款申请单" value="PAYMENT_REQUISITION"/>
+                    <a:record name="付款申请单" value="ACP_REQUISITION"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="csh_payee_category_ds" lookupCode="PAYMENT_OBJECT"/>
+            <a:dataSet id="zj_need_pay_data_confirm_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="document_category_desc" displayField="name" options="document_category_ds" prompt="单据类别" returnField="document_category" valueField="value"/>
+                    <a:field name="document_number" prompt="单据编码"/>
+                    <a:field name="document_category"/>
+                    <a:field name="document_number" prompt="单据编码"/>
+                    <a:field name="account_number" prompt="银行账户"/>
+                    <a:field name="account_name" prompt="账户名称"/>
+                    <a:field name="payee_category_desc" displayField="code_value_name" options="csh_payee_category_ds" prompt="收款方类别" returnField="payee_category" valueField="code_value"/>
+                    <a:field name="payee_name" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovWidth="500" prompt="收款方" readOnly="true">
+                        <a:mapping>
+                            <a:map from="partner_name" to="payee_name"/>
+                            <a:map from="partner_id" to="payee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="amount_from" prompt="金额从"/>
+                    <a:field name="amount_to" prompt="金额到"/>
+                    <a:field name="pay_date_from" prompt="付款日期从"/>
+                    <a:field name="pay_date_to" prompt="付款日期到"/>
+                    <a:field name="include_child_flag" checkedValue="Y" defaultValue="N" prompt="包含下属公司" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="confrimQueryUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="zj_need_pay_data_confirm_ds" autoPageSize="true" autoQuery="true" model="zj.ZJ1010.zj_need_pay_data_confirm" queryDataSet="zj_need_pay_data_confirm_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="document_category_desc" prompt="单据类别"/>
+                    <a:field name="document_category" prompt="单据类别"/>
+                    <a:field name="document_number" prompt="单据编码"/>
+                    <a:field name="document_id"/>
+                    <a:field name="document_line_id"/>
+                    <a:field name="account_number" prompt="银行账户"/>
+                    <a:field name="account_name" prompt="账户名称"/>
+                    <a:field name="payee_category"/>
+                    <a:field name="payee_category_desc" prompt="收款方类别"/>
+                    <a:field name="payee_id"/>
+                    <a:field name="payee_name" prompt="收款方"/>
+                    <a:field name="amount" prompt="本次支付金额"/>
+                    <a:field name="bank_code" prompt="银行代码"/>
+                    <a:field name="bank_name" prompt="银行名称"/>
+                    <a:field name="bank_location_code" prompt="CNAPS"/>
+                    <a:field name="bank_location_name" prompt="分行名称"/>
+                    <a:field name="province_name" prompt="省份名称"/>
+                    <a:field name="city_name" prompt="城市名称"/>
+                    <a:field name="payment_method_desc" prompt="付款方式"/>
+                    <a:field name="gather_flag_desc" prompt="集中支付"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="confirmToZJ" text="确认传送资金" width="80"/>
+                <a:toolbarButton click="confirmResetFun" text="重置" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="zj_need_pay_data_confirm_query_ds" resultTarget="zj_need_pay_data_confirm_ds" style="width:100%;border:none;">
+                <a:formToolBar>
+                    <a:comboBox name="document_category_desc" bindTarget="zj_need_pay_data_confirm_query_ds"/>
+                    <a:textField name="document_number" bindTarget="zj_need_pay_data_confirm_query_ds"/>
+                    <a:textField name="account_number" bindTarget="zj_need_pay_data_confirm_query_ds"/>
+                    <a:textField name="account_name" bindTarget="zj_need_pay_data_confirm_query_ds"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:comboBox name="payee_category_desc" bindTarget="zj_need_pay_data_confirm_query_ds" prompt="收款方类别"/>
+                    <a:lov name="payee_name" bindTarget="zj_need_pay_data_confirm_query_ds" prompt="收款方"/>
+                    <a:numberField name="amount_from" bindTarget="zj_need_pay_data_confirm_query_ds" prompt="金额从"/>
+                    <a:numberField name="amount_to" bindTarget="zj_need_pay_data_confirm_query_ds" prompt="金额到"/>
+                    <!-- <a:checkBox name="include_child_flag" bindTarget="zj_need_pay_data_confirm_query_ds"/> -->
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="zj_need_pay_data_confirm_grid" bindTarget="zj_need_pay_data_confirm_ds" marginHeight="111" marginWidth="45" navBar="true">
+                <a:columns>
+                    <a:column name="document_category_desc" align="center" width="100"/>
+                    <a:column name="document_number" align="center" renderer="documentNumberRenderer" width="170"/>
+                    <a:column name="amount" align="right" renderer="Aurora.formatMoney"/>
+                    <a:column name="payment_method_desc" align="left" width="100"/>
+                    <a:column name="gather_flag_desc" align="left" width="100"/>
+                    <a:column name="payee_category_desc" align="center" width="80"/>
+                    <a:column name="payee_name" align="left" width="150"/>
+                    <a:column name="account_number" align="left" width="150"/>
+                    <a:column name="account_name" align="center" width="150"/>
+                    <a:column name="bank_code" align="center" width="100"/>
+                    <a:column name="bank_name" align="center" width="100"/>
+                    <a:column name="bank_location_code" align="center" width="100"/>
+                    <a:column name="bank_location_name" align="left" width="250"/>
+                    <a:column name="province_name" align="center" width="80"/>
+                    <a:column name="city_name" align="center" width="80"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

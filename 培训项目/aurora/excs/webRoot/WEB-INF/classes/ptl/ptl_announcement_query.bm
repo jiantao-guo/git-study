@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        a.announcement_id,
+                        a.doc_id,
+                        (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = a.employee_id
+                        ) employee_name,
+                        (SELECT
+                            ee.name
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id = a.announce_employee_id
+                        ) announcement_employee_name,
+                        TO_CHAR(a.announce_date,'YY-MM-DD') AS announce_date,
+                        a.importance_level,
+                        (SELECT
+                            cv.code_value_name
+                        FROM
+                            sys_codes c,
+                            sys_code_values_vl cv
+                        WHERE
+                            c.code_id     = cv.code_id AND
+                            c.code        = 'PTL_ANNOUNCEMENT_IMPORTANCE_LEVEL' AND
+                            cv.code_value = a.importance_level
+                        ) AS importance_level_desc,
+                        DECODE(a.importance_level, 'TOP', (
+                            CASE
+                                WHEN TRUNC(sysdate) - TRUNC(a.last_update_date) < a.deadline
+                                THEN 1
+                                ELSE 3
+                            END), 'ESSENCE', (
+                            CASE
+                                WHEN TRUNC(sysdate) - TRUNC(a.last_update_date) < a.deadline
+                                THEN 1
+                                ELSE 2
+                            END), 'NORMAL', 3, 4) AS level_seq,
+                        a.version,
+                        a.read_count,
+                        a.mark_count,
+                        a.up_count,
+                        a.down_count,
+                        a.reply_count,
+                        d.doc_category,
+                        d.doc_title,
+                        d.doc_subtitle,
+                        d.doc_summarize,
+                        d.author_name,
+                        d.ref_url,
+                        (SELECT
+                            encrypt_pkg.encode(a.attachment_id)
+                        FROM
+                            fnd_atm_attachment a,
+                            ptl_announcement_images i
+                        WHERE
+                            a.attachment_id = i.attachment_id AND
+                            i.image_id      = ptl_announcement_pkg.get_announcement_cover_image(p_announcement_id => a.announcement_id, p_image_category => 'COVER_BIG')
+                        ) cover_big_image_att_id,
+                        (SELECT
+                            encrypt_pkg.encode(a.attachment_id)
+                        FROM
+                            fnd_atm_attachment a,
+                            ptl_announcement_images i
+                        WHERE
+                            a.attachment_id = i.attachment_id AND
+                            i.image_id      = ptl_announcement_pkg.get_announcement_cover_image(p_announcement_id => a.announcement_id, p_image_category => 'COVER_MIDDLE')
+                        ) cover_middle_image_att_id,
+                        (SELECT
+                            encrypt_pkg.encode(a.attachment_id)
+                        FROM
+                            fnd_atm_attachment a,
+                            ptl_announcement_images i
+                        WHERE
+                            a.attachment_id = i.attachment_id AND
+                            i.image_id      = ptl_announcement_pkg.get_announcement_cover_image(p_announcement_id => a.announcement_id, p_image_category => 'COVER_LITTLE')
+                        ) cover_little_image_att_id,
+                        (select encrypt_pkg.encode(a.attachment_id)
+		                  from fnd_atm_attachment a, ptl_announcement_images i
+		                 where a.attachment_id = i.attachment_id
+		                   and i.image_id =
+		                       ptl_announcement_pkg.get_announcement_cover_image(p_announcement_id => a.announcement_id,
+		                                                                         p_image_category  => 'COVER_ROLLING')) cover_rolling_image_att_id,
+                        (SELECT
+                            i.image_title
+                        FROM
+                            ptl_announcement_images i
+                        WHERE
+                            i.image_id = ptl_announcement_pkg.get_announcement_cover_image(p_announcement_id => a.announcement_id, p_image_category => 'COVER_')
+                        ) AS cover_image_title,
+                        (SELECT w.attachment_id FROM ptl_doc_word w WHERE a.doc_id = w.doc_id
+                        ) AS word_attachment_id,
+                        (SELECT r.rtf_clob FROM ptl_doc_rtf r WHERE d.doc_id = r.doc_id
+                        ) AS rtf_clob,
+                        '<![CDATA[' AS left_tag,
+                        ']]'
+                        || chr(62) AS right_tag,
+                        e.element_code,
+                        e.portal_id， 'ptl_document_block.screen?doc_id='
+                        ||d.doc_id AS ng_url
+                    FROM
+                        ptl_announcements a,
+                        ptl_documents d,
+                        ptl_announcement_types_vl t,
+                        ptl_elements e
+                    WHERE
+                        a.announcement_type_id                                                                                           = t.announcement_type_id AND
+                        a.doc_id                                                                                                         = d.doc_id AND
+                        e.element_id                                                                                                     = ptl_announcement_pkg.get_announcement_ref_element(a.announcement_type_id) AND
+                        a.status                                                                                                         = 'PUBLISH' AND
+                        e.enabled_flag                                                                                                   = 'Y' AND
+                        e.portal_id                                                                                                      = ${@portal_id} AND
+                        e.element_code                                                                                                   = ${@element_code} AND
+                        ptl_announcement_pkg.ptl_resource_prv_new_check('ANNOUNCEMENT', a.announcement_id, 'READ', ${/session/@user_id}) = 'Y'
+                    )
+                ORDER BY
+                    level_seq ASC,
+                    announce_date DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="announcement_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="doc_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="employee_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="announcement_employee_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="announce_date" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="importance_level" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="importance_level_desc" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="level_seq" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="version" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="read_count" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="mark_count" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="up_count" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="down_count" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="reply_count" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="doc_category" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="doc_title" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="doc_subtitle" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="doc_summarize" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="author_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="ref_url" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="cover_big_image_att_id" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="cover_middle_image_att_id" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="cover_little_image_att_id" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="cover_rolling_image_att_id" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="cover_image_title" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="word_attachment_id" databaseType="NUMBER" datatype="java.lang.String"/>
+        <bm:field name="rtf_clob" databaseType="CLOB" datatype="java.sql.Clob"/>
+        <bm:field name="left_tag" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="right_tag" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="ng_url" databaseType="VARCHAR2" datatype="java.lang.String"/>
+    </bm:fields>
+</bm:model>

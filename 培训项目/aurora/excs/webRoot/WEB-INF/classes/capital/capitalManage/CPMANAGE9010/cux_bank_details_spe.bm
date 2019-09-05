@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Rick   
+    $Date: 2017-5-17 15:39:29
+    $Revision: 1.0  
+    $Purpose:  
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+              SELECT v.*,
+			       decode(v.write_off_flag, 'N', '未匹配', '已匹配') write_off_flag_desc,
+			       decode(v.status,
+			              'GENERATE',
+			              '新建',
+			              'SUBMITTED',
+			              '提交',
+			              'APPROVED',
+			              '审核',
+			              'REJECTED',
+			              '拒绝') status_desc,
+			       (SELECT fc.company_short_name
+			          FROM fnd_companies_vl fc
+			         WHERE fc.company_id = v.company_id) company_name,
+			       (SELECT eo.description
+			          FROM exp_org_unit_vl eo
+			         WHERE eo.unit_id = v.unit_id) unit_name,
+			       (SELECT eop.position_code || '-' || eop.description
+			          FROM exp_org_position_vl eop
+			         WHERE eop.position_id = v.position_id) position_name,
+			       decode(v.is_close, 'Y', '已关闭', '未关闭') is_close_desc,
+			       (SELECT gc.currency_name
+			          FROM gld_currency_vl gc
+			         WHERE gc.currency_code = v.currency) currency_name,
+			       (SELECT fv.description
+			          FROM fnd_dimension_values_vl      fv,
+			               fnd_dimensions_vl            fs,
+			               fnd_company_dimension_values fcdv
+			         WHERE fv.dimension_id = fs.dimension_id
+			           AND fcdv.dimension_value_id = fv.dimension_value_id
+			           AND fs.dimension_code = 'PROJECT'
+			           AND fcdv.company_id = v.company_id
+			           AND fv.dimension_value_code = v.project_code) project_name,
+			       (SELECT fv.description
+			          FROM fnd_dimension_values_vl      fv,
+			               fnd_dimensions_vl            fs,
+			               fnd_company_dimension_values fcdv
+			         WHERE fv.dimension_id = fs.dimension_id
+			           AND fcdv.dimension_value_id = fv.dimension_value_id
+			           AND fs.dimension_code = 'PRODUCT'
+			           AND fcdv.company_id = v.company_id
+			           AND fv.dimension_value_code = v.product_code) product_name,
+			         (
+			         select cch.contract_number
+			         from con_contract_headers cch
+			         where cch.contract_header_id = v.ref_contract_header_id
+			         ) contract_number,
+			         decode(v.pay_gather_flag,'PAYMENT','支出','GATHER','收入') pay_gather_flag_desc
+			  FROM (SELECT cbds.cux_bank_details_spe_id,
+			               cbds.bcdl_his_id,
+			               cbds.bank_account,
+			               cbds.bank_account_name,
+			               cbds.currency,
+			               cbds.pay_gather_flag,
+			               cbds.other_account,
+			               cbds.other_account_name,
+			               cbds.trade_number,
+			               cbds.bank_sn,
+			               cbds.summary,
+			               to_char(cbds.account_date, 'yyyy-mm-dd') account_date,
+			               to_char(cbds.right_timestamp, 'hh24:mi:ss') right_timestamp,
+			               nvl(cbds.write_off_flag, 'N') write_off_flag,
+			               cbds.company_id,
+			               cbds.unit_id,
+			               cbds.position_id,
+			               cbds.status,
+			               cbds.is_close,
+			               cbds.project_code,
+			               cbds.product_code,
+			               cbds.ref_contract_header_id,
+			               cbds.created_by,
+			               cbds.creation_date,
+			               cbds.last_updated_by,
+			               cbds.last_update_date,
+			               cbds.amount,
+			               cbds.spe_number,
+			               cbds.batch_cut_type_code,
+			               (
+			               	select type_name
+			               	from CP_BATCH_CUT_TYPE cbct
+			               	where cbct.type_code = cbds.batch_cut_type_code
+			               ) batch_cut_type_name,
+			               cbds.gathering_type_code,
+					       (SELECT cat.type_name
+					          FROM cp_gathering_type cat
+					         WHERE cat.type_code = cbds.gathering_type_code) gathering_type_name,
+					       ori_spe_number,
+					       cbds.report_user_id,
+					       (
+					       	select ee.name
+							   from exp_employees ee,sys_user su
+							   where ee.employee_id = su.employee_id
+							   and su.user_id = cbds.report_user_id
+					       ) report_user_name,
+					       cbds.split_flag,
+					       decode(cbds.split_flag,'Y','已被拆分','未被拆分')  split_flag_desc,
+					       (SELECT SUM(cd.amount)
+                  FROM cux_details_spe_ref cd
+                 WHERE cd.cux_bank_details_spe_id =
+                       cbds.cux_bank_details_spe_id
+                   AND EXISTS
+                 (SELECT 1
+                          FROM exp_report_headers h
+                         WHERE cd.exp_report_header_id =
+                               h.exp_report_header_id
+                           AND h.report_status IN
+                               ('SUBMITTED', 'COMPLETELY_APPROVED')
+                           AND h.reversed_flag IS NULL)) refed_amount
+			          FROM cux_bank_details_spe cbds) v
+				 #WHERE_CLAUSE#
+                ORDER BY
+                    CUX_BANK_DETAILS_SPE_ID
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+            	begin
+            		cux_bank_details_spe_pkg.submit_bank_details_spe(p_cux_bank_details_spe_id => ${@cux_bank_details_spe_id},
+        			p_user_id                 => ${/session/@user_id});
+            	end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                	begin
+            		cux_bank_details_spe_pkg.update_bank_details_spe(p_cux_bank_details_spe_id => ${@cux_bank_details_spe_id},
+                                    p_unit_id                 => ${@unit_id},
+                                    p_position_id             => ${@position_id},
+                                    p_write_off_flag          => ${@write_off_flag},
+                                    p_project_code            => ${@project_code},
+                                    p_product_code            => ${@product_code},
+                                    p_ref_contract_header_id  => ${@ref_contract_header_id},
+                                    p_batch_cut_type_code     => ${@batch_cut_type_code},
+                                    p_gathering_type_code     => ${@gathering_type_code},
+                                    p_user_id                 => ${/session/@user_id},
+                                    p_report_user_id          => ${@report_user_id});
+        		end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                begin
+            		cux_bank_details_spe_pkg.close_bank_details_spe(p_cux_bank_details_spe_id => ${@cux_bank_details_spe_id},
+        			p_user_id                 => ${/session/@user_id});
+            		
+            	end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                begin
+            		cux_bank_details_spe_pkg.assign_position(p_cux_bank_details_spe_id =>  ${@cux_bank_details_spe_id},
+                            p_unit_id                 => ${@unit_id},
+                            p_position_id             => ${@position_id},
+                            p_user_id                 => ${/session/@user_id});
+            		
+            	end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="company_id" queryExpression="v.company_id = ${@company_id}"/>
+        <bm:query-field name="bank_account" queryExpression="v.bank_account = ${@bank_account}"/>
+        <bm:query-field name="status" queryExpression="v.status = ${@status}"/>
+        <bm:query-field name="summary" queryExpression="v.summary like ${@summary}"/>
+        <bm:query-field name="is_close" queryExpression="v.is_close = ${@is_close}"/>
+        <bm:query-field name="currency" queryExpression="v.currency = ${@currency}"/>
+        <bm:query-field name="pay_gather_flag" queryExpression="v.pay_gather_flag = ${@pay_gather_flag}"/>
+        <bm:query-field name="spe_number" queryExpression="v.spe_number = ${@spe_number}"/>
+        <!-- 支出流水 -->
+        <bm:query-field name="op_pay" queryExpression="v.pay_gather_flag = &apos;PAYMENT&apos;"/>
+        <!-- 收入流水 -->
+        <bm:query-field name="op_gather" queryExpression="v.pay_gather_flag = &apos;GATHER&apos;"/>
+        <!-- 岗位过滤 -->
+        <bm:query-field name="op_position" queryExpression="exists (                      select 1                      from EXP_EMPLOYEE_ASSIGNS eea,sys_user su                      where eea.position_id = v.position_id        and eea.employee_id = su.employee_id                      and su.user_id  = ${/session/@user_id}           )"/>
+        <!-- 审核过滤 -->
+        <bm:query-field name="op_audit" queryExpression="(v.status = &apos;SUBMITTED&apos; AND EXISTS         (SELECT 1            FROM cux_spe_authority          csa,                 sys_user                   su,                 cux_spe_authority_comp     ccomp,                 cux_spe_authority_unit     cunit,                 cux_spe_authority_position cpo           WHERE  csa.enabled_flag = &apos;Y&apos; and  csa.employee_id = su.employee_id             AND csa.cux_spe_authority_id = ccomp.cux_spe_authority_id             AND ccomp.cux_spe_authority_comp_id =                 cunit.cux_spe_authority_comp_id             AND ccomp.cux_spe_authority_comp_id =                 cpo.cux_spe_authority_comp_id             AND ccomp.company_id = v.company_id             AND cunit.unit_id = v.unit_id             AND cpo.position_id = v.position_id             AND su.user_id = ${/session/@user_id})                    ) "/>
+        <bm:query-field name="account_date_from" queryExpression="v.account_date &gt;= ${@account_date_from}"/>
+        <bm:query-field name="account_date_to" queryExpression="v.account_date &lt;= ${@account_date_to}"/>
+    </bm:query-fields>
+</bm:model>

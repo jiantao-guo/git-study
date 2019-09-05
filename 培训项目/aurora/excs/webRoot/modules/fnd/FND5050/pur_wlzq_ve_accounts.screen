@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Administrator  
+    $Date: 2017-5-16 下午2:45:34  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure><![CDATA[
+        
+    ]]></a:init-procedure>
+    <a:view>
+        <a:link id="pur_wlzq_vender_submit_link" model="fnd.FND5050.pur_wlzq_ve_accounts" modelaction="execute"/>
+        <a:link id="pur_wlzq_vender_submit_link1" url="${/request/@context_path}/modules/fnd/FND5050/pur_wlzq_vender_submit.svc"/>
+        <script><![CDATA[
+            function onBankAssignUpdate(ds, record, name, value) {
+                if (name == 'province_code') {
+                    var field = record.getMeta().getField('city_name');
+                    field.setLovPara('district_code', record.get('province_code'));
+            
+                    record.set("city_code", null);
+                    record.set("city_name", null);
+                }
+                if (name == 'bank_code') {
+                    record.set('sparticipantbankno', null);
+                    record.set('bank_location', null);
+                    record.set('city_name', null);
+                    record.set('city_code', null);
+                    record.set('province_code', null);
+                    record.set('province_name', null);
+            
+                }
+            }
+            
+            function onCellClick(grid, row, name, record) {
+                if (name == 'sparticipantbankno') {
+                    var f = record.getMeta().getField('sparticipantbankno');
+                    f.setLovPara('bank_code', record.get('bank_code'));
+                }
+            
+                var metadata = record.getMeta();
+                var status = record.get('status');
+                if (status == 'S' && name != 'notes') {
+                    metadata.getField(name).setReadOnly(true);
+                }
+            }
+            
+            function beforesubmitForDs(ds) {
+                var length = ds.getAll().length;
+                var j = 0;
+                for (var i = 0;i < length;i++) {
+                    if (ds.getAt(i).get("primary_flag") == "Y") {
+                        j++;
+                    }
+                }
+                if (j == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:EXP_EMPLOYEE_ACCOUNTS.CHANGE_MAIN_ACCOUNT}', null, 250, 100);
+                    return false;
+                } else if (j > 1) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:EXP_EMPLOYEE_ACCOUNTS.CHANGE_ONE}', null, 250, 100);
+                    return false;
+                }
+            
+                for (var n = 0;n < length;n++) {
+                    for (var k = n + 1;k < length;k++) {
+                        var num_pre = ds.getAt(n).get("line_number");
+                        var num_next = ds.getAt(k).get("line_number");
+                        if (num_pre == num_next) {
+                            Aurora.showInfoMessage('${l:PROMPT}', '${l:EXP_EMPLOYEE_ACCOUNTS.LINE_NUMBER_REPEAT}', null, 250, 100);
+                            return false;
+                        }
+                    }
+                }
+            }
+            
+            function addForDs(ds, record, index) {
+                //var line=${/model/line/record/@line_number};
+                var name = $("companays").getCurrentRecord().get("description");
+                var max_line_number = 0;
+                var records = ds.getAll();
+                for(var i = 0 ; i < records.length ; i++){
+                    if(records[i].get('line_number') > max_line_number){
+                        max_line_number = records[i].get('line_number');
+                    }
+                }
+                record.set("line_number", max_line_number + 10);
+                record.set("account_name", name);
+            }
+            
+            function submitFunction() {
+                var records = $('pur_bank_assigns_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                    return;
+                } else {
+                    var data = [];
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].dirty) {
+                            Aurora.showMessage('${l:PROMPT}', '请先保存数据！');
+                            return;
+                        }
+                        
+                        if(records[i].get('account_number').indexOf(" ") != -1){
+                            Aurora.showMessage('${l:PROMPT}', '供应商账号中存在空格，请重新输入供应商账号！');
+                            return;
+                        }
+                        if (records[i].get('status') == 'P' || records[i].get('status') == 'S') {
+                            Aurora.showMessage('${l:PROMPT}', '不允许提交已提交或已审核的记录！');
+                            return;
+                        }
+                        var para = {};
+                        para.vender_id = records[i].data.vender_id;
+                        para.line_number = records[i].data.line_number;
+                        data.push(para);
+                    }
+                    // var param = $('pur_bank_assigns_ds').getJsonData(true);
+                    Aurora.request({
+                        url: $('pur_wlzq_vender_submit_link1').getUrl(),
+                        para: data,
+                        success: function() {
+                            // $('pur_bank_assigns_ds').query();
+                            $('exp_bank_assign_window').close();
+                            $('pur_wlzq_venders_result_ds').query();
+                            Aurora.showMessage('${l:PROMPT}', ' 操作成功，请等待综合岗审批！');
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function loadFunction(ds) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('status') == 'P') {
+                        records[i].getMeta().getField('line_number').setReadOnly(true);
+                        records[i].getMeta().getField('bank_code').setReadOnly(true);
+                        records[i].getMeta().getField('sparticipantbankno').setReadOnly(true);
+                        records[i].getMeta().getField('account_flag_desc').setReadOnly(true);
+                        records[i].getMeta().getField('account_number').setReadOnly(true);
+                        //records[i].getMeta().getField('primary_flag').setReadOnly(true);
+                        records[i].getMeta().getField('account_name').setReadOnly(true);
+                    }
+                }
+            }
+            
+            function submitSuccessFun() {
+                $('pur_bank_assigns_ds').query();
+            }
+            
+            function beforeremoveFunction(dataSet , records){
+                for (var i= 0 ;i<records.length; i++){
+                    if(records[i].get('status') == 'P' || records[i].get('status') == 'S'){
+                        Aurora.showMessage('${l:PROMPT}', '不允许删除已提交或已审核的记录！');
+                            return false;
+                    }
+                }
+            }
+            
+            function line_number_edit_fun(record, name) {
+                
+                if(record.isNew){
+                    return 'editor_num_for_line_num';
+                }else{
+                    return '';
+                }
+                
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="account_flag_ds" lookupCode="ACCOUNT_FLAG"/>
+            <a:dataSet id="companays" loadData="true" model="fnd.FND5050.pur_wlzq_venders">
+                <a:fields>
+                    <a:field name="vender_code" readOnly="true"/>
+                    <a:field name="description" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_bank_assigns_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="fnd.FND5050.pur_wlzq_ve_accounts" queryUrl="${/request/@context_path}/autocrud/fnd.FND5050.pur_wlzq_ve_accounts/query?vender_id=${/parameter/@vender_id}&amp;vender_code=${/parameter/@vender_code}" selectable="true" submitUrl="${/request/@context_path}/modules/fnd/FND5050/pur_wlzq_bank_assign.svc?vender_id=${/parameter/@vender_id}">
+                <a:fields>
+                    <a:field name="line_number" required="true"/>
+                    <a:field name="sparticipantbankno" autoComplete="true" autoCompleteField="sparticipantbankno" lovGridHeight="320" lovHeight="500" lovService="fnd.cux_banks_lov" lovWidth="600" lovlabelWidth="100" required="true" title="CUX_BANKS.SPARTICIPANTBANKNO">
+                        <a:mapping>
+                            <a:map from="sparticipantbankno" to="sparticipantbankno"/>
+                            <a:map from="sparticipantbankno" to="bank_location_code"/>
+                            <a:map from="province" to="province_name"/>
+                            <a:map from="sparticipantfullname" to="bank_location"/>
+                            <a:map from="province_code" to="province_code"/>
+                            <a:map from="city_code" to="city_code"/>
+                            <a:map from="city" to="city_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_flag_desc" displayField="code_value_name" options="account_flag_ds" required="true" returnField="account_flag" valueField="code_value"/>
+                    <a:field name="bank_code" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="csh.csh_banks_vl?enabled_flag=Y" lovWidth="500" required="true" title="CSH_BANKS.BANK_CODE">
+                        <a:mapping>
+                            <a:map from="bank_code" to="bank_code"/>
+                            <a:map from="bank_name" to="bank_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bank_name"/>
+                    <a:field name="bank_location"/>
+                    <a:field name="province_code"/>
+                    <a:field name="province_name" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="expm.EXP1310.exp_policy_district_query" lovWidth="500" title="FND_REGION_PROVINCE.PROV_NAME">
+                        <a:mapping>
+                            <a:map from="district_code" to="province_code"/>
+                            <a:map from="district_desc" to="province_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="city_code"/>
+                    <a:field name="city_name"/>
+                    <!-- <a:field name="city_name" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="expm.EXP1310.exp_policy_place_lov" lovWidth="500" title="FND_REGION_PROVINCE.CITY_NAME">
+                        <a:mapping>
+                            <a:map from="place_code" to="city_code"/>
+                            <a:map from="place_desc" to="city_name"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="account_name" required="true"/>
+                    <a:field name="account_number" required="true"/>
+                    <a:field name="notes"/>
+                    <a:field name="status_desc" defaultValue="新建"/>
+                    <a:field name="status" defaultValue="N"/>
+                    <a:field name="primary_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onBankAssignUpdate"/>
+                    <a:event name="beforesubmit" handler="beforesubmitForDs"/>
+                    <a:event name="add" handler="addForDs"/>
+                    <a:event name="load" handler="loadFunction"/>
+                    <a:event name="submitSuccess" handler="submitSuccessFun"/>
+                    <a:event name="beforeremove" handler="beforeremoveFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:gridButton bind="pur_bank_assign_grid" type="add" width="80"/>
+                <a:gridButton bind="pur_bank_assign_grid" type="save" width="80"/>
+                <a:gridButton bind="pur_bank_assign_grid" type="delete" width="80"/>
+                <a:gridButton bind="pur_bank_assign_grid" click="submitFunction" text="提交" width="80"/>
+            </a:screenTopToolbar>
+            <a:form id="pur_bank_assign_form" column="2" title="HAP_QUERY_TITLE">
+                <a:textField name="vender_code" bindTarget="companays" prompt="PUR_SYSTEM_VENDERS.VENDER_CODE"/>
+                <a:textField name="description" bindTarget="companays" prompt="PUR_SYSTEM_VENDERS.DESCRIPTION"/>
+            </a:form>
+            <a:grid id="pur_bank_assign_grid" bindTarget="pur_bank_assigns_ds" marginHeight="170" navBar="true">
+                <a:columns>
+                    <a:column name="line_number" align="right" editorFunction="line_number_edit_fun" prompt="EXP_REPORT_LINES.LINE_NUMBER" width="50"/>
+                    <a:column name="bank_code" align="center" editor="editor_lov" prompt="CSH_BANKS.BANK_CODE" width="80"/>
+                    <a:column name="bank_name" align="left" prompt="CSH_BANKS.BANK_ALT_NAME" width="120"/>
+                    <a:column name="sparticipantbankno" align="left" editor="editor_lov" width="120"/>
+                    <a:column name="bank_location" align="left" prompt="CSH_BANK_BRANCHES.BRANCH_NAME" width="120"/>
+                    <a:column name="province_name" align="left" prompt="FND_REGION_PROVINCE.PROV_NAME" width="120"/>
+                    <a:column name="city_name" align="left" prompt="市名称" width="120"/>
+                    <a:column name="account_name" align="left" editor="editor_tf" prompt="EXP_EMPLOYEE_ACCOUNTS.BANK_ACCOUNT_NAME" width="120"/>
+                    <a:column name="account_flag_desc" align="center" editor="editor_combox" prompt="ACCOUNT_FLAG" width="80"/>
+                    <a:column name="account_number" align="left" editor="editor_tf" prompt="CSH_PAYMENT.BANK_ACCOUNT_CODE" width="120"/>
+                    <a:column name="status_desc" align="center" prompt="状态"/>
+                    <a:column name="notes" align="left" editor="editor_tf" prompt="CSH_CASH_PLAN_HEADERS.NOTES" width="150"/>
+                    <a:column name="primary_flag" align="center" editor="editor_cb" prompt="EXP_EMPLOYEE_ACCOUNTS.BANK_ACCOUNT_MAIN" width="50"/>
+                    <a:column name="enabled_flag" align="center" editor="editor_cb" prompt="EXP_EMPLOYEE_ASSIGN.ENABLED_FLAG" width="50"/>
+                </a:columns>
+                <a:events>
+                    <a:event name="cellclick" handler="onCellClick"/>
+                </a:events>
+                <a:editors>
+                    <a:lov id="editor_lov"/>
+                    <a:textField id="editor_tf"/>
+                    <a:checkBox id="editor_cb"/>
+                    <a:comboBox id="editor_combox"/>
+                    <a:numberField id="editor_num"/>
+                    <a:numberField id="editor_num_for_line_num" allowDecimals="false"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function PurBankAssignInitSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                var vh = $A.getViewportHeight();
+                //留白宽度
+                var marginWidth = 35;
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                Ext.get('pur_bank_assign_form').setWidth(autoWidth + 4);
+                $('pur_bank_assign_grid').setWidth(autoWidth);
+            }
+            //Ext.fly(window).on('resize', PurBankAssignInitSize);
+            PurBankAssignInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

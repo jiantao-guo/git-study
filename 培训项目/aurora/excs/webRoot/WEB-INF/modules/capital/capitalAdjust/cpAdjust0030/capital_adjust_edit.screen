@@ -1,0 +1,522 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: CJM  
+    $Date: 2016-9-17 下午2:37:55  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="true" model="capital.public.user_default_info" rootPath="default_info"/>
+        <a:model-query defaultWhereClause="o.cp_capital_adjust_types_id = ${/parameter/@cp_capital_adjust_types_id}" model="capital.capitalAdjust.cpAdjust0030.capital_adjust_type" rootPath="adjust_type_model"/>
+        <a:model-query autocount="false" fetchall="true" model="csh.csh_payment_methods_list" rootpath="payment_method_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="capital_adjust_list_link" url="${/request/@context_path}/modules/capital/capitalAdjust/cpAdjust0040/capital_adjust_list.screen"/>
+        <a:link id="cp_transfer_appl_list_link" url="${/request/@context_path}/modules/capital/capitalAdjust/cpAdjust0030/capital_adjust_list.screen"/>
+        <a:link id="uploadFile_link_10" url="${/request/@context_path}/uploadFile.screen"/>
+        <a:link id="transfer_appl_submit_link" model="capital.capitalAdjust.cpAdjust0030.cp_capital_adjust_list" modelaction="execute"/>
+        <a:link id="transfer_appl_delete_one_link" model="capital.capitalAdjust.cpAdjust0030.cp_capital_adjust_list" modelaction="delete"/>
+        <a:link id="check_history_link1" url="${/request/@context_path}/modules/capital/capitalAdjust/cpAdjust0050/capital_adjust_query_his.screen"/>
+        <a:link id="capital_adjust_import_link" url="${/request/@context_path}/modules/capital/capitalAdjust/cpAdjust0035/capital_adjust_import.screen"/>
+        <script><![CDATA[
+            function saveFunction() {
+                $('cp_adjust_header_result_ds').submit();
+            }
+            
+            //跟踪单据
+            
+            function histotyFun() {
+                var ca_capital_adjust_info_id = $('cp_adjust_header_result_ds').getAll()[0].get('ca_capital_adjust_info_id');
+                new Aurora.Window({
+                    url: $('check_history_link1').getUrl() + '?ca_capital_adjust_info_id=' + ca_capital_adjust_info_id,
+                    title: '单据历史',
+                    id: 'cp_adjust_query_history_screen',
+                    width: 800,
+                    height: 500
+                });
+            }
+            
+            function backFunction() {
+                url = $('capital_adjust_list_link').getUrl();
+                Aurora.post(url);
+            }
+            
+            //提交
+            
+            function approveFunction() {
+                if (!$('cp_adjust_header_result_ds').validate()) {
+                    return;
+                }
+                if (!$('cp_adjust_line_result_ds').validate()) {
+                    return;
+                }
+                //---------------------------------
+                var is_saved = true;
+                if ($('cp_adjust_header_result_ds').getAll()[0].dirty) {
+                    is_saved = false;
+                }
+                var lines = $('cp_adjust_line_result_ds').getAll();
+                for (var i = 0;i < lines.length;i++) {
+                    if (lines[i].dirty) {
+                        is_saved = false;
+                        break;
+                    }
+                }
+                if (!is_saved) {
+                    Aurora.showMessage('${l:PROMPT}', '未保存,请先保存!');
+                    return;
+                }
+                //----------------------------------
+                var ca_capital_adjust_info_id = $('cp_adjust_header_result_ds').getAll()[0].get('ca_capital_adjust_info_id');
+                if (!ca_capital_adjust_info_id) {
+                    Aurora.showMessage('错误', '调拨单未保存,请先保存');
+                } else {
+                    Aurora.showConfirm('提示', '确认提交吗?', function(cmp) {
+            
+                        Aurora.request({
+                            url: $('transfer_appl_submit_link').getUrl(),
+                            para: {
+                                ca_capital_adjust_info_id: ca_capital_adjust_info_id
+                            },
+                            lockMessage: '正在执行，请耐心等待',
+                            success: function() {
+                                // Aurora.showMessage('信息', '提交成功');
+                                backFunction();
+                            },
+                            scope: this
+                        });
+                    }, null, null, 100);
+                }
+            }
+            //删除表
+            
+            function deletereport() {
+                var ca_capital_adjust_info_id = $('cp_adjust_header_result_ds').getAll()[0].get('ca_capital_adjust_info_id');
+                if (!ca_capital_adjust_info_id) {
+                    Aurora.showMessage('错误', '报销单未保存,请先保存');
+                } else {
+                    Aurora.showConfirm('${l:PROMPT}', '确定删除此单据？', function(cmp) {
+                        Aurora.request({
+                            url: $('transfer_appl_delete_one_link').getUrl(),
+                            para: {
+                                ca_capital_adjust_info_id: ca_capital_adjust_info_id
+                            },
+                            success: function() {
+                                backFunction();
+                            },
+                            scope: this
+                        });
+                    }, null, null, 85);
+                }
+            }
+            //是否可编辑
+            
+            function editFunction(record, name) {
+                return 'lov_editor_create';
+            
+            }
+            //单元格点击事件
+            
+            function trainReportLinesCellClickFun(grid, row, name, record) {
+                var metadata = record.getMeta();
+                var cp_capital_adjust_types_id = $('cp_adjust_header_result_ds').getAll()[0].get('cp_capital_adjust_types_id');
+                if (name == 'out_account') {
+                    metadata.getField('out_account').setLovPara('adjust_account_type', 'OUT');
+                    metadata.getField('out_account').setLovPara('comp_op', 'COMP');
+                    metadata.getField('out_account').setLovPara('cp_capital_adjust_types_id', cp_capital_adjust_types_id);
+                } else if (name == 'in_account') {
+                    var in_organ_code = record.get('in_organ_code');
+                    metadata.getField('in_account').setLovPara('adjust_account_type', 'IN');
+                    metadata.getField('in_account').setLovPara('cp_capital_adjust_types_id', cp_capital_adjust_types_id);
+                }
+            }
+            //单元格更新事件
+            
+            function capitalLinesUpdateFun(dateSet, record, name, value, oldvalue) {
+                var a = $('grid_id');
+                if (name == 'out_account') {
+                    if (value == record.get('in_account')) {
+                        Aurora.showMessage('${l:PROMPT}', '调出账户不能等于调入账户');
+                        record.set('out_account', '');
+                        record.set('out_account_name', '');
+                        record.set('out_bank', '');
+                        record.set('out_branch_bank', '');
+                        record.fireBindDataSetEvent();
+                    }
+            
+                    if ('${/model/adjust_type_model/record/@out_project_flag}' == 'Y') {
+                        record.getMeta().getField('out_project_name').setRequired(true);
+                    }
+            
+                    if ('${/model/adjust_type_model/record/@in_project_flag}' == 'Y') {
+                        record.getMeta().getField('in_project_name').setRequired(true);
+                    }
+                } else if (name == 'in_account' && record.get('in_account')) {
+                    if (value == record.get('out_account')) {
+                        Aurora.showMessage('${l:PROMPT}', '调出账户不能等于调入账户');
+                        record.set('in_account', '');
+                        record.set('in_account_name', '');
+                        record.set('in_bank', '');
+                        record.set('in_bank_cn', '');
+                        record.set('in_branch_bank', '');
+                        record.set('in_branch_bank_cn', '');
+                        record.fireBindDataSetEvent();
+                    }
+                }
+            }
+            //提交、删除后更新行
+            
+            function reloadres() {
+                var ca_capital_adjust_info_id = $('cp_adjust_header_result_ds').getAll()[0].get('ca_capital_adjust_info_id');
+                $('cp_capital_adjust_edit_query_ds').getAll()[0].set('ca_capital_adjust_info_id', ca_capital_adjust_info_id);
+                $('cp_adjust_header_result_ds').query();
+                $('cp_adjust_line_result_ds').query();
+            }
+            //显示按钮
+            
+            function showButton() {
+                var ca_capital_adjust_info_id = $('cp_adjust_header_result_ds').getAll()[0].get('ca_capital_adjust_info_id');
+                //提交按钮
+                if (ca_capital_adjust_info_id) {
+                    $('cp_adjust_header_result_ds').getCurrentRecord().getMeta().getField('adjust_type_desc').setReadOnly(true);
+                    $('cp_adjust_header_result_ds').getCurrentRecord().getMeta().getField('currency_name').setReadOnly(true);
+                    $('cp_adjust_header_result_ds').getCurrentRecord().getMeta().getField('payment_type_desc').setReadOnly(true);
+                    if ($('cp_adjust_line_result_ds').getAll().length > 0) {
+                        Ext.get('submitBtn').show();
+                        Ext.get('deletereportBtn').show();
+                        Ext.get('uploadBtn').show();
+                        Ext.get('histotyBtn').show();
+                        Ext.get('printBtn').show();
+            
+                    } else {
+                        Ext.get('submitBtn').hide();
+                        Ext.get('deletereportBtn').hide();
+                        Ext.get('uploadBtn').hide();
+                        Ext.get('histotyBtn').hide();
+                        Ext.get('printBtn').hide();
+                    }
+                    Ext.get('export_btn').show();
+                    Ext.get('import_btn').show();
+                } else {
+                    Ext.get('submitBtn').hide();
+                    Ext.get('deletereportBtn').hide();
+                    Ext.get('uploadBtn').hide();
+                    Ext.get('histotyBtn').hide();
+                    Ext.get('printBtn').hide();
+                    Ext.get('export_btn').hide();
+                    Ext.get('import_btn').hide();
+                }
+            }
+            //行加载
+            
+            function linesLoadFunHandler() {
+                showButton();
+                var records = $('cp_adjust_line_result_ds').getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if ('${/model/adjust_type_model/record/@out_project_flag}' == 'Y') {
+                        records[i].getMeta().getField('out_project_name').setRequired(true);
+                    }
+            
+                    if ('${/model/adjust_type_model/record/@in_project_flag}' == 'Y') {
+                        records[i].getMeta().getField('in_project_name').setRequired(true);
+                    }
+                }
+            }
+            Aurora.onReady(function() {
+                showButton();
+            });
+            //新增
+            
+            function createFunction() {
+                var lineds = $('cp_adjust_line_result_ds');
+                var newOneRecord = lineds.create();
+            }
+            
+            function lineCreateFun() {
+            
+               }
+            
+            Aurora.onReady(function() {
+                if ('${/model/adjust_type_model/record/@out_project_flag}' == 'N') {
+                    $('grid_id').hideColumn('out_project_name');
+                }
+            
+                if ('${/model/adjust_type_model/record/@in_project_flag}' == 'N') {
+                    $('grid_id').hideColumn('in_project_name');
+                }
+            });
+            
+            
+            function uploadFileFun() {
+                var ca_capital_adjust_info_id = $('cp_adjust_header_result_ds').getAll()[0].get('ca_capital_adjust_info_id');
+                var url = $('uploadFile_link_10').getUrl() + '?table_name=CAPITAL_ADJUST' + '&header_id=' + ca_capital_adjust_info_id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'check_upload_file_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            
+            
+            function printFunction() {
+                var head_id = $('cp_adjust_header_result_ds').getAll()[0].get('ca_capital_adjust_info_id');
+                var url = '${/request/@context_path}/reports?__report=${/model/adjust_type_model/record/@report}&head_id=' + head_id + '&__format=pdf' + '&LANGUAGE=ZHS' + '&session_id=' + '${/session/@session_id}';
+                window.open(url);
+            }
+            
+            function exportFun() {
+            
+                var ds = $('cp_adjust_header_result_ds');
+                var columnTitles = ['资金用途(中文)', '交易对手(中文)', '出入金类型(中文)', '组合账户(中文)', '计划付款时间', '调出账号', '调出账户名(可空)', '调出项目(代码)', '调出金额', '调入账号', '调入账户名(可空)', '调入项目(代码)', '说明'];
+                var columnNames = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm'];
+                var columns = [];
+                for (var i = 0;i < columnTitles.length;i++) {
+                    //选取文件启用的列
+                    columns.push({
+                        prompt: columnTitles[i],
+                        name: columnNames[i],
+                        width: 100
+                    });
+                }
+                $A.doExport($('cp_adjust_header_result_ds'), columns, '', '', '', 'Capital Adjust');
+            }
+            
+            function importFun() {
+                var ca_capital_adjust_info_id = $('cp_adjust_header_result_ds').getAll()[0].get('ca_capital_adjust_info_id');
+                var url = $('capital_adjust_import_link').getUrl() + '?batch_id=${/session/@session_id}&amp;ca_capital_adjust_info_id=' + ca_capital_adjust_info_id;
+                Aurora.post(url);
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="adjust_type_ds" lookupCode="ADJUST_TYPE"/>
+            <a:dataSet id="approve_status_ds" lookupCode="APPROVE_STATUS"/>
+            <a:dataSet id="pay_status_ds" lookupCode="PAY_STATUS"/>
+            <a:dataSet id="currency_name_ds" loadData="true" model="exp.exp_currency_code"/>
+            <a:dataSet id="payment_method_ds" lookupCode="PAYMENT_METHOD"/>
+            <a:dataSet id="cap_use_ds" lookupCode="WLZQ_ADJST_CAP_USE"/>
+            <a:dataSet id="trans_opponet_ds" lookupCode="WLZQ_ADJST_TRANS_OPPONET"/>
+            <a:dataSet id="out_in_type_ds" lookupCode="WLZQ_ADJST_OUT_IN_TYPE"/>
+            <a:dataSet id="group_account_ds" lookupCode="WLZQ_ADJST_GROUP_ACCOUNT"/>
+            <a:dataSet id="payment_mehtod_ds">
+                <a:datas datasource="/model/payment_method_list"/>
+            </a:dataSet>
+            <a:dataSet id="cp_capital_adjust_edit_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="ca_capital_adjust_info_id" defaultValue="${/parameter/@ca_capital_adjust_info_id}"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="cp_adjust_header_result_ds" autoCreate="true" loadData="true" model="capital.capitalAdjust.cpAdjust0030.cp_capital_adjust_list" queryDataSet="cp_capital_adjust_edit_query_ds" submitUrl="${/request/@context_path}/modules/capital/capitalAdjust/cpAdjust0030/capital_adjust_edit.svc">
+                <a:fields>
+                    <a:field name="ca_capital_adjust_info_id"/>
+                    <a:field name="adjust_number" readOnly="true"/>
+                    <a:field name="cp_capital_adjust_types_id" defaultValue="${/model/adjust_type_model/record/@cp_capital_adjust_types_id}"/>
+                    <a:field name="adjust_type_cn" defaultValue="${/model/adjust_type_model/record/@cp_adjust_type_name}" readOnly="true"/>
+                    <a:field name="payment_type_desc" displayfield="description" options="payment_mehtod_ds" prompt="支付方式" returnfield="payment_type" valuefield="payment_method_code"/>
+                    <a:field name="company_id" defaultValue="${/model/default_info/record/@company_id}"/>
+                    <a:field name="company_name" defaultValue="${/model/default_info/record/@company_name}" readOnly="true"/>
+                    <a:field name="company_code" defaultValue="${/model/default_info/record/@company_code}" readOnly="true"/>
+                    <a:field name="employee_id" defaultValue="${/model/default_info/record/@employee_id}"/>
+                    <a:field name="employee_name" defaultValue="${/model/default_info/record/@employee_name}" readOnly="true"/>
+                    <a:field name="position_id" defaultValue="${/model/default_info/record/@position_id}"/>
+                    <a:field name="position_name" defaultValue="${/model/default_info/record/@position_name}" readOnly="true"/>
+                    <a:field name="unit_id" defaultValue="${/model/default_info/record/@unit_id}"/>
+                    <a:field name="unit_name" defaultValue="${/model/default_info/record/@unit_name}" lovHeight="500" lovService="capital.capitalAdjust.cpAdjust0030.exp_org_unit_adjust_lov" lovWidth="800" required="true">
+                        <a:mapping>
+                            <a:map from="unit_name" to="unit_name"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="adjust_date" defaultValue="${/model/default_info/record/@cur_date}" required="true"/>
+                    <a:field name="approve_status"/>
+                    <a:field name="approve_status_cn" defaultValue="新建" displayField="code_value_name" options="approve_status_ds" readOnly="true" returnField="approve_status" valueField="code_value"/>
+                    <a:field name="amount" readOnly="true"/>
+                    <a:field name="currency_name" defaultValue="人民币" displayField="currency_name" options="currency_name_ds" returnField="currency" valueField="currency_code"/>
+                    <a:field name="currency" defaultValue="CNY"/>
+                    <a:field name="description"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="reloadres"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="cp_adjust_line_result_ds" bindName="lines" bindTarget="cp_adjust_header_result_ds" loadData="true" model="capital.capitalAdjust.cpAdjust0030.cp_capital_adjust_line" queryDataSet="cp_capital_adjust_edit_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="sourse_type"/>
+                    <a:field name="order_num" readOnly="true"/>
+                    <a:field name="transfer_appl_header_number" readOnly="true"/>
+                    <a:field name="transfer_appl_line_id"/>
+                    <a:field name="in_organ_apply"/>
+                    <a:field name="in_account_apply"/>
+                    <a:field name="out_organ_apply"/>
+                    <a:field name="out_account_apply"/>
+                    <a:field name="out_organ" defaultValue="${/model/default_info/record/@company_id}" readOnly="true"/>
+                    <a:field name="out_organ_code" defaultValue="${/model/default_info/record/@company_code}" readOnly="true"/>
+                    <a:field name="out_organ_name" autoComplete="true" autoCompleteField="company_short_name" defaultValue="${/model/default_info/record/@company_name}" lovGridHeight="300" lovHeight="450" lovWidth="600" lovservice="capital.public.company_lov" readOnly="true">
+                        <a:mapping>
+                            <a:map from="company_id" to="out_organ"/>
+                            <a:map from="company_code" to="out_organ_code"/>
+                            <a:map from="company_short_name" to="out_organ_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="out_account" autoComplete="true" autoCompleteField="bank_account" lovGridHeight="300" lovHeight="480" lovService="capital.capitalAdjust.cpAdjust0030.get_bank_account_by_types" lovWidth="740" required="true" title="CSH_BANK_ACCOUNTS.BANK_ACCOUNT_NUM">
+                        <a:mapping>
+                            <a:map from="bank_account" to="out_account"/>
+                            <a:map from="account_name" to="out_account_name"/>
+                            <a:map from="open_bank" to="out_bank"/>
+                            <a:map from="open_bank_cn" to="out_bank_cn"/>
+                            <a:map from="branch_bank" to="out_branch_bank"/>
+                            <a:map from="branch_bank_cn" to="out_branch_bank_cn"/>
+                            <a:map from="currency" to="currency"/>
+                            <a:map from="currency_name" to="currency_name"/>
+                            <a:map from="company_id" to="out_organ"/>
+                            <a:map from="company_code" to="out_organ_code"/>
+                            <a:map from="company_short_name" to="out_organ_name"/>
+                            <a:map from="payment_method" to="payment_method"/>
+                            <a:map from="payment_method_desc" to="payment_method_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="out_account_name" readOnly="true"/>
+                    <!--  <a:field name="out_bank"/>
+                    <a:field name="currency_name" defaultValue="人民币" displayField="currency_name" options="currency_name_ds" readOnly="true" required="true" returnField="currency" valueField="currency_code"/> -->
+                    <a:field name="currency" defaultValue="CNY"/>
+                    <a:field name="in_organ"/>
+                    <a:field name="in_organ_code"/>
+                    <a:field name="in_organ_name" autoComplete="true" autoCompleteField="company_short_name" lovGridHeight="300" lovHeight="450" lovWidth="600">
+                        <a:mapping>
+                            <a:map from="company_id" to="in_organ"/>
+                            <a:map from="company_code" to="in_organ_code"/>
+                            <a:map from="company_short_name" to="in_organ_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="in_account" autoComplete="true" autoCompleteField="bank_account" lovGridHeight="300" lovHeight="480" lovService="capital.capitalAdjust.cpAdjust0030.get_bank_account_by_types" lovWidth="740" required="true" title="CSH_BANK_ACCOUNTS.BANK_ACCOUNT_NUM">
+                        <a:mapping>
+                            <a:map from="bank_account" to="in_account"/>
+                            <a:map from="account_name" to="in_account_name"/>
+                            <a:map from="open_bank" to="in_bank"/>
+                            <a:map from="open_bank_cn" to="in_bank_cn"/>
+                            <a:map from="branch_bank_cn" to="in_branch_bank_cn"/>
+                            <a:map from="branch_bank" to="in_branch_bank"/>
+                            <a:map from="currency" to="in_currency"/>
+                            <a:map from="currency_name" to="in_currency_name"/>
+                            <a:map from="company_id" to="in_organ"/>
+                            <a:map from="company_code" to="in_organ_code"/>
+                            <a:map from="company_short_name" to="in_organ_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="in_account_name" readOnly="true"/>
+                    <a:field name="in_bank_cn" readOnly="true"/>
+                    <a:field name="adjust_amount" required="true"/>
+                    <a:field name="in_amount"/>
+                    <a:field name="description"/>
+                    <a:field name="payment_status" defaultValue="9"/>
+                    <a:field name="payment_status_cn" defaultValue="未付款" displayField="code_value_name" options="pay_status_ds" returnField="payment_status" valueField="code_value"/>
+                    <a:field name="bank_feedback" readOnly="true"/>
+                    <a:field name="account_date" readOnly="true"/>
+                    <a:field name="ca_capital_adjust_line_id"/>
+                    <a:field name="amount_apply"/>
+                    <a:field name="payment_method_desc" displayField="code_value_name" options="payment_method_ds" returnField="payment_method" valueField="code_value"/>
+                    <a:field name="out_project_name" lovHeight="500" lovService="capital.capitalAdjust.cpAdjust0030.capital_project_lov" lovWidth="800">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="out_project_code"/>
+                            <a:map from="dimension_value_description" to="out_project_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="in_project_name" lovHeight="500" lovService="capital.capitalAdjust.cpAdjust0030.capital_project_lov" lovWidth="800">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="in_project_code"/>
+                            <a:map from="dimension_value_description" to="in_project_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="cap_use_cn" displayField="code_value_name" options="cap_use_ds" required="true" returnField="cap_use" valueField="code_value"/>
+                    <a:field name="trans_opponet_cn" displayField="code_value_name" options="trans_opponet_ds" required="true" returnField="trans_opponet" valueField="code_value"/>
+                    <a:field name="out_in_type_cn" displayField="code_value_name" options="out_in_type_ds" returnField="out_in_type" valueField="code_value"/>
+                    <a:field name="group_account_cn" displayField="code_value_name" options="group_account_ds" returnField="group_account" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="linesLoadFunHandler"/>
+                    <a:event name="update" handler="capitalLinesUpdateFun"/>
+                    <a:event name="afterremove" handler="reloadres"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:screenTitle/>
+            <a:toolbarButton click="createFunction" text="新增行" width="80"/>
+            <a:gridButton bind="grid_id" text="删除行" type="delete" width="80"/>
+            <a:toolbarButton id="saveBtn" click="saveFunction" text="PROMPT.SAVE" width="80"/>
+            <a:toolbarButton click="backFunction" text="HAP_BACK" width="80"/>
+            <a:toolbarButton id="export_btn" click="exportFun" hidden="true" text="导出模板" width="80"/>
+            <a:toolbarButton id="import_btn" click="importFun" hidden="true" text="导入" width="80"/>
+            <a:toolbarButton id="deletereportBtn" click="deletereport" hidden="true" text="HAP_DELETE_ALL_REPORT" width="80"/>
+            <a:toolbarButton id="submitBtn" click="approveFunction" hidden="true" text="提交审批" width="80"/>
+            <a:toolbarButton id="uploadBtn" click="uploadFileFun" text="附件上传"/>
+            <a:toolbarButton id="histotyBtn" click="histotyFun" text="单据跟踪"/>
+            <a:toolbarButton id="printBtn" click="printFunction" text="单据打印"/>
+        </a:screenTopToolbar>
+        <a:form labelWidth="120" marginWidth="20" style="margin-left:10px;margin-top:10px;" title="资金调拨创建">
+            <a:hBox style="width:100%;">
+                <a:textField name="adjust_number" bindTarget="cp_adjust_header_result_ds" prompt="单据编号"/>
+                <a:comboBox name="adjust_type_cn" bindTarget="cp_adjust_header_result_ds" prompt="单据类型"/>
+                <a:datePicker name="adjust_date" bindTarget="cp_adjust_header_result_ds" prompt="申请日期"/>
+                <a:comboBox name="approve_status_cn" bindTarget="cp_adjust_header_result_ds" prompt="状态"/>
+            </a:hBox>
+            <a:hBox style="width:100%">
+                <a:lov name="company_name" bindTarget="cp_adjust_header_result_ds" prompt="申请公司"/>
+                <a:lov name="unit_name" bindTarget="cp_adjust_header_result_ds" prompt="申请部门"/>
+                <a:lov name="employee_name" bindTarget="cp_adjust_header_result_ds" prompt="申请人"/>
+                <a:numberField name="amount" allowFormat="true" allowNegative="false" bindTarget="cp_adjust_header_result_ds" prompt="申请金额"/>
+            </a:hBox>
+            <!-- <a:hBox style="width:50%">
+                <a:comboBox name="payment_type_desc" bindTarget="cp_adjust_header_result_ds" prompt="支付方式"/>
+            </a:hBox> -->
+            <a:hBox style="width:100%">
+                <a:textArea name="description" bindTarget="cp_adjust_header_result_ds" height="40" prompt="备注" width="700"/>
+            </a:hBox>
+        </a:form>
+        <a:grid id="grid_id" bindTarget="cp_adjust_line_result_ds" marginHeight="280" marginWidth="20" navBar="true" showRowNumber="true" style="margin-left:10px;margin-top:10px;">
+            <a:columns>
+                <a:column name="order_num" align="left" prompt="序号" width="50"/>
+                <a:column name="cap_use_cn" align="center" editor="combobox_editor" prompt="资金用途" width="80"/>
+                <a:column name="trans_opponet_cn" align="center" editor="combobox_editor" prompt="交易对手" width="80"/>
+                <!-- <a:column name="out_in_type_cn" align="center" editor="combobox_editor" prompt="出入金类型" width="80"/>
+                <a:column name="group_account_cn" align="center" editor="combobox_editor" prompt="组合账户" width="80"/> -->
+                <a:column name="plan_date_time" align="center" editor="dateT_editor" prompt="计划付款时间" renderer="Aurora.formatDateTime" width="100"/>
+                <!-- <a:column name="out_organ_name" align="center" editorFunction="editFunction" prompt="调出公司" width="120"/> -->
+                <a:column name="out_account" align="center" editorFunction="editFunction" prompt="调出账号" width="150"/>
+                <a:column name="out_account_name" align="center" prompt="调出账户名" width="150"/>
+                <a:column name="out_project_name" align="right" editor="lov_editor_create" prompt="调出项目" width="150"/>
+                <a:column name="out_bank_cn" align="center" prompt="调出银行" width="100"/>
+                <!-- <a:column name="currency_name" align="center" prompt="调出币种" width="100"/> -->
+                <a:column name="payment_method_desc" align="center" prompt="付款方式" width="100"/>
+                <a:column name="adjust_amount" align="right" editor="numberfield_editor_create" prompt="调出金额" renderer="Aurora.formatMoney" width="100"/>
+                <a:column name="out_branch_bank_cn" align="center" hidden="true" prompt="调出所属银行" width="100"/>
+                <!-- <a:column name="in_organ_name" align="center" editorFunction="editFunction" prompt="调入公司" width="120"/> -->
+                <a:column name="in_account" align="center" editorFunction="editFunction" prompt="调入账号" width="150"/>
+                <a:column name="in_account_name" align="center" prompt="调入账户名" width="150"/>
+                <a:column name="in_project_name" align="right" editor="lov_editor_create" prompt="调入项目" width="150"/>
+                <a:column name="in_bank_cn" align="center" prompt="调入银行" width="100"/>
+                <!-- <a:column name="in_currency_name" align="center" prompt="调入币种" width="100"/> -->
+                <!-- <a:column name="in_amount" align="right" editor="numberfield_editor_create" prompt="调入金额" renderer="Aurora.formatMoney" width="100"/> -->
+                <a:column name="in_branch_bank_cn" align="center" hidden="true" prompt="调入所属银行" width="100"/>
+                <a:column name="description" align="left" editor="textfield_editor_create" prompt="说明" width="200"/>
+                <a:column name="summary" align="left" hidden="true" prompt="对账字段(编号)" width="150"/>
+                <a:column name="bank_feedback" align="left" hidden="true" prompt="银行反馈信息" width="100"/>
+                <a:column name="account_date" align="center" hidden="true" prompt="交易日期" width="100"/>
+            </a:columns>
+            <a:editors>
+                <a:textField id="textfield_editor_create"/>
+                <a:numberField id="numberfield_editor_create"/>
+                <a:lov id="lov_editor_create"/>
+                <a:comboBox id="combobox_editor_create"/>
+                <a:comboBox id="combobox_editor"/>
+                <a:dateTimePicker id="dateT_editor"/>
+            </a:editors>
+            <a:events>
+                <a:event name="cellclick" handler="trainReportLinesCellClickFun"/>
+            </a:events>
+        </a:grid>
+        <a:hBox/>
+    </a:view>
+</a:screen>

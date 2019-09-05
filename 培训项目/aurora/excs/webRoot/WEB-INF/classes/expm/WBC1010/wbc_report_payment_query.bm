@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+         select *
+      from (select v.need_payment_amount - payed_amount unpayment_amount,
+             v.need_payment_amount - payed_amount payment_amount,
+             v.*
+          from (select erh.exp_report_header_id,
+                 erps.payee_category payee_category_id,
+                 (select b.code_value_name
+                  from sys_codes_vl a, sys_code_values_vl b
+                 where a.code_id = b.code_id
+                   and a.code = 'PAYMENT_OBJECT'
+                   and b.code_value = erps.payee_category) payee_category,
+                 decode(erps.payee_category,
+                    'EMPLOYEE',
+                    (select ee.employee_code || '-' || ee.name
+                     from exp_employees ee
+                    where ee.employee_id = erps.payee_id),
+                    'VENDER',
+                    (select svv.vender_code || '-' || svv.description
+                     from pur_system_venders_vl svv
+                    where svv.vender_id = erps.payee_id),
+                    'CUSTOMER',
+                    (select scv.customer_code || '-' ||
+                        scv.description
+                     from ord_system_customers_vl scv
+                    where scv.customer_id = erps.payee_id)) payee_name,
+                 erps.payee_id,
+                 erh.exp_report_type_id,
+                 erh.report_date,
+                 to_char(erps.schedule_due_date,'yyyy-mm-dd') schedule_due_date,
+                 erh.currency_code,
+                 erh.company_id,
+                 erh.employee_id,
+                 erh.payment_method_id,
+                 (select description_text from csh_payment_methods cpm,fnd_descriptions fd where cpm.payment_method_id = erh.payment_method_id and fd.description_id = cpm.description_id and fd.language = ${/session/@lang}) payment_method,
+                 (select sum(erl.report_amount)
+                  from exp_report_lines erl
+                 where erl.exp_report_header_id =
+                     erh.exp_report_header_id) report_amount,
+                 erps.due_amount need_payment_amount,
+                 (select nvl(sum(w.csh_write_off_amount), 0)
+                  from csh_write_off w
+                 where w.document_source = 'EXPENSE_REPORT'
+                   and w.document_header_id =
+                     erps.exp_report_header_id
+                   and w.document_line_id =
+                     erps.payment_schedule_line_id) payed_amount,
+                 erh.exp_report_number,
+                 (select ertv.description
+                  from exp_expense_report_types_vl ertv
+                 where ertv.expense_report_type_id =
+                     erh.exp_report_type_id) exp_report_type,
+                 erps.payment_schedule_line_id,
+                    (select cchs.contract_number  from con_contract_headers cchs where cchs.contract_header_id=s.document_id) contract_number,
+   (select cpss.payment_schedule_line_number   from con_payment_schedules cpss  where cpss.payment_schedule_line_id=s.document_line_id) line_number,
+                 ( select fv.company_short_name from fnd_companies_vl fv where fv.company_id=erps.company_id) company_name,
+                 erh.company_id report_company_id,
+                 ( select fv.company_code||'-'||fv.company_short_name from fnd_companies_vl fv where fv.company_id=erh.company_id) report_company_desc
+                 
+              from exp_report_headers erh, exp_report_pmt_schedules erps,fnd_companies_vl vvv,csh_doc_payment_company cch,con_document_flows s
+             where erh.audit_flag = 'Y'
+               and  sys_user_secure_exit_pkg.exp_report_payment(erh.exp_report_header_id,${/session/@session_id})='Y'
+               and cch.document_line_id=erps.payment_schedule_line_id
+               and cch.document_type='EXP_REPORT' 
+               and (erh.write_off_status != 'C' OR
+                 erh.write_off_status is null)
+               and ( erh.reversed_flag = 'N' or erh.reversed_flag is null )
+               and cch.payment_company_id = decode(${@company_id},null, ${/session/@company_id},-1,cch.payment_company_id ,${@company_id})
+               and payment_status in  ('ALLOWED','PAID')
+               and  erps.company_id=vvv.company_id
+               and  vvv.set_of_books_id =(select set_of_books_id from  fnd_companies_vl where company_id=${/session/@company_id})
+               and s.document_type(+)='CON_CONTRACT'
+               and s.source_document_type(+)='EXP_REPORT_PMT_SCHEDULES'
+               and s.source_document_id(+)=erps.exp_report_header_id
+               and s.source_document_line_id(+)=erps.payment_schedule_line_id
+               and erh.report_status = 'COMPLETELY_APPROVED'
+               and erh.exp_report_header_id =
+                 erps.exp_report_header_id
+               and erh.exp_report_header_id = ${@header_id}) v
+         where (v.need_payment_amount - payed_amount) > 0) t
+         #WHERE_CLAUSE# order by exp_report_number
+         ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@session_id"/>
+                <bm:parameter name="company_id"/>
+                <bm:parameter inputPath="/session/@company_id"/>
+                <bm:parameter name="company_id"/>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="expense_report_type_id" dataType="java.lang.Long" queryExpression="t.exp_report_type_id = ${@expense_report_type_id}"/>
+        <bm:query-field name="payee_category" dataType="java.lang.String" queryExpression="t.payee_category_id = ${@payee_category}"/>
+        <bm:query-field name="payee_id" dataType="java.lang.Long" queryExpression="t.payee_id = ${@payee_id}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="t.currency_code = ${@currency_code}"/>
+        <bm:query-field name="report_company_id" dataType="java.lang.Long" queryExpression="t.report_company_id like ${@report_company_id}"/>
+        <bm:query-field name="schedule_due_date_from" dataType="java.lang.String" queryExpression="to_char(t.schedule_due_date,&apos;YYYY-MM-DD&apos;) &gt; ${@schedule_due_date_from}"/>
+        <bm:query-field name="schedule_due_date_to" dataType="java.lang.String" queryExpression="to_char(t.schedule_due_date,&apos;YYYY-MM-DD&apos;) &lt; ${@schedule_due_date_to}"/>
+        <bm:query-field name="exp_report_number" dataType="java.lang.String" queryExpression="t.exp_report_number like ${@exp_report_number}"/>
+        <bm:query-field name="payment_method_id" queryExpression="t.payment_method_id=${@payment_method_id}"/>
+        <bm:query-field name="payment_schedule_line_id" queryExpression="t.payment_schedule_line_id=${@payment_schedule_line_id}"/>
+    </bm:query-fields>
+</bm:model>

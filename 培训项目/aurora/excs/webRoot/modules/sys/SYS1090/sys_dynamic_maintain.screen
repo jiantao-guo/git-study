@@ -1,0 +1,512 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" >
+    <a:init-procedure>
+        <a:model-query model="sys.SYS1090.sys_dynamic_headers" rootPath="header"/>
+        <p:method-invoke className="aurora.application.features.cstm.CustomSourceCode" methodName="getContainer" resultPath="/model/results">
+            <p:arguments>
+                <p:argument path="instance" type="uncertain.ocm.IObjectRegistry"/>
+                <p:argument type="java.lang.String" value="${/parameter/@service_name}"/>
+            </p:arguments>
+        </p:method-invoke>
+        
+    </a:init-procedure>
+    <a:view>
+    	
+        <a:link id="dynamic_buz_obj_flexfield_add_url" url="${/request/@context_path}/modules/sys/SYS1090/sys_dynamic_flexfield_add.screen"/>
+        <script><![CDATA[
+            
+            function dynamicDetailClose(record) {
+                $('dynamic_maintain_window').close()
+            }
+            
+            function processDynamicTreeData(datas){
+                for(var i=0;i<datas.length;i++){
+                    var d = datas[i];
+                    if(!d.parent_id)
+                    d['icon']='images/entity.png'
+                }
+                return datas;
+            }
+            
+            
+            function changeDynamicPropertyCard(type,id,did){
+                var fc = Ext.get('formPropertyCard'),gc = Ext.get('gridPropertyCard');
+                fc.setStyle('display','none');
+                gc.setStyle('display','none');
+                if(type == 'form'){
+                    fc.show();
+                    var fds = $('sys_dynamic_form_ds');
+                    fds.setQueryUrl('${/request/@context_path}/modules/sys/SYS1090/sys_dynamic_form_query.svc?id='+id)
+                    fds.setQueryParameter('header_id',${/parameter/@header_id});
+                    fds.setQueryParameter('service_id',${/model/header/record/@service_id});
+                    fds.query();
+                }else if(type=='grid'){
+                    gc.show();
+                    Ext.Ajax.request({
+                        url: '${/request/@context_path}/modules/sys/SYS1090/sys_dynamic_grid_query.svc',
+                        params:{
+                            source_file:'${/parameter/@service_name}',
+                            id:id,
+                            header_id:${/parameter/@header_id},
+                            did:did,
+                            custid:${/parameter/@cust_id},
+                            dimension_code:'${/parameter/@dimension_code}',
+                            dimension_value:'${/parameter/@dimension_value}'
+                        },
+                        success: function(response){
+                            var json = response.responseText,res;
+                            try {
+                                res = Ext.decode(response.responseText);
+                            }catch(e){
+                                $A.showErrorMessage(_lang['ajax.error'], _lang['ajax.error.format']);
+                                return;
+                            }
+                            if(res.success){
+                            	//DataSet分页大小 Grid宽度高度
+                                var ds = res.result.ds_pro.record;
+                                var gds = res.result.grid_pro.record;
+                                var dsr = $('pro_ds').getCurrentRecord();
+                                dsr.set('pageSize',10);
+                                var tl = ds.concat(gds)
+                                for(var i=0;i<tl.length;i++){
+                                    var r = tl[i];
+                                    var n = r['attrib_key'];
+                                    if(n == 'pageSize'||n == 'width' || n == 'height'){
+                                        var v = r['attrib_value']||r['source_value'];                        
+                                        if(parseInt(v)){
+                                            ps = parseInt(v);
+                                            dsr.set(n,ps);
+                                            dsr.set(n+'_rid',r['record_id']);
+                                        }
+                                    }
+                                } 
+                                dsr.commit();
+                                
+                                var column_ds = $('columns_ds');
+                                column_ds.loadData(res.result.columns.record||[]);
+                            }else {
+                                $A.showErrorMessage(_lang['ajax.error'], res.error.message,400,500);
+                                return;
+                            }
+                        }
+                    }); 
+                    
+                }
+            }
+            
+            function linkrenderer(text, record, node) {
+                if(record.get('type')=='form' || record.get('type')=='grid'){
+                    return '<a href="javascript:changeDynamicPropertyCard(\'' + record.get('type') + '\',\''+record.get('id')+'\',\''+record.get('bindtarget')+'\');" >' + text + '</a>'; 
+                }
+                return text;
+            }
+            
+            function onDynamicFormSubmit(){
+                var ds = $('sys_dynamic_form_ds'), all = ds.data, dl = [];
+                var sequence = 1;
+                for(var i=0;i<all.length;i++){
+                    var record = all[i];
+                    record.data['header_id'] = ${/parameter/@header_id};
+                    record.data['container_id'] = $('sys_dynamic_tree_ds').getCurrentRecord().get('id')
+                    var field_id = record.data['field_id'];
+                    if(field_id){
+                        record.set('sequence',sequence++);
+                        if(record.isNew) {
+                            continue
+                        }
+                    }else {
+                        if(!record.dirty){
+                            dl.push(record);
+                            continue;
+                        }
+                        var fid = record.get('form_id');
+                        if(!fid) {
+                            record.isNew = true;
+                            record.data['sequence'] = 0;
+                        }
+                    }
+                    for(var key in record.data){
+                        if(key =='form_id' || key == 'header_id'|| key == 'cmp_id'|| key == 'name' || key == 'sequence'|| key == 'container_id') continue;
+                        if(record.modified && record.modified[key]) continue;
+                        delete record.data[key];
+                    }
+                    
+                }
+                for(var i=0;i<dl.length;i++){
+                    all.remove(dl[i]);
+                }
+                var treeItem = $('sys_dynamic_tree_ds').getCurrentRecord();
+                ds.setSubmitParameter('header_id','${/parameter/@header_id}');
+                ds.setSubmitParameter('container_id',treeItem.get('id'));
+            }
+            
+            function openObjFlexFieldWindow(dsid,type,id){
+                new Aurora.Window({
+                    url:$('dynamic_buz_obj_flexfield_add_url').getUrl() + '?service_name=${/parameter/@service_name}&ds='+dsid+'&type='+type+'&form_id='+id,
+                    title:'动态配置',
+                    id:'buz_obj_flexfield_add_window',
+                    width:600,
+                    height:500
+                });
+            }
+            
+            function addFormBuzObjFlexField(){
+            	var record = $('sys_dynamic_tree_ds').getCurrentRecord();
+            	openObjFlexFieldWindow('sys_dynamic_form_ds','form',record.get('id'))
+            }
+            
+            function addGridBuzObjFlexField(){
+            	var record = $('sys_dynamic_tree_ds').getCurrentRecord();
+            	openObjFlexFieldWindow('columns_ds','grid',record.get('id'))
+            }
+            
+            function delGridBuzObjFlexField(){
+            
+            	var tr = $('sys_dynamic_tree_ds').getCurrentRecord(),id = tr.get('id');
+            	var ds = $('columns_ds');
+            	ds.setSubmitParameter('header_id','${/parameter/@header_id}');
+                ds.setSubmitParameter('grid_id',id);
+                var sectAll = ds.getSelected();
+                for(var i=0;i<sectAll.length;i++){
+                	var record = sectAll[i];
+                	record.data['_cus_status']='delete_column';
+                }
+            
+            	$('sys_dynamic_grid').remove();
+            }
+            
+            function dynamicFormEditor(record,name){
+                if(record.get('field_id') && name == 'enabled_flag'){
+                    return false;
+                }
+                return 'sys_dynamic_form_cb';
+            }
+            
+            function dynamicFieldEditor(record,name){
+                if(record.get('field_id')){
+                    return 'sys_dynamic_form_nf';
+                }else {
+                    return false;
+                }
+            }
+            
+            function processDynamicFormSelection(record){
+                var field_id = record.get('field_id');
+                return !Ext.isEmpty(field_id)
+            }
+            
+            
+            /** ----------------------- Grid -------------------------------**/
+            var dimension_code = '${/model/header/record/@dimension_code}';
+            var dimension_value = '${/model/header/record/@dimension_value}';
+            
+            
+            function dynamicGridFieldEditor(record,name){
+                if(record.get('field_id')){
+                    return 'sys_dynamic_grid_cb';
+                }else {
+                    return false;
+                }
+            }
+            
+            function dynamicGridHiddenFieldEditor(record,name){
+                if(record.get('field_id')){
+                    return false;
+                }else {
+                    return 'sys_dynamic_grid_cb';
+                }
+            }
+
+            function findPropertyRecordId(pds,index_value,attrib_key){
+                var pl = pds.getAll();
+                for(var i=0;i<pl.length;i++){
+                    var r = pl[i];
+                    if(index_value == r.get('index_value') && attrib_key == r.get('attrib_key') && r.get('mod_type') == 'set_attrib'){
+                        return r.get('record_id');
+                    }
+                }
+            }
+
+
+            function saveDynamicGrid(){
+                var propertity_list = [],tr = $('sys_dynamic_tree_ds').getCurrentRecord(),did = tr.get('bindtarget'),
+                    id = tr.get('id'),dr = $('pro_ds').getCurrentRecord(),sds = $('sys_customization_submit_ds');
+                sds.removeAll();
+                if(dr.dirty){
+                    for(var key in dr.modified){
+                        var data = {};
+                        data['head_id']= '${/model/header/record/@customization_header_id}';
+                        data['source_file']= '${/parameter/@service_name}';
+                        data['id_value']=  ((key == 'pageSize') ? did : id);
+                        data['dimension_code']= dimension_code;
+                        data['dimension_value']= dimension_value;
+                        data['attrib_key']= key;
+                        data['attrib_value']= dr.get(key);
+                        var rid = dr.get(key+'_rid');
+                        if(!rid){
+                            data['_cus_status']='insert';
+                        }else{
+                            data['record_id'] = rid;
+                            var v = dr.get(key);
+                            if(Ext.isEmpty(v)){
+                                data['_cus_status']='delete';
+                            }else {
+                                data['_cus_status']='update';
+                            }
+                        }
+                        data['mod_type']='set_attrib';
+                        data['enable_flag']='Y';
+                        sds.create(data);
+                    }
+                }
+
+                var ds = $('columns_ds'),all = ds.getAll(),dl = [];
+            	for(var i=0;i<all.length;i++){
+                	var r = all[i];
+                	r.set('sequence',i+1);                    	
+              	}
+                
+                for(var i=0;i<all.length;i++){
+                    var r = all[i];
+                    if(r.isNew){
+                    	r.data['cmp_id']=id;
+                    	r.data['header_id']='${/parameter/@header_id}';
+                    	r.data['_cus_status']='insert_column';
+                    	sds.create(r.data);
+                    }else if(r.dirty){
+                    	var mk = [];
+                    	for(var k in r.modified){
+                        	mk.push(k);
+                        }
+                    
+                        for(var key in r.data){
+		                    if(key =='grid_id' || key == 'header_id'|| key == 'cmp_id'|| key == 'name') continue;
+	                        if(mk.indexOf(key) == -1) {
+	                        	delete r.data[key];
+	                        	continue;
+	                        }
+	                        var fid = r.get('grid_id');
+                			if(!fid) {
+                				r.data['_cus_status']='insert_column';
+                			} else {
+	                            r.data['_cus_status']='update_column';
+                			}
+                        }
+                    	sds.create(r.data);
+                    }
+                }
+                sds.setSubmitParameter('header_id','${/parameter/@header_id}');
+                sds.setSubmitParameter('grid_id',id);
+                sds.submit();
+            }
+            
+            function customizationFormReorderRenderer(value,record,name){
+                if(record.get('field_id')){
+                    var sb = ['<a title="上移" href="javascript:customizationMoveUp(\''+record.ds.id+'\','+record.id+')"><img style="margin-top:3px;" src="${/request/@context_path}/images/up.png"></img></a>',
+                              '<a title="下移" href="javascript:customizationMoveDown(\''+record.ds.id+'\','+record.id+')"><img style="margin-top:3px;" src="${/request/@context_path}/images/down.png"></img></a>'                          
+                    ];
+                    return sb.join('')
+                }else {
+                    return '';
+                }
+            }
+            
+            
+            
+            function customizationReorderRenderer(value,record, name){
+                var sb = ['<a title="上移" href="javascript:customizationMoveUp(\''+record.ds.id+'\','+record.id+')"><img style="margin-top:3px;" src="${/request/@context_path}/images/up.png"></img></a>',
+                          '<a title="下移" href="javascript:customizationMoveDown(\''+record.ds.id+'\','+record.id+')"><img style="margin-top:3px;" src="${/request/@context_path}/images/down.png"></img></a>'                          
+                ];
+                return sb.join('')
+            }
+
+
+            function customizationMoveUp(did,id){
+                var ds = $(did);
+                var r = ds.findById(id);
+                var i = ds.indexOf(r);
+                if(i==0)return;
+                var pr = ds.getAt(i-1);
+                if(!pr.get('field_id')) return;
+                
+                
+                ds.data[i-1]=r;
+                ds.data[i]=pr;
+                ds.fireEvent("load", ds);
+                ds.locate(ds.indexOf(pr)+1, true);
+            }
+            function customizationMoveDown(did,id){
+                var ds = $(did);
+                var r = ds.findById(id);
+                var i = ds.indexOf(r);
+                if(i==(ds.getAll().length-1))return;
+                var pr = ds.getAt(i+1);
+                ds.data[i+1]=r;
+                ds.data[i]=pr;
+                ds.fireEvent("load", ds);
+                ds.locate(ds.indexOf(pr)+1, true);
+            }
+            
+            function onDynamicGridUpdate(dataSet, record, name,value){
+                record.data['mod_type']='set_attrib';
+            }
+            
+            function onDynamicGridSubmitSuccess(ds,res){
+            	Aurora.showInfoMessage('成功','保存成功!');
+            	var record = $('sys_dynamic_tree_ds').getCurrentRecord();
+            	changeDynamicPropertyCard(record.get('type'),record.get('id'),record.get('bindtarget'));
+            }
+            
+            function onDynamicSubmitSuccess(ds, res){
+                Aurora.showInfoMessage('成功','保存成功!');
+                var record = $('sys_dynamic_tree_ds').getCurrentRecord();
+            	changeDynamicPropertyCard(record.get('type'),record.get('id'));
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="sys_dynamic_head_ds">
+                <a:datas dataSource="/model/header"/>
+                <a:fields>
+                    <a:field name="comments" readOnly="true"/>
+                    <a:field name="service_name" readOnly="true"/>
+                    <a:field name="dimension_type" readOnly="true"/>
+                    <a:field name="dimension_value_desc" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="sys_dynamic_tree_ds" processfunction="processDynamicTreeData" >
+                 <a:datas dataSource="/model/results"/>
+            </a:dataSet>
+            <a:dataSet id="sys_dynamic_form_ds" selectable="true" selectfunction="processDynamicFormSelection" model="sys.SYS1090.sys_dynamic_forms" submitUrl="${/request/@context_path}/modules/sys/SYS1090/sys_dynamic_form_submit.svc?service_name=${/parameter/@service_name}" queryUrl="${/request/@context_path}/modules/sys/SYS1090/sys_dynamic_form_query.svc">
+                <a:fields>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="editabled_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="required_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>                    
+                </a:fields>
+                <a:events>
+                    <a:event name="beforesubmit" handler="onDynamicFormSubmit"/>
+                    <a:event name="submitsuccess" handler="onDynamicSubmitSuccess"/>
+                </a:events>
+            </a:dataSet>
+            
+            <a:dataSet id="sys_customization_submit_ds" submitUrl="${/request/@context_path}/modules/sys/SYS1090/sys_dynamic_grid_submit.svc">
+                <a:events>
+                    <a:event name="submitsuccess" handler="onDynamicGridSubmitSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="align_dataset">
+                <a:datas>
+                    <a:record value="left"/>
+                    <a:record value="center"/>
+                    <a:record value="right"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="array_ds"/>
+            <a:dataSet id="field_ds"/>
+            <a:dataSet id="pro_ds" autoCreate="true"/>
+            <a:dataSet id="columns_ds" selectable="true" selectfunction="processDynamicFormSelection" submitUrl="${/request/@context_path}/modules/sys/SYS1090/sys_dynamic_grid_submit.svc" model="sys.SYS1090.sys_dynamic_grids">
+                <a:fields>
+                    <a:field name="width" datatype="int"/>
+                    <a:field name="align" displayField="value" options="align_dataset" returnField="align" valueField="value"/>
+                    <a:field name="locked_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="hidden_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="required_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="editabled_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onDynamicGridUpdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:fieldSet column="1" title="动态配置" width="800">
+                <a:textField name="comments" bindTarget="sys_dynamic_head_ds" prompt="个性化集" width="200"/>
+                <a:hBox prompt="页面名称" padding="0">
+                    <a:lov name="service_name" bindTarget="sys_dynamic_head_ds" width="500"/>                  
+                </a:hBox>
+                <a:hBox padding="0" prompt="维度">
+                    <a:lov name="dimension_type" bindTarget="sys_dynamic_head_ds" width="200"/>
+                    <a:lov name="dimension_value_desc" bindTarget="sys_dynamic_head_ds" prompt="维度值"  width="223"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:tabPanel id="acp5010_invoice_lines_tab" height="430" width="980">
+                <a:tabs>
+                    <a:tab prompt="文档结构">
+                        <table>
+                            <tr>
+                                <td valign="top">
+                                    <a:form column="1" title="业务对象" width="200">
+                                        <a:tree width="250" height="355" renderer="linkrenderer"  bindTarget="sys_dynamic_tree_ds" displayField="name" idField="id" parentField="parent_id"/>
+                                    </a:form>
+                                </td>
+                                <td valign="top">
+                                    <div id="formPropertyCard" style="display:none">
+                                        <a:grid bindTarget="sys_dynamic_form_ds" height="396" width="705">
+                                            <a:toolBar>
+                                                <a:button type="button" text="新增" className="item-btn-icon-text" btnclass="grid-add" click="addFormBuzObjFlexField"/>
+                                                <a:button type="delete"/>
+                                                <a:button type="save"/>
+                                            </a:toolBar>
+                                            <a:columns>
+                                                <a:column name="enabled_flag" editorfunction="dynamicFormEditor" prompt="启用" width="50"/>
+                                                <a:column name="name" prompt="字段名" width="150"/>
+                                                <a:column name="width" prompt="宽度" align="right" editor="sys_dynamic_form_nf" width="90"/>
+                                                <a:column name="prompt" prompt="字段名称" editor="sys_dynamic_form_tf" width="200"/>
+                                                <a:column name="editabled_flag" prompt="编辑" editor="sys_dynamic_form_cb" width="50"/>
+                                                <a:column name="required_flag" prompt="必输" editor="sys_dynamic_form_cb" width="50"/>
+                                                <a:column name="sequence" align="center" prompt="排序" renderer="customizationFormReorderRenderer" width="60"/>
+                                            </a:columns>
+                                            <a:editors>
+                                                <a:textField id="sys_dynamic_form_tf"/>
+                                                <a:checkBox id="sys_dynamic_form_cb"/>
+                                                <a:numberField id="sys_dynamic_form_nf" allowdecimals="false" allownegative="false"/>
+                                            </a:editors>
+                                        </a:grid>
+                                    </div>
+                                    <div id="gridPropertyCard" style="display:none">
+                                        <a:toolBar  width="705">
+                                        	<a:button text="新增" className="item-btn-icon-text" btnclass="grid-add" click="addGridBuzObjFlexField"/>
+                                            <a:button text="删除" className="item-btn-icon-text" btnclass="grid-delete" btnstyle="background-position:0px -35px" click="delGridBuzObjFlexField"/>
+                                            <a:button text="保存" className="item-btn-icon-text" btnclass="grid-save" btnstyle="background-position:0px -17px" click="saveDynamicGrid"/>
+                                        </a:toolBar>
+                                        <a:form column="1" padding="0" style="border:1px solid #ccc;border-top:none" width="705">
+                                            <a:hBox>
+                                                <a:numberField name="pageSize" allowDecimals="false" allowNegative="false" bindTarget="pro_ds" prompt="分页大小" width="80"/>
+                                                <a:numberField name="width" allowDecimals="false" allowNegative="false" bindTarget="pro_ds" prompt="表格宽度" width="80"/>
+                                                <a:numberField name="height" allowDecimals="false" allowNegative="false" bindTarget="pro_ds" prompt="表格高度" width="80"/>
+                                            </a:hBox>
+                                            <a:grid id="sys_dynamic_grid" bindTarget="columns_ds" height="322" style="margin-top:10px;border:none;border-top:1px solid #ccc" width="705">
+                                                <a:columns>
+                                                    <a:column name="name" prompt="字段名" width="120"/>
+                                                    <a:column name="prompt" editor="sys_dynamic_grid_tf" prompt="字段描述" width="150"/>
+                                                    <a:column name="width" align="right" editor="sys_dynamic_grid_nf" prompt="列宽" width="60"/>
+                                                    <a:column name="align" align="center" editor="sys_dynamic_grid_combobx" prompt="位置" width="60"/>
+                                                    <a:column name="locked_flag" editor="sys_dynamic_grid_cb" prompt="锁定" width="50"/>
+                                                    <a:column name="hidden_flag" prompt="隐藏" editorfunction="dynamicGridHiddenFieldEditor" width="50"/>
+                                                    <a:column name="editabled_flag" prompt="编辑" editorfunction="dynamicGridFieldEditor" width="50"/>
+                                                    <a:column name="required_flag" editor="sys_dynamic_grid_cb"  align="center" prompt="必输" width="60"/>
+                                                    <a:column name="sequence" align="center" prompt="排序" renderer="customizationReorderRenderer" width="60"/>
+                                                </a:columns>
+                                                <a:editors>
+                                                    <a:numberField id="sys_dynamic_grid_nf" allowDecimals="false" allowNegative="false"/>
+                                                    <a:checkBox id="sys_dynamic_grid_cb"/>
+                                                    <a:comboBox id="sys_dynamic_grid_combobx"/>
+                                                    <a:textField id="sys_dynamic_grid_tf"/>
+                                                </a:editors>
+                                            </a:grid>
+                                        </a:form>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                    </a:tab>
+                    <a:tab prompt="联动规则">
+                        
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <a:windowToolbar>
+            <a:button click="dynamicDetailClose" text="关闭" width="90"/>
+        </a:windowToolbar>
+    </a:view>
+</a:screen>

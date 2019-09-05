@@ -1,0 +1,686 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Mouse Chow  
+    $Date: 2012-3-13 下午01:19:19  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" defaultWhereClause="work_order_header_id = ${/parameter/@head_id}" fetchAll="true" model="gld.GLD5010.gld_work_order_attachment_number" rootPath="attachment"/>
+        <a:model-query autoCount="false" defaultWhereClause="work_order_header_id = ${/parameter/@head_id} and rownum=1" fetchAll="true" model="util.get_current_date_and_period_name" rootPath="date"/>
+        <a:model-query autocount="false" fetchall="true" model="gld.GLD5010.gld_work_order_line_object" rootpath="line_object"/>
+        <a:model-query autocount="false" fetchall="true" model="gld.GLD5010.gld_work_order_line_ref_fields" rootpath="line_ref_fields"/>
+        <a:model-query autocount="false" fetchall="true" model="gld.GLD5010.gld_work_order_line_dimension" rootpath="line_dimension"/>
+        <a:model-query autoCount="false" fetchAll="true" model="gld.GLD5010.gld_work_order_headers" rootPath="head_data"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_report_employeelist" rootPath="employee_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="util.get_current_date_and_period_name" rootPath="date"/>
+        <a:model-query autoCount="false" defaultWhereClause=" user_id=${/session/@user_id}" fetchAll="true" model="sys.sys_user" rootPath="employee"/>
+        <a:model-query autocount="false" defaultwhereclause="exists (select 1 from exp_employee_assigns eea         where eea.position_id=op.position_id    and eea.enabled_flag = &apos;Y&apos;   and   eea.employee_id= nvl(${/parameter/@employee_id},${/model/head_data/record/@employee_id}))  and company_id = ${/session/@company_id}" fetchall="true" model="exp.exp_org_position" rootpath="position_list"/>
+        <a:model-query autoCount="false" fetchAll="ture" model="cux.CUX1000.cux_wbc_document_get_image_url" rootpath="cux_exp_img"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="gld_work_order_create_link" url="${/request/@context_path}/modules/gld/GLD5010/gld_work_order_type_choice.screen"/>
+        <a:link id="uploadFile_link" url="${/request/@context_path}/check_uploadFile.screen"/>
+        <a:link id="gld_work_order_query_history_link" url="${/request/@context_path}/modules/gld/GLD5010/gld_work_order_query_history.screen"/>
+        <a:link id="gld_work_order_maintain_window_link" url="${/request/@context_path}/modules/gld/GLD5010/gld_work_order_maintain_query.screen"/>
+        <script><![CDATA[
+        var index = 1;
+        var initLineIndex = 0;
+        var auditflag ='N';
+        
+        var attach_number = '${/model/attachment/record/@atm_count}';
+       
+        function initStyle(){
+            if (attach_number!=0){
+            Ext.get('attachmentButton').setStyle('color','red');
+            }
+        }
+          
+            function amountValidator(record, name, value) {
+                if (name == "entered_amount_dr" || name == "entered_amount_cr") {
+                    var from_value = record.get('entered_amount_dr');
+                    var to_value = record.get('entered_amount_cr');
+                    if(!(to_value || from_value) || (to_value && from_value)){
+                        return '请输入借方金额或者贷方金额!';
+                    }
+                }
+                
+                return true;
+            }
+            //跟踪单据
+            
+            function seeHistory() {
+                var work_order_header_id = '${/parameter/@head_id}';
+                var url = $('gld_work_order_query_history_link').getUrl() + '?head_id=' + work_order_header_id;
+                new Aurora.Window({
+                    id: 'gld_work_order_history_window',
+                    url: url,
+                    title: '${l:REC_REQUISITION_HISTORY}',
+                    fullScreen: true
+                });
+            }
+            //附件查看
+            
+            function uploadFile() {
+                var work_order_header_id = '${/parameter/@head_id}';
+                var url = /*${/request/@context_path}/uploadFile.screen*/
+                $('uploadFile_link').getUrl() + '?table_name=GLD_WORK_ORDER_HEADERS' + '&header_id=' + work_order_header_id
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'check_upload_file_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            
+            function updateLines(dataSet, record, name, value, oldValue) {
+            
+                var gld_journal_header_ds = $('gld_work_order_head');
+                var exchange_rate = gld_journal_header_ds.getCurrentRecord().get('exchange_rate');
+                //如果更新的是原币金额，则通过汇率计算出本币金额
+                if (name === 'entered_amount_dr') {
+                    if (value === '' || value === null) {
+                        //设置借方金额可以为空
+                        record.getField('entered_amount_dr').setRequired(false);
+                        record.getField('function_amount_dr').setRequired(false);
+            
+                        record.getField('function_amount_dr').setReadOnly(false);
+                        record.set('function_amount_dr', '');
+                        record.getField('function_amount_dr').setReadOnly(true);
+                        //设置贷方金额不可以为空
+                        record.getField('entered_amount_cr').setRequired(true);
+                        record.getField('function_amount_cr').setRequired(true);
+                    } else {
+                        record.getField('function_amount_dr').setReadOnly(false);
+                        record.set('function_amount_dr', Math.round(value * exchange_rate * 100) / 100);
+                        record.getField('function_amount_dr').setReadOnly(true);
+                        //设置贷方金额可以为空
+                        record.getField('entered_amount_cr').setRequired(false);
+                        record.getField('function_amount_cr').setRequired(false);
+                    }
+                } else if (name === 'entered_amount_cr') {
+                    if (value === '' || value === null) {
+                        //设置贷方金额可以为空
+                        record.getField('entered_amount_cr').setRequired(false);
+                        record.getField('function_amount_cr').setRequired(false);
+            
+                        record.getField('function_amount_cr').setReadOnly(false);
+                        record.set('function_amount_cr', '');
+                        record.getField('function_amount_cr').setReadOnly(true);
+                        //设置借方金额不可以为空
+                        record.getField('entered_amount_dr').setRequired(true);
+                        record.getField('function_amount_dr').setRequired(true);
+                    } else {
+                        record.getField('function_amount_cr').setReadOnly(false);
+                        record.set('function_amount_cr', Math.round(value * exchange_rate * 100) / 100);
+                        record.getField('function_amount_cr').setReadOnly(true);
+                        //设置借方金额可以为空
+                        record.getField('entered_amount_dr').setRequired(false);
+                        record.getField('function_amount_dr').setRequired(false);
+                    }
+                }
+                
+            }
+            //编辑原币借方金额
+            
+            function editAmountDr(record, name) {
+                if (auditflag =='N'){
+                if (record.get('entered_amount_cr') || record.get('entered_amount_cr') === 0) {
+                    return '';
+                } else {
+                    return 'dt_number';
+                }
+                }else{
+                    return '';
+                }
+            }
+            
+            //编辑原币贷方金额
+            
+            function editAmountCr(record, name) {
+                if(auditflag=='N'){
+                if (record.get('entered_amount_dr') || record.get('entered_amount_dr') === 0) {
+                    return '';
+                } else {
+                    return 'dt_number';
+                }
+                }
+                else{
+                    return '';
+                }
+            
+            }
+            //创建凭证前预算检查
+            
+            function beforeJe() {
+                
+                var headerds = $('gld_work_order_head');
+                var detailds = $('gld_work_order_lines');
+                var work_order_header_id = $('gld_work_order_head').getCurrentRecord().get('work_order_header_id');
+                var journal_date = $('gld_work_order_head').getCurrentRecord().get('je_date');
+                var validate = headerds.validate();
+                if (!validate) {
+                    return;
+                }
+                var total_amount_dr = 0,
+                    total_amount_cr = 0,
+                    total_amount_fuc_dr = 0,
+                    total_amount_fuc_cr = 0;
+                //校检借方金额和贷方金额是否平衡
+                var detailLength = detailds.getAll().length;
+                if (detailLength < 2) {
+                    Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:GLD_WORK_ORDER.JOURNAL_LENGTH_ERROR}');
+                    return;
+                } else {
+                    for (var i = 0;i < detailLength;i++) {
+                        total_amount_dr += detailds.getAt(i).get('entered_amount_dr') || 0;
+                        total_amount_cr += detailds.getAt(i).get('entered_amount_cr') || 0;
+                        total_amount_fuc_dr += detailds.getAt(i).get('function_amount_dr') || 0;
+                        total_amount_fuc_cr += detailds.getAt(i).get('function_amount_cr') || 0;
+                    }
+                    //校验有误
+                    if (!(total_amount_dr === total_amount_cr) || !(total_amount_fuc_dr === total_amount_fuc_cr)) {
+            
+                        Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:GLD_WORK_ORDER.AMOUNT_ERROR}');
+                        return;
+                    }
+            
+                }
+            
+                //预算检查
+                Aurora.request({
+                    url: "${/request/@context_path}/autocrud/db.bgt_check_pkg.core_check/execute",
+                    scope: this,
+                    para: {
+                        document_type: 'WORK_ORDER',
+                        document_id: work_order_header_id,
+                        work_order_header_id: work_order_header_id,
+                        journal_date: journal_date,
+                        ignore_warning_flag: 'N'
+            
+                    },
+                    success: function(ret) {
+                        if (ret.result.error_level_code == 'BLOCK') {
+                            Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', ret.result.message_code);
+                        } else if (ret.result.error_level_code == 'ALLOWED') {
+                            Aurora.showConfirm('${l:EXP_REP_PARTIALLY_SUBMITTED}', ret.result.message_code, function() {
+                                Aurora.request({
+                                    url: "${/request/@context_path}/autocrud/db.bgt_check_pkg.core_check/execute",
+                                    scope: this,
+                                    para: {
+                                        document_type: 'WORK_ORDER',
+                                        document_id: work_order_header_id,
+                                        work_order_header_id: work_order_header_id,
+                                        journal_date: journal_date,
+                                        ignore_warning_flag: 'Y'
+                                    },
+                                    success: function(ret) {
+                                        if (ret.result.error_level_code) {
+                                            Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', ret.result.message_code);
+                                        } else {
+                                            create_Je();
+                                        }
+            
+                                    }
+                                });
+                            }, null, 400, 150);
+                        } else {
+                            create_Je();
+                        }
+                    }
+                });
+            
+            }
+            //创建凭证
+            
+            function create_Je() {
+                var work_order_header_id = $('gld_work_order_head').getCurrentRecord().get('work_order_header_id');
+                var journal_date = $('gld_work_order_head').getCurrentRecord().get('je_date');
+                Aurora.request({
+                    url: "${/request/@context_path}/autocrud/db.gld_work_order_pkg.create_gld_wo_order_journal/execute",
+                    scope: this,
+                    para: {
+                        work_order_header_id: work_order_header_id,
+                        journal_date: journal_date
+                    },
+                    success: function(ret) {
+                        if (ret.result.return_value != 'ERROR') {
+                            Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:GLD_WORK_ORDER.CREATE_JOURNAL_SUCCESS}');
+                            $('gld_work_order_accounts').query();
+            
+                        } else {
+                            Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:GLD_WORK_ORDER.CREATE_JOURNAL_ERROR}');
+                        }
+                    }
+                });
+            }
+            //删除凭证
+            
+            function deleteJe() {
+                var work_order_header_id = $('gld_work_order_head').getCurrentRecord().get('work_order_header_id');
+                Aurora.request({
+                    url: "${/request/@context_path}/autocrud/gld.GLD5010.gld_work_order_accounts/delete",
+                    scope: this,
+                    para: {
+                        work_order_header_id: work_order_header_id,
+                    },
+                    success: function(ret) {
+                        Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:SUCCESSFUL_OPERATION}');
+                        $('gld_work_order_accounts').query();
+                    }
+                });
+            }
+            //行保存成功后更新头上金额
+            
+            function girdSumbitSuccess(dataSet, res) {
+            
+                $('gld_work_order_head').query();
+            }
+            //复制一行
+            function createLineRecord() {
+                var ds = $('gld_work_order_lines');
+                var linerecord = ds.getSelected();
+                var lineIndex = index + initLineIndex;
+                
+                if (linerecord.length == 0) {
+                    ds.create();
+            
+                    var records = ds.getAll();
+            
+                    for (i = 0;i < records.length - 1;i++) {
+                        records[i].set('flag', 1);
+                    }
+                    var lrecord = ds.getAt(lineIndex - 1);
+                    
+                } else{
+                
+                    for (i = 0;i < linerecord.length;i++) {
+                        var data = linerecord[i].data;
+                        var newdata = {};
+                        var len = ds.getAll().length;
+                        for (var name in data) {
+                            newdata[name] = data[name];
+                        }
+                        var record = new Aurora.Record(newdata);
+                        record.isNew = 'true';
+                        record.dirty = 'false';
+                        
+                        ds.add(record);
+                        
+                        lineNum = (index + initLineIndex) * 10;
+                        var lineRecord = ds.getAt(len);
+                        lineRecord.set('line_number', lineNum);
+                        lineRecord.set('exp_report_line_id', '');
+                        index = index + 1;
+                    }
+                }
+              
+                headAmountChanged();
+            }
+            //头上金额更新
+            function headAmountChanged() {
+                
+                var records = $('gld_work_order_lines').getAll();
+                var lineAmount = 0;
+                for (var i = 0;i < records.length;i++) {
+                    var req_amount = parseFloat(records[i].get('entered_amount_dr'));
+                    lineAmount += req_amount ? req_amount : 0;
+                }
+                $('gld_work_order_head').getAt(0).set('amount', lineAmount);
+            
+            }
+            //审核
+            function auditFunc() {
+              
+               var work_order_header_id = '${/parameter/@head_id}';
+				Aurora.request({
+                            url:"${/request/@context_path}/autocrud/db.gld_work_order_pkg.audit_gld_work_order/execute",
+                            scope: this,
+                           para:{
+                            work_order_header_id: work_order_header_id
+                           },
+                            success: function(ret) {
+                                    Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:SUCCESSFUL_OPERATION}');
+                                    $('gld_work_order_head').getCurrentRecord().getMeta().getField('je_date').setReadOnly(true);
+                                    auditflag = 'Y';
+                                    $('work_order_detail_window').close();
+                            }
+                        });
+            }
+             //拒绝
+            function rejectFunc() {
+              
+                var work_order_header_id = '${/parameter/@head_id}';
+				Aurora.request({
+                            url:"${/request/@context_path}/autocrud/db.gld_work_order_pkg.audit_reject_work_order/execute",
+                            scope: this,
+                            para:{
+                            work_order_header_id: work_order_header_id}
+                            ,
+                            success: function(ret) {
+                                    Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:SUCCESSFUL_OPERATION}');
+                                    auditflag = 'Y';
+                                    $('work_order_detail_window').close();
+                            }
+                        });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="employee_ds">
+                <a:datas dataSource="/model/employee_list"/>
+            </a:dataSet>
+            <a:dataSet id="exp_exchange_rate_ds" fetchAll="true" model="gld.gld_exchange_rates"/>
+            <a:dataSet id="positionlist_ds">
+                <a:datas datasource="/model/position_list"/>
+            </a:dataSet>
+            <a:dataSet id="gld_work_order_head" autoQuery="true" model="gld.GLD5010.gld_work_order_headers" queryUrl="${/request/@context_path}/autocrud/gld.GLD5010.gld_work_order_headers/query?work_order_header_id=${/parameter/@head_id}">
+                <a:fields>
+                    <a:field name="work_order_header_id"/>
+                    <a:field name="work_order_type_desc" prompt="GLD.WORK_ORDER_TYPE" readonly="true"/>
+                    <a:field name="work_order_type_id"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="position_id"/>
+                    <a:field name="position_name" displayfield="position_name" options="positionlist_ds" prompt="GLD_WORK_ORDER_HEADERS.POSITION_NAME" readOnly="true" returnfield="position_id" valuefield="position_id"/>
+                    <a:field name="work_order_date" readOnly="true"/>
+                    <a:field name="je_date" readOnly="true"/>
+                    <a:field name="period_name" readOnly="true"/>
+                    <a:field name="amount" readOnly="true"/>
+                    <a:field name="work_order_number" readOnly="true"/>
+                    <a:field name="employee_name" prompt="GLD.EMPLOYEE_NAME" readOnly="true"/>
+                    <a:field name="currency_name" prompt="GLD_CURRENCY.CURRENCY_CODE" readOnly="true"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="attachment_number" readOnly="true"/>
+                    <a:field name="exchange_rate_type"/>
+                    <a:field name="exchange_rate"/>
+                    <a:field name="description" readOnly="true"/>
+                    <a:field name="status_name" prompt="GLD_WORK_ORDER_HEADERS.STATUS" readOnly="true"/>
+                    <a:field name="created_by_name" displayField="employeename" options="employee_ds" prompt="GLD_WORK_ORDER_HEADERS.CREATED_BY" readOnly="true" returnField="created_by" valueField="employee_id"/>
+                    <!-- <a:field name="urgent_flag" checkedValue="Y" defaultValue="N" prompt="GLD_WORK_ORDER_HEADERS.URGENT_FLAG" readOnly="true" uncheckedValue="N"/> -->
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="gld_work_order_lines" autoCreate="true" autoQuery="true" model="gld.GLD5010.gld_work_order_lines" queryUrl="${/request/@context_path}/autocrud/gld.GLD5010.gld_work_order_lines/query?work_order_header_id=${/parameter/@head_id}" submitUrl="${/request/@context_path}/autocrud/gld.GLD5010.gld_work_order_lines/batch_update?work_order_header_id=${/parameter/@head_id}">
+                <a:fields>
+                    <a:field name="account_name" autoComplete="true" autoCompleteField="account_code" lovGridHeight="350" lovHeight="500" lovService="gld.GLD5010.gld_work_order_accounts_lov?work_order_header_id=${/parameter/@head_id}" lovWidth="500" required="true" title="GLD_ACCOUNTS.ACCOUNT_DESCRIPTION">
+                        <a:mapping>
+                            <a:map from="account_id" to="account_id"/>
+                            <a:map from="account_code" to="account_code"/>
+                            <a:map from="description" to="account_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_name" autoComplete="true" autoCompleteField="responsibility_center_code" lovGridHeight="350" lovHeight="500" lovService="fnd.fnd_responsibility_centers_lov" lovWidth="500" required="true" title="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_name"/>
+                            <a:map from="responsibility_center_code" to="responsibility_center_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_name" autoComplete="true" autoCompleteField="company_code" lovGridHeight="320" lovHeight="460" lovService="exp.exp_company_tree" lovWidth="500" required="true" title="EXP_REQUISITION_LINES.COMPANY_ID">
+                        <a:mapping>
+                            <a:map from="company_short_name" to="company_name"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_name" autoComplete="true" autoCompleteField="unit_code" lovGridHeight="320" lovHeight="460" lovService="exp.exp_org_unit" lovWidth="500" title="EXP_REQUISITION_LINES.UNIT_ID">
+                        <a:mapping>
+                            <a:map from="org_unit_description" to="unit_name"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="budget_item_name" autoComplete="true" autoCompleteField="budget_item_code" lovGridHeight="320" lovHeight="460" lovService="gld.GLD5010.gld_work_order_ref_bgt_items_lov?work_order_header_id=${/parameter/@head_id}" lovWidth="500" title="CSH_TRANSACTION_DISTS.DESCRIPTION">
+                        <a:mapping>
+                            <a:map from="budget_item_name" to="budget_item_name"/>
+                            <a:map from="budget_item_code" to="budget_item_code"/>
+                            <a:map from="budget_item_id" to="budget_item_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="position_name" displayfield="position_name" options="positionlist_ds" prompt="GLD_WORK_ORDER_HEADERS.POSITION_NAME" returnfield="position_id" valuefield="position_id"/>
+                    <a:field name="employee_name" displayField="employeename" options="employee_ds" prompt="GLD.EMPLOYEE_NAME" returnField="created_by" valueField="employee_id"/>
+                    <a:field name="entered_amount_dr" validator="amountValidator"/>
+                    <a:field name="entered_amount_cr" validator="amountValidator"/>
+                    <a:field name="function_amount_dr"/>
+                    <a:field name="function_amount_cr"/>
+                    <a:placeHolder id="LineFieldsRef"/>
+                    <a:placeHolder id="LinesDim"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateLines"/>
+                    <a:event name="submitsuccess" handler="girdSumbitSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="gld_work_order_accounts" autoQuery="true" model="gld.GLD5010.gld_work_order_accounts" queryUrl="${/request/@context_path}/autocrud/gld.GLD5010.gld_work_order_accounts/query?work_order_header_id=${/parameter/@head_id}"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form id="gld_work_order_head_form" title="GLD_WORK_ORDER">
+                <a:box id="gld_work_order_box" column="4" style="width:100%">
+                    <a:textField name="work_order_number" bindtarget="gld_work_order_head"/>
+                    <a:textField name="work_order_type_desc" bindtarget="gld_work_order_head"/>
+                    <a:datePicker name="work_order_date" bindtarget="gld_work_order_head"/>
+                    <a:numberField name="amount" allowDecimals="true" allowFormat="true" bindTarget="gld_work_order_head"/>
+                    <a:textField name="employee_name" bindtarget="gld_work_order_head"/>
+                    <a:comboBox name="position_name" bindtarget="gld_work_order_head"/>
+                    <a:textField name="currency_name" bindtarget="gld_work_order_head"/>
+                    <a:numberField name="attachment_number" allowDecimals="false" bindtarget="gld_work_order_head"/>
+                    <a:textField name="created_by_name" bindtarget="gld_work_order_head"/>
+                    <a:textField name="status_name" bindtarget="gld_work_order_head"/>
+                    <!-- <a:checkBox name="urgent_flag" bindtarget="gld_work_order_head"/> -->
+                </a:box>
+                <a:box id="gld_order_type_ta_box" style="width:100%">
+                    <a:textArea name="description" id="gld_desc_ta" bindtarget="gld_work_order_head"/>
+                </a:box>
+            </a:form>
+            <a:box>
+                <a:hBox>
+                    <a:datePicker name="je_date" bindTarget="gld_work_order_head"/>
+                    <a:textField name="period_name" bindTarget="gld_work_order_head"/>
+                    <!-- 查看附件  -->
+                    <a:button id="attachmentButton" click="uploadFile" text="PROMPT.VIEW_ATTACHMENT"/>
+                    <!-- 跟踪单据  -->
+                    <a:button click="seeHistory" text="PROMPT.HISTORY"/>
+                </a:hBox>
+            </a:box>
+            <a:tabPanel id="line_tab" marginHeight="325">
+                <a:tabs>
+                    <!-- <a:tab prompt="HAP.WORK_ORDER_LINES_INFO" width="150">
+                        <a:grid id="gld_work_order_lines_grid" bindTarget="gld_work_order_lines" marginHeight="377" navBar="true">
+                            <a:toolBar><![CDATA[
+                            ]]></a:toolBar>
+                            <a:columns>
+                                <a:column name="description" align="center" width="120"/>
+                                <a:column name="company_name" align="center" prompt="EXP_REQUISITION_LINES.COMPANY_ID" width="120"/>
+                                <a:column name="responsibility_center_name" align="center" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_CODE" width="120"/>
+                                <a:column name="account_name" align="center" prompt="GLD_ACCOUNTS.ACCOUNT_CODE" width="120"/>
+                                <a:column name="entered_amount_dr" align="right" renderer="Aurora.formatMoney" width="80"/>
+                                <a:column name="entered_amount_cr" align="right" renderer="Aurora.formatMoney" width="80"/>
+                                <a:column name="function_amount_dr" align="right" renderer="Aurora.formatMoney" width="80"/>
+                                <a:column name="function_amount_cr" align="right" renderer="Aurora.formatMoney" width="80"/>
+                                <a:placeHolder id="LineColumn"/>
+                                <a:placeHolder id="LineColumnDim"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="dt_tf"/>
+                                <a:lov id="dt_lov"/>
+                                <a:comboBox id="dt_combox"/>
+                                <a:numberField id="dt_number" allowDecimals="true" allowFormat="true"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab> -->
+                    <!--暂时隐藏-->
+                    <!-- <a:column name="reference3_desc" align="center" prompt="ACCOUNT_SEGMENT8" width="90"/>
+                                <a:column name="reference4_desc" align="center" prompt="ACCOUNT_SEGMENT10" width="90"/>
+                                <a:column name="reference5_desc" align="center" prompt="ACCOUNT_SEGMENT11" width="90"/> -->
+                    <!-- <a:placeHolder id="LineColumnRefField"/> -->
+                    <a:tab prompt="HAP.WORK_ORDER_ACCOUNTS_INFO">
+                        <a:grid id="gld_work_order_accounts_grid" bindTarget="gld_work_order_accounts" marginHeight="377" navBar="true">
+                            <a:toolBar/>
+                            <a:columns>
+                                <a:column name="description" align="left" width="120"/>
+                                <a:column name="company_name" align="center" prompt="EXP_REQUISITION_LINES.COMPANY_ID" width="120"/>
+                                <a:column name="period_name" align="center" prompt="BGT_PERIODS.PERIOD_NAME" width="120"/>
+                                <a:column name="responsibility_center_name" align="center" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME" width="120"/>
+                                <a:column name="account_name" align="left" prompt="GLD_ACCOUNTS.ACCOUNT_DESCRIPTION" width="120"/>
+                                <a:column name="entered_amount_dr" align="right" renderer="Aurora.formatMoney" width="90"/>
+                                <a:column name="entered_amount_cr" align="right" renderer="Aurora.formatMoney" width="90"/>
+                                <!-- <a:column name="functional_amount_dr" align="right" renderer="Aurora.formatMoney" width="90"/> -->
+                                <!-- <a:column name="functional_amount_cr" align="right" renderer="Aurora.formatMoney" width="90"/> -->
+                                <a:column name="account_segment1" align="center" prompt="ACCOUNT_SEGMENT1" width="80"/>
+                                <a:column name="account_segment2" align="center" prompt="ACCOUNT_SEGMENT2" width="80"/>
+                                <a:column name="account_segment3" align="center" prompt="ACCOUNT_SEGMENT3" width="80"/>
+                                <a:column name="account_segment4" align="center" prompt="ACCOUNT_SEGMENT4" width="80"/>
+                                <a:column name="account_segment5" align="center" prompt="ACCOUNT_SEGMENT5" width="80"/>
+                                <a:column name="account_segment6" align="center" prompt="ACCOUNT_SEGMENT6" width="80"/>
+                                <a:column name="account_segment7" align="center" prompt="ACCOUNT_SEGMENT7" width="80"/>
+                                <a:column name="account_segment8" align="center" prompt="ACCOUNT_SEGMENT8" width="80"/>
+                                <a:column name="account_segment9" align="center" prompt="ACCOUNT_SEGMENT9" width="80"/>
+                                <!-- <a:column name="account_segment10" align="center" prompt="ACCOUNT_SEGMENT10" width="80"/> -->
+                                <!-- <a:column name="account_segment11" align="center" prompt="ACCOUNT_SEGMENT11" width="80"/> -->
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        //初始化默认信息
+            // init();
+            initStyle();
+        ]]></script>
+        <script purpose="auto_resize"><![CDATA[
+            function expRepMTStandardInitSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                var vh = $A.getViewportHeight();
+               var marginWidth=35;
+               var marginHeight=10;
+                if (vw>1800){
+                //留白宽度
+                //系统参数定义影像查看页面的宽度
+                	 marginWidth = parseInt('${/model/cux_exp_img/record/@cux_img_window_width}') + 35;
+                }
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = autoWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置组件的自适应宽度
+                Ext.get('gld_work_order_head_form').setWidth(autoWidth -12);
+                
+				//设置TextArea的自适应宽度,别问我最后那个6是哪里来的，试出来的
+                Ext.get('gld_desc_ta').setWidth(formInnerWidth - (formInnerWidth / colSpan - labelWidth - tagWidth) - labelWidth - 16);
+                $('line_tab').setWidth(autoWidth+6);
+                $('gld_work_order_accounts_grid').setWidth(autoWidth);
+                $('gld_work_order_lines_grid').setWidth(autoWidth);
+            }
+            //Ext.fly(window).on('resize', expRepMTStandardInitSize);
+            expRepMTStandardInitSize();
+        ]]></script>
+    </a:view>
+    <a:view-config>
+        <c:create-config targetId="uploadFilePlace">
+            <c:process-config>
+                <a:toolbarButton id="uploadBtn" click="uploadFile" text="PROMPT.VIEW_ATTACHMENT" width="80"/>
+            </c:process-config>
+        </c:create-config>
+        <c:create-config targetId="LineColumn">
+            <p:loop source="/model/line_object">
+                <!-- <p:switch test="@resp_center_flag">
+                    <p:case value="Y">
+                        <c:process-config>
+                            <a:column name="responsibility_center_code" align="center" editor="dt_lov" lovService="fnd.fnd_responsibility_centers_lov" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_CODE" width="120"/>
+                            <a:column name="responsibility_center_name" align="center" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME" width="120"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch> -->
+                <p:switch test="@budget_flag">
+                    <p:case value="Y">
+                        <c:process-config>
+                            <a:column name="budget_item_name" align="center" prompt="BGT_BUDGET_ITEMS.BUDGET_ITEM_ID" width="100"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+                <p:switch test="@unit_flag">
+                    <p:case value="Y">
+                        <c:process-config>
+                            <a:column name="unit_name" align="center" prompt="EXP_REQUISITION_LINES.UNIT_ID" width="100"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+                <p:switch test="@position_flag">
+                    <p:case value="Y">
+                        <c:process-config>
+                            <a:column name="position_name" align="center" prompt="GLD_WORK_ORDER_HEADERS.POSITION_NAME" width="100"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+                <p:switch test="@employee_flag">
+                    <p:case value="Y">
+                        <c:process-config>
+                            <a:column name="employee_name" align="center" width="100"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="LineColumnDim">
+            <p:loop source="/model/line_dimension">
+                <c:process-config>
+                    <a:column name="${@dimension_code}" align="center" prompt="${@description}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="LinesDim">
+            <p:loop source="/model/line_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" autoComplete="true" autoCompleteField="name_code" defaultValue="${@value_description}" fetchRemote="true" lovGridHeight="320" lovHeight="450" lovService="expm.EXP2110.exp_rep_ref_dimension_dvc_lov?dimension_id=${@dimension_id}&amp;enabled_flag=Y" lovWidth="500" prompt="${@description}" title="${@description}">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="dimension_value_code"/>
+                            <a:map from="dimension_value_id" to="${@dimension_code1}"/>
+                            <a:map from="description" to="${@dimension_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@dimension_code1}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="LineColumnRefField">
+            <p:loop source="/model/line_ref_fields">
+                <p:switch test="@field_value_category">
+                    <p:case value="TEXT_LIST">
+                        <c:process-config>
+                            <a:column name="${@encode_field_desc}" align="center" prompt="${@field_desc}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="TEXT">
+                        <c:process-config>
+                            <a:column name="${@encode_field_desc}" align="center" prompt="${@field_desc}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="SQL">
+                        <c:process-config>
+                            <a:column name="${@encode_field_desc}" align="center" prompt="${@field_desc}"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="LineFieldsRef">
+            <p:loop source="/model/line_ref_fields">
+                <c:process-config>
+                    <a:field name="${@encode_field_desc}" autoComplete="true" autoCompleteField="code" lovGridHeight="320" lovHeight="450" lovUrl="${/request/@context_path}/modules/gld/GLD5020/gld_work_order_ref_fields_sql_query_lov.screen?work_order_type_id=${@work_order_type_id}&amp;field_id=${@field_id}" lovWidth="500">
+                        <a:mapping>
+                            <a:map from="description" to="${@encode_field_desc}"/>
+                            <a:map from="id" to="${@encode_field_id}"/>
+                            <a:map from="code" to="${@encode_field_code}"/>
+                        </a:mapping>
+                    </a:field>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

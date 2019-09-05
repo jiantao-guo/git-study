@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: PineYang3324  
+    $Date: 2011-09-03 下午12:06:00  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:update-sql><![CDATA[
+            select message_id,
+            	   msg_title,
+            	   msg_content,
+            	   recipient_names,
+            	   atm_file,
+            	   status
+            from
+            	 ((select snmr.message_id,
+				       (select snm.message_title
+				          from sys_notify_message snm
+				         where snm.message_id = snmr.message_id) msg_title,
+				       (select snm.message_content
+				          from sys_notify_message snm
+				         where snm.message_id = snmr.message_id) msg_content,
+				       sys_msg_notify_message_pkg.get_recipient_names(snmr.message_id, ${/session/@user_id}) recipient_names,
+				       sys_upload_pkg.get_atm_file_href(snmr.message_id,
+				                                            'SYS_NOTIFY_MESSAGE',
+				                                            ${/request/@context_path},
+				                                            ${/session/@user_id}) atm_file,
+				       '已发送' status
+				  from sys_notify_message_rec snmr
+				 where snmr.created_by = ${/session/@user_id}
+				 group by snmr.message_id)
+				 union all
+				 (select snm.message_id,
+				       snm.message_title msg_title,
+				       snm.message_content msg_content,
+				       sys_msg_notify_message_pkg.get_recipient_names(snm.message_id, ${/session/@user_id}) recipient_names,
+				       sys_upload_pkg.get_atm_file_href(snm.message_id,
+				                                            'SYS_NOTIFY_MESSAGE',
+				                                            ${/request/@context_path},
+				                                            ${/session/@user_id}) atm_file,
+				       '草稿' status
+				  from sys_notify_message snm
+				 where snm.message_id not in (select r.message_id
+				                                from sys_notify_message_rec r
+				                               where r.created_by = ${/session/@user_id}
+				                               group by r.message_id)
+				   and snm.created_by = ${/session/@user_id}))
+	                          #WHERE_CLAUSE#
+          ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+            	begin
+				  sys_msg_notify_message_pkg.delete_message(p_message_id => ${@message_id},
+				                                            p_user_id    => ${/session/@user_id});
+				end;
+            	
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="message_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="MESSAGE_ID" prompt="SYS_NOTIFY_MESSAGE_REC.MESSAGE_ID"/>
+        <bm:field name="msg_title" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="MSG_TITLE" prompt="SYS_NOTIFY_MESSAGE_REC.MSG_TITLE"/>
+        <bm:field name="msg_content" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="MSG_CONTENT" prompt="SYS_NOTIFY_MESSAGE_REC.MSG_CONTENT"/>
+        <bm:field name="status" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="STATUS" prompt="SYS_NOTIFY_MESSAGE_REC.STATUS"/>
+        <bm:field name="recipient_names" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="RECIPIENT_NAMES" prompt="SYS_NOTIFY_MESSAGE_REC.RECIPIENT_USER_ID"/>
+        <!--<bm:field name="atm_file" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="ATM_FILE"/>-->
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="message_id" queryOperator="="/>
+        <bm:query-field field="msg_title" queryExpression="msg_title like &apos;%&apos; || ${@msg_title} || &apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

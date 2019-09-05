@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="spe_number" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" physicalName="spe_number" prompt="编号"/>
+        <bm:field name="trade_number" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" physicalName="trade_number" prompt="交易序号"/>
+        <bm:field name="bank_account" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" physicalName="bank_account" prompt="本方账户"/>
+        <bm:field name="bank_account_name" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" physicalName="bank_account_name" prompt="本方户名"/>
+        <bm:field name="other_account" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" physicalName="bank_account_name" prompt="对方账户"/>
+        <bm:field name="other_account_name" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" physicalName="bank_account_name" prompt="对方户名"/>
+        <bm:field name="amount" databaseType="NUMBER" datatype="java.lang.Double" forDisplay="true" forQuery="true" physicalName="amount" prompt="发生额"/>
+        <bm:field name="currency_name" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" physicalName="currency_name" prompt="币种"/>
+        <bm:field name="refed_amount" databaseType="NUMBER" datatype="java.lang.Double" forDisplay="true" physicalName="refed_amount" prompt="已关联金额"/>
+        <bm:field name="balance_amount" databaseType="NUMBER" datatype="java.lang.Double" forDisplay="true" physicalName="balance_amount" prompt="可关联金额"/>
+        <bm:field name="summary" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" physicalName="summary" prompt="摘要"/>
+        <bm:field name="account_date" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" physicalName="account_date" prompt="发生时间"/>
+        <bm:field name="project_name" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" physicalName="project_name" prompt="项目"/>
+        <bm:field name="product_name" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" physicalName="product_name" prompt="产品"/>
+        <bm:field name="contract_number" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" physicalName="contract_number" prompt="合同"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select * from (
+            SELECT o.*, (o.amount - nvl(o.refed_amount, 0)) balance_amount,
+			       (SELECT fv.description
+			          FROM fnd_dimension_values_vl      fv,
+			               fnd_dimensions_vl            fs,
+			               fnd_company_dimension_values fcdv
+			         WHERE fv.dimension_id = fs.dimension_id
+			           AND fcdv.dimension_value_id = fv.dimension_value_id
+			           AND fs.dimension_code = 'PROJECT'
+			           AND fcdv.company_id = o.company_id
+			           AND fv.dimension_value_code = o.project_code) project_name,
+			       (SELECT fv.description
+			          FROM fnd_dimension_values_vl      fv,
+			               fnd_dimensions_vl            fs,
+			               fnd_company_dimension_values fcdv
+			         WHERE fv.dimension_id = fs.dimension_id
+			           AND fcdv.dimension_value_id = fv.dimension_value_id
+			           AND fs.dimension_code = 'PRODUCT'
+			           AND fcdv.company_id = o.company_id
+			           AND fv.dimension_value_code = o.product_code) product_name,
+			         (
+			         select cch.contract_number
+			         from con_contract_headers cch
+			         where cch.contract_header_id = o.ref_contract_header_id
+			         ) contract_number,
+			         (SELECT gc.currency_name
+			          FROM gld_currency_vl gc
+			         WHERE gc.currency_code = o.currency) currency_name
+			  FROM (SELECT cb.cux_bank_details_spe_id,
+			               cb.bcdl_his_id,
+			               cb.bank_account,
+			               cb.bank_account_name,
+			               cb.currency,
+			               cb.pay_gather_flag,
+			               cb.other_account,
+			               cb.other_account_name,
+			               cb.trade_number,
+			               cb.summary,
+			               to_char(cb.account_date,'yyyy-mm-dd') account_date,
+			               cb.right_timestamp,
+			               cb.write_off_flag,
+			               cb.company_id,
+			               cb.unit_id,
+			               cb.position_id,
+			               cb.status,
+			               cb.is_close,
+			               cb.project_code,
+			               cb.product_code,
+			               cb.ref_contract_header_id,
+			               cb.created_by,
+			               cb.creation_date,
+			               cb.last_updated_by,
+			               cb.last_update_date,
+			               cb.amount,
+			               (SELECT SUM(cd.amount)
+			                  FROM cux_details_spe_ref cd
+			                 WHERE cd.cux_bank_details_spe_id =
+			                       cb.cux_bank_details_spe_id
+			                   AND EXISTS
+			                 (SELECT 1
+			                          FROM exp_report_headers h
+			                         WHERE cd.exp_report_header_id =
+			                               h.exp_report_header_id
+			                           AND h.report_status IN
+			                               ('SUBMITTED', 'COMPLETELY_APPROVED')
+			                           AND h.reversed_flag IS NULL)) refed_amount,
+			               cb.spe_number
+			          FROM cux_bank_details_spe cb
+			         WHERE cb.status = 'APPROVED'
+			           AND cb.is_close = 'N' 
+			           AND EXISTS (SELECT eea.position_id
+			                  FROM sys_user su, exp_employee_assigns eea
+			                 WHERE su.employee_id = eea.employee_id
+			                   AND eea.enabled_flag = 'Y'
+			                   AND su.user_id = ${/session/@user_id})) o) o
+               #WHERE_CLAUSE#
+             ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="bank_account" queryExpression="o.bank_account like ${@bank_account}"/>
+        <bm:query-field field="spe_number" queryOperator="like"/>
+        <bm:query-field name="bank_account_name" queryExpression="o.bank_account_name like ${@bank_account_name}"/>
+        <bm:query-field name="other_account" queryExpression="o.other_account like ${@other_account}"/>
+        <bm:query-field name="other_account_name" queryExpression="o.other_account_name like ${@other_account_name}"/>
+        <bm:query-field name="company_id" queryExpression="o.company_id = ${@company_id}"/>
+        <bm:query-field name="summary" queryExpression="o.summary like ${@summary}"/>
+        <bm:query-field name="amount" queryExpression="o.amount like ${@amount}"/>
+        <bm:query-field name="project_name" queryExpression="o.project_name like ${@project_name}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="pay_gather_flag" expression="o.pay_gather_flag = ${@pay_gather_flag}"/>
+    </bm:data-filters>
+</bm:model>

@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" model="vat.VAT6110.get_sys_cycle_precision" rootPath="sys_cycle_precision"/>
+        <a:model-query autoCount="false" model="vat.VAT6110.vat_report_query_init" rootPath="init_data"/>
+    </a:init-procedure>
+    <a:view>
+        <!--本期抵扣进项税额结构明细表-->
+        <a:link id="vat_rpt_input_structures_link" url="${/request/@context_path}/modules/vat/VAT6110/vat_rpt_input_structures_query.screen"/>
+        <a:link id="vat_rpt_run_link" model="vat.VAT6110.vat_rpt_run" modelaction="batch_update"/>
+        <script><![CDATA[
+            function editReportRenderer(value, record, name) {
+                if (record.get("run_status") == 'RUNNED') {
+                    var url = '<a href = "javascript:editReport(' + value + ', \'html\')">编辑</a>';
+                    return url;
+                }
+            }
+            
+            function viewReportRenderer(value, record, name) {
+                if (record.get("run_status") == 'RUNNED') {
+                    var url = '<a href = "javascript:viewReport(' + value + ', \'html\')">预览</a>';
+                    return url;
+                }
+            
+            }
+            
+            
+            function downReportRenderer(value, record, name) {
+                if (record.get("run_status") == 'RUNNED') {
+                    value = record.get("id");
+                    var url = '<a href = "javascript:viewReport(' + value + ', \'xls\')">下载</a>';
+                    return url;
+                }
+            }
+            
+            function viewReport(id, format) {
+                var hrecord = $("vat_report_query_ds").getCurrentRecord();
+                var seller_id = hrecord.get('seller_id');
+                var period_year = hrecord.get('period_year');
+                var period_name = hrecord.get('period_name');
+                var record = $('vat_report_result_ds').find('id', id);
+                if (record) {
+                    var cycle_precision = '${/model/sys_cycle_precision/record/@cycle_precision}';
+                    if (Ext.isEmpty(cycle_precision)) {
+                        Aurora.showInfoMessage('${l:PROMPT}', '获取纳税申报表周期精度系统参数失败！', null, 250, 100);
+                        return;
+                    }
+                    var param = '&seller_id=' + seller_id + '&year=' + period_year + '&cycle_precision=' + cycle_precision + '&tax_period=' + period_name;
+                    var report_type = record.get('report_type');
+                    var report_path = record.get('report_path');
+                    var url = "${/model/birt_report_url/record/@url}";
+                    if (!url) {
+                        alert('联系管理员,在参数指定中配置打印连接!');
+                    } else {
+                        url = url + "/preview?__showtitle=false&__report=" + report_path + param + "&__format=" + format;
+                        window.open(url);
+                    }
+                }
+            
+            
+            }
+            
+            function editReport(id, format) {
+                if (!$("vat_report_query_ds").validate()) {
+                    return;
+                }
+            
+                var hrecord = $("vat_report_query_ds").getCurrentRecord();
+                var seller_id = hrecord.get('company_id');
+                var period_year = hrecord.get('period_year');
+            
+                var record = $('vat_report_result_ds').find('id', id);
+                if (record) {
+            
+                    var url;
+                    var param = '?seller_id=' + seller_id + '&year=' + period_year;
+                    var report_type = record.get('report_type');
+                    if (report_type == 'REPORT') { //主表
+                        url = $('vat_rpt_main_link').getUrl() + param;
+                    } else if (report_type == 'REPORT1') { //附表一
+                        url = $('vat_rpt_output_details_link').getUrl() + param;
+                    } else if (report_type == 'REPORT2') { //附表二
+                        url = $('vat_rpt_input_details_link').getUrl() + param;
+                    } else if (report_type == 'REPORT3') { //附表三
+                        url = $('vat_rpt_deductions_link').getUrl() + param;
+                    } else if (report_type == 'REPORT4') { //附表四
+                        url = $('vat_rpt_tax_credits_link').getUrl() + param;
+                    } else if (report_type == 'REPORT5') { //附表五
+                        url = $('vat_rpt_immovables_link').getUrl() + param;
+                    } else if (report_type == 'InputStruct') { //本期抵扣进项税额结构明细表
+                        url = $('vat_rpt_input_structures_link').getUrl() + param;
+                    } else if (report_type == 'FixedAssets') { //固定资产（不含不动产）进项税额抵扣情况表
+                        url = $('vat_rpt_assets_link').getUrl() + param;
+                    } else if (report_type == 'DutyFree') { //增值税减免税申报明细表
+            
+                    } else if (report_type == 'TaxBurden') { //营改增税负分析测算明细表
+            
+                    } else {
+                        Aurora.showInfoMessage('${l:PROMPT}', '报表类型' + report_type + '不存在，请重新选择！', null, 250, 100);
+                        return;
+                    }
+                    new Aurora.Window({
+                        id: 'vat_rpt_view_window',
+                        fullScreen: true,
+                        url: url,
+                        title: record.get('report_name'),
+                        width: 960,
+                        height: 840
+                    });
+                }
+            }
+            
+            //运行报表
+            
+            function runFunction() {
+                if(!$('vat_report_query_ds').validate()){
+                    return;
+                }
+                var dataSet = $('vat_report_result_ds');
+                var records = dataSet.getSelected();
+                if (records.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选择行！', null, 250, 100);
+                    return;
+                }
+                if (records.length > 1) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选择一行！', null, 250, 100);
+                    return;
+                }
+            
+                if (!$("vat_report_query_ds").validate()) {
+                    return;
+                }
+                var record = records[0];
+                var hrecord = $("vat_report_query_ds").getCurrentRecord();
+                var company_id = hrecord.get('company_id');
+                var period_year = hrecord.get('period_year');
+                var period_name = hrecord.get('period_name');
+                var jobData = [];
+                var data = record.data;
+                data['company_id'] = company_id;
+                data['year'] = period_year;
+                data['tax_period'] = period_name;
+                data['report_type'] = record.get('report_type');
+                data['cycle_precision'] = '${/model/sys_cycle_precision/record/@cycle_precision}';
+                data['_status'] = 'update';
+                jobData.push(data);
+                Aurora.request({
+                    url: $('vat_rpt_run_link').getUrl(),
+                    para: jobData,
+                    success: function(args) {
+                        Aurora.showInfoMessage('提示', '运行成功！', null, 250, 100);
+                        $("vat_report_result_ds").query();
+                        return;
+                    }
+                });
+            }
+            
+            
+            function periodComboBoxSelect() {
+                $("vat_report_result_ds").query();
+            }
+            
+            function queryUpdateFunction(dataSet, record, name, value, oldvalue) {
+                if (name == 'period_name') {
+                    $("vat_report_result_ds").query();
+                } else if (name == 'period_year') {
+                    record.set('period_name', value+'-01');
+                }
+            }
+            
+            Date.prototype.Format = function(fmt) { //author: meizz
+                var o = {
+                    "M+": this.getMonth() + 1,
+                    //月份
+                    "d+": this.getDate(),
+                    //日
+                    "h+": this.getHours(),
+                    //小时
+                    "m+": this.getMinutes(),
+                    //分
+                    "s+": this.getSeconds(),
+                    //秒
+                    "q+": Math.floor((this.getMonth() + 3) / 3),
+                    //季度
+                    "S": this.getMilliseconds() //毫秒
+                };
+                if (/(y+)/.test(fmt)) fmt = fmt.replace(RegExp.$1, (this.getFullYear() + "").substr(4 - RegExp.$1.length));
+                for (var k in o)
+                if (new RegExp("(" + k + ")").test(fmt)) fmt = fmt.replace(RegExp.$1, (RegExp.$1.length == 1) ? (o[k]) : (("00" + o[k]).substr(("" + o[k]).length)));
+                return fmt;
+            }
+            
+            function yearComboBoxSelect(combo, value, display, record) {
+                var cycle_precision = '${/model/sys_cycle_precision/record/@cycle_precision}';
+                if (cycle_precision) {
+                    if (cycle_precision == 'QUARTER') { //季度
+                        $('period_quarter_combo_ds').setQueryParameter('period_year', value);
+                        $('period_quarter_combo_ds').query();
+                    } else if (cycle_precision == 'PERIOD') {
+                        $('period_period_combo_ds').setQueryParameter('period_year', value);
+                        $('period_period_combo_ds').query();
+                    }
+                }
+            }
+            
+            function periodComboBoxSelect() {
+                $("vat_report_result_ds").query();
+            }
+        ]]></script>
+        <a:dataSets>
+            <!--年度comboBox-->
+            <a:dataSet id="period_year_combo_ds" fetchAll="true" loadData="true" model="vat.VAT6110.vat_year_lov"/>
+            <a:dataSet id="period_quarter_combo_ds" model="vat.VAT6110.vat_quarter_lov"/>
+            <a:dataSet id="period_period_combo_ds" model="vat.VAT6110.vat_period_lov"/>
+            <a:dataSet id="vat_report_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="seller_id"/>
+                    <a:field name="period_year" displayField="period_year" options="period_year_combo_ds" prompt="纳税年度" required="true" returnField="period_year" valueField="period_year"/>
+                    <a:field name="period_name" displayField="period_name" prompt="纳税期" required="true" returnField="period_name" valueField="period_name"/>
+                    <a:field name="company_short_name" autoComplete="true" lovGridHeight="330" lovHeight="460" lovLabelWidth="100" lovService="vat.VAT6110.fnd_companies_lov?vat_right_op=Y" lovWidth="550" required="true" title="PAGE_SELECT">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_short_name" to="company_short_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="queryUpdateFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="vat_report_result_ds" fetchAll="true" model="vat.VAT6110.vat_report_query" queryDataSet="vat_report_query_ds" selectable="true" selectionModel="single">
+                <a:fields>
+                    <a:field name="report_type"/>
+                    <a:field name="report_name"/>
+                    <a:field name="report_path"/>
+                    <a:field name="run_status"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="2" labelWidth="80" title="纳税申报表" width="550">
+                <a:lov name="company_short_name" bindTarget="vat_report_query_ds" prompt="机构"/>
+                <a:comboBox name="period_year" bindTarget="vat_report_query_ds" prompt="纳税年度">
+                    <a:events>
+                        <a:event name="select" handler="yearComboBoxSelect"/>
+                    </a:events>
+                </a:comboBox>
+                <a:comboBox name="period_name" bindTarget="vat_report_query_ds" prompt="纳税期">
+                    <a:events>
+                        <a:event name="select" handler="periodComboBoxSelect"/>
+                    </a:events>
+                </a:comboBox>
+            </a:form>
+            <!-- <a:button click="runAllFunction" text="生成全部"/> -->
+            <a:grid bindTarget="vat_report_result_ds" height="400" navBar="false" width="550">
+                <a:toolBar>
+                    <a:button click="runFunction" icon="${/request/@context_path}/images/continue.png" text="运行"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="report_name" prompt="报表名称" width="260"/>
+                    <a:column name="run_status_desc" align="center" prompt="状态" width="60"/>
+                    <a:column name="id" align="center" prompt="编辑" renderer="editReportRenderer" width="100"/>
+                    <!-- <a:column name="id" align="center" prompt="预览" renderer="viewReportRenderer" width="60"/> -->
+                    <!-- <a:column name="id" align="center" prompt="下载" renderer="downReportRenderer" width="60"/> -->
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        Aurora.onReady(function() {
+                var record = $("vat_report_query_ds").getCurrentRecord();
+                var cycle_precision = '${/model/sys_cycle_precision/record/@cycle_precision}';
+                var period_year = "${/model/init_data/record/@year}";
+                var field = record.getField('period_name');
+                if (cycle_precision) {
+                    if (cycle_precision == 'QUARTER') { //季度
+                        field.setOptions('period_quarter_combo_ds');
+                        field.setLovPara('period_year', record.get('period_year'));
+                        $('period_quarter_combo_ds').setQueryParameter('period_year', period_year);
+                        $('period_quarter_combo_ds').query();
+                    } else if (cycle_precision == 'PERIOD') { //期间
+                        field.setOptions('period_period_combo_ds');
+                        field.setLovPara('period_year', record.get('period_year'));
+                        $('period_period_combo_ds').setQueryParameter('period_year', period_year);
+                        $('period_period_combo_ds').query();
+                    }
+                }
+                record.set('period_year', '${/model/init_data/record/@year}');
+                record.set('period_name', '${/model/init_data/record/@tax_period}');
+                
+                record.set('company_short_name', '${/model/init_data/record/@company_short_name}');
+                record.set('company_id', '${/model/init_data/record/@company_id}');
+                record.set('company_code', '${/model/init_data/record/@company_code}');
+            
+            });
+        ]]></script>
+    </a:view>
+</a:screen>

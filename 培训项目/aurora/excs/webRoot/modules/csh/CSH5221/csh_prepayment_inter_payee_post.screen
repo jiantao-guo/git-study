@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="csh.CSH5221.payee_category_list" rootPath="payee_category_list"/>
+        <a:model-query model="csh.payment_header_detail" rootPath="payment_header_detail"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="csh_prepayment_inter_payee_post_link" url="${/request/@context_path}/modules/csh/CSH5221/csh_prepayment_inter_payee_post.screen"/>
+        <a:link id="csh_preprepayment_financeInfor_link" model="csh.csh_preprepayment_financeInfor" modelaction="query"/>
+        <div/>
+        <script><![CDATA[
+
+            function closeWindow() {
+                $('csh_prepayment_post_window').close();
+            }
+            
+            function nowWriteOffAmountValidator(record, name, value) {
+                if (name == 'now_write_off_amount') {
+                    var head_ds = $('csh_prepayment_header_detail_ds').getCurrentRecord();
+            
+                    var unwrite_off_amount = head_ds.get('unwrite_off_amount');
+                    var unwriteOffAmount = record.get('unwrite_off_amount');
+            
+                    if (!Ext.isEmpty(value)) {
+                        if (value <= 0 || value > unwriteOffAmount || value > unwrite_off_amount) {
+                            return '${l:CSH_PREPAYMENT_POST.CHECK1}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function post() {
+            
+                var ds = $('csh_prepayment_inter_payee_write_off_writeoffdetail_query_result_ds');
+            
+                if (ds.validate()) {
+                    //将from里的数据提取出来，用于填充参数和校验
+                    var head_ds = $('csh_prepayment_header_detail_ds').getCurrentRecord();
+                    var write_off_date = head_ds.get('write_off_date').format('yyyy-mm-dd');
+                    var unwrite_off_amount = head_ds.get('unwrite_off_amount');
+            
+            
+                    var records = ds.getAll();
+                    var lineAmount = 0;
+                    for (var i = 0;i < records.length;i++) {
+                        var now_write_off_amount = records[i].get('now_write_off_amount');
+                        if (!Ext.isEmpty(now_write_off_amount) && now_write_off_amount != 0) {
+                            //填充参数
+                            lineAmount = lineAmount + now_write_off_amount;
+                            records[i].set('transaction_date', write_off_date);
+            
+                        }
+                    }
+            
+                    if (lineAmount <= 0 || lineAmount > unwrite_off_amount) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:CSH_PREPAYMENT_POST.CHECK2}');
+                    } else {
+                        ds.setSubmitParameter('transaction_header_id', '${/parameter/@transaction_header_id}');
+                        ds.submit(); //提交所有的数据
+                        var window = Aurora.showMessage('${l:PROMPT.SUBMIT}', '${l:FND_DIMENSION_VALUES.OPR_SUC}', function() {
+                            closeWindow();
+                            var url = /*csh_prepayment_inter_payee_post.screen*/
+                            $('csh_prepayment_inter_payee_post_link').getUrl() + '?transaction_header_id=' + '${/parameter/@transaction_header_id}';
+                            new Aurora.Window({
+                                id: 'csh_prepayment_post_window',
+                                url: url,
+                                title: '${l:CSH_PREPAYMENT_INTER_PAYEE_WRITE_OFF.TITLE}',
+                                height: 600,
+                                width: 850
+                            });
+                        });
+                    }
+                }
+            }
+            
+            function docdetail(value, record, name) {
+                if (name == 'exp_report_number') {
+                    if (value) {
+                        var url = '${/request/@context_path}/modules/expm/public/exp_report_maintain_read_only.screen?exp_report_header_id=' + record.get('exp_report_header_id') + '&canUploadFlag=false';
+                        return '<a href="javascript:openwindow(\'' + url + '\')">' + value + '</a>';
+                    }
+                }
+                if (name == 'transaction_num') {
+                    if (value) {
+                        var url = '${/request/@context_path}/modules/csh/csh_payment_transaction_detail.screen?transaction_header_id=' + record.get('transaction_id');
+                        return '<a href="javascript:openwindow(\'' + url + '\');">' + value + '</a>';
+                    }
+                } else return '';
+            }
+            
+            function openwindow(url) {
+                //window.open(url,'','fullscreen=no,resizable=yes,width=1000,height=500');
+                new Aurora.Window({
+                    url: url,
+                    title: '',
+                    fullScreen: true
+                });
+            }
+            
+            function doCommit(lov, r1, r2) {
+                var payee_category = r1.get('payee_category');
+                if (payee_category == null || payee_category == undefined || payee_category == '') {
+                    return;
+                }
+                 /* else if (payee_category == 'EMPLOYEE') {
+                    r1.set('payee_id', r2.get('employee_id'));
+                    r1.set("payee_code_display", r2.get('name'));
+                } else if (payee_category == 'VENDER') {
+                    r1.set('payee_id', r2.get('vender_id'));
+                    r1.set("payee_code_display", r2.get('name'));
+                } else {
+                    r1.set('payee_id', r2.get('customer_id'));
+                    r1.set("payee_code_display", r2.get('name'));
+                } */
+                else {
+                    r1.set('payee_id', r2.get('id'));
+                    r1.set("payee_code_display", r2.get('name'));
+                }
+            }
+            
+            function onUpdate(ds, record, name, value, oldvalue) {                
+                if (name == 'payee_category') {
+                    // record.set('payee_id',null);
+                    // record.set('payee_code_display',null);
+                    var payee_code = ds.getCurrentRecord().getField('payee_code_display');
+                    if (name == 'payee_category' && value != '') {
+                        payee_code.setLovPara('partner_category', value);
+                        payee_code.setLovService('csh.company_employee_vender_customer_list_query');
+                        payee_code.setReadOnly(false);
+                        record.set('payee_code_display', '');
+                        record.set('payee_id', '');
+                    } else if (name == 'payee_category' && value == '') {
+                        payee_code.setLovService('');
+                        payee_code.setReadOnly(true);
+                    }
+                    // if(record.get('payee_category') == 'CUSTOMER'){
+                    // payee_code.setLovService('fnd.ord_system_customers');
+                    // }
+                    // else if(record.get('payee_category') == 'EMPLOYEE'){
+                    // payee_code.setLovService('expm.exp_req_employee_lov');
+                    // }
+                    // else if(record.get('payee_category') == 'VENDER'){
+                    // payee_code.setLovService('fnd.pur_system_venders');
+                    // }
+                    // else{
+                    // payee_code.setLovService(null);
+                    // }
+                }
+            }
+            
+            function querybtn() {
+                $('csh_prepayment_inter_payee_write_off_writeoffdetail_query_result_ds').query();
+            }
+            
+            function resetbtn() {
+                $('csh_prepayment_inter_payee_write_off_writeoffdetail_query_query_ds').reset();
+            }
+            
+            function setNum(ds) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    records[i].set('num', i + 1, true);
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="payment_header_detail_ds" autoCreate="true">
+                <a:datas dataSource="/model/payment_header_detail"/>
+            </a:dataSet>
+            <a:dataSet id="payee_category_list_ds">
+                <a:datas dataSource="/model/payee_category_list"/>
+            </a:dataSet>
+            <a:dataSet id="csh_prepayment_header_detail_ds" loadData="true" model="csh.csh_payment_header_detail_post">
+                <a:fields>
+                    <a:field name="transaction_num" readOnly="true"/>
+                    <a:field name="write_off_date" dataType="date" required="true"/>
+                    <a:field name="unwrite_off_amount" readOnly="true"/>
+                    <a:field name="currency_code" readOnly="true"/>
+                    <a:field name="exchange_rate_type" readOnly="true"/>
+                    <a:field name="exchange_rate_quotation" readOnly="true"/>
+                    <a:field name="exchange_rate" readOnly="true"/>
+                    <a:field name="transaction_amount" readOnly="true"/>
+                    <a:field name="unwrite_off_amount" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="csh_prepayment_inter_payee_write_off_writeoffdetail_query_query_ds" model="csh.CSH5221.csh_prepayment_inter_payee_write_off_writeoffdetail_query">
+                <a:fields>
+                    <a:field name="payee_category_name" displayField="code_value_name" options="payee_category_list_ds" returnField="payee_category" valueField="code_value"/>
+                    <a:field name="payee_category"/>
+                    <a:field name="payee_code_display" autoComplete="true" autoCompleteField="name" lovGridHeight="310" lovHeight="450" lovWidth="500" title="CSH_PAYMENT.PARTNER_SELECT"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="csh_prepayment_inter_payee_write_off_writeoffdetail_query_result_ds" autoQuery="true" model="csh.CSH5221.csh_prepayment_inter_payee_write_off_writeoffdetail_query" queryDataSet="csh_prepayment_inter_payee_write_off_writeoffdetail_query_query_ds" queryUrl="${/request/@context_path}/autocrud/csh.CSH5221.csh_prepayment_inter_payee_write_off_writeoffdetail_query/query?transaction_header_id=${/parameter/@transaction_header_id}" submitUrl="${/request/@context_path}/modules/csh/public/csh_prepayment_write_off_control.svc">
+                <a:fields>
+                    <a:field name="transaction_class" prompt="CSH_PREPAYMENT_POST.TRANSACTION_CLASS"/>
+                    <a:field name="now_write_off_amount" dataType="float" prompt="EXP_PREPAYMENT_POST.NOW_WRITE_OFF_AMOUNT" validator="nowWriteOffAmountValidator"/>
+                    <a:field name="num"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="setNum"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="csh_payment_transaction_posted_detail_writeoffhistory_query_ds" autoQuery="true" model="csh.csh_payment_transaction_posted_detail_writeoffhistory_query" queryUrl="${/request/@context_path}/autocrud/csh.csh_payment_transaction_posted_detail_writeoffhistory_query/query?transaction_header_id=${/parameter/@transaction_header_id}">
+                <a:fields>
+                    <a:field name="num"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="setNum"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="csh_preprepayment_financeInfor" model="csh.csh_preprepayment_financeInfor">
+                <a:fields>
+                    <a:field name="num"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="setNum"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="csh_pay_reverse_detail_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="querybtn" text="HAP_QUERY" width="80"/>
+                <a:toolbarButton click="resetbtn" text="HAP_RESET" width="80"/>
+                <a:toolbarButton click="post" text="PROMPT.POST" width="80"/>
+                <a:toolbarButton click="closeWindow" text="PROMPT.RETURN" width="80"/>
+            </a:screenTopToolbar>
+            <a:form id="csh_prepay_inter_writeoff_head_form" column="1" title="CSH_PREPAYMENT_POST.TITLE">
+                <a:box id="csh_prepay_inter_writeoff_normal_box" column="4" labelWidth="90" style="width:100%">
+                    <a:textField name="transaction_num" bindTarget="csh_prepayment_header_detail_ds"/>
+                    <a:datePicker name="write_off_date" bindTarget="csh_prepayment_header_detail_ds" renderer="Aurora.formatDate"/>
+                    <a:textField name="transaction_amount" bindTarget="csh_prepayment_header_detail_ds"/>
+                    <a:textField name="unwrite_off_amount" bindTarget="csh_prepayment_header_detail_ds"/>
+                    <a:textField name="currency_code" bindTarget="csh_prepayment_header_detail_ds"/>
+                    <a:textField name="exchange_rate_type" bindTarget="csh_prepayment_header_detail_ds"/>
+                    <a:textField name="exchange_rate_quotation" bindTarget="csh_prepayment_header_detail_ds"/>
+                    <a:textField name="exchange_rate" bindTarget="csh_prepayment_header_detail_ds"/>
+                    <a:textField name="unwrite_off_amount" bindTarget="csh_prepayment_header_detail_ds"/>
+                    <a:comboBox name="payee_category_name" bindTarget="csh_prepayment_inter_payee_write_off_writeoffdetail_query_query_ds" prompt="CSH_TRANSACTION_LINES.PARTNER_CATEGORY"/>
+                    <a:lov name="payee_code_display" bindTarget="csh_prepayment_inter_payee_write_off_writeoffdetail_query_query_ds" prompt="CSH_TRANSACTION_LINES.PARTNER_ID">
+                        <a:events>
+                            <a:event name="commit" handler="doCommit"/>
+                        </a:events>
+                    </a:lov>
+                </a:box>
+            </a:form>
+            <a:tabPanel marginHeight="220" marginWidth="28">
+                <a:tabs>
+                    <a:tab prompt="EXP_PREPAYMENT_POST.WRITEOFFDETAILTAB" width="150">
+                        <a:grid id="writeoffdetail_gird" bindTarget="csh_prepayment_inter_payee_write_off_writeoffdetail_query_result_ds" marginHeight="260" navBar="true" style="margin-left:5px;margin-top:5px;">
+                            <a:columns>
+                                <a:column name="num" align="right" prompt="BGT_BUDGET_ITEMS_INTERFACE.BATCH_LINE_ID" width="50"/>
+                                <a:column name="write_off_type_display" align="left" prompt="EXP_PREPAYMENT_POST.WRITE_OFF_TYPE" width="120"/>
+                                <a:column name="exp_report_number" align="left" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER" width="120"/>
+                                <a:column name="audit_date" align="center" prompt="EXP_REPORT_LINES.AUDIT_DATE" width="120"/>
+                                <a:column name="payee_category_desc" align="left" prompt="CSH_TRANSACTION_LINES.PARTNER_CATEGORY" width="120"/>
+                                <a:column name="payee_desc" align="left" prompt="CSH_TRANSACTION_LINES.PARTNER_ID" width="120"/>
+                                <a:column name="due_amount" align="right" prompt="CSH_PREPAYMENT_POST.DUE_AMOUNT" width="100"/>
+                                <a:column name="unwrite_off_amount" align="right" prompt="EXP_PREPAYMENT_POST.UNWRITE_OFF_AMOUNT" width="100"/>
+                                <a:column name="now_write_off_amount" align="right" editor="now_write_off_amount_nf" prompt="EXP_PREPAYMENT_POST.NOW_WRITE_OFF_AMOUNT" width="100"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:numberField id="now_write_off_amount_nf" allowDecimals="false"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="EXP_PREPAYMENT_POST.WRITEOFFHISTORYTAB" width="150">
+                        <a:grid id="writeoffhistory_gird" bindTarget="csh_payment_transaction_posted_detail_writeoffhistory_query_ds" marginHeight="260" navBar="true" style="margin-left:5px;margin-top:5px;">
+                            <a:columns>
+                                <a:column name="num" align="right" prompt="BGT_BUDGET_ITEMS_INTERFACE.BATCH_LINE_ID" width="50"/>
+                                <a:column name="write_off_date" align="center" prompt="CSH_TRANSACTION_HEADERS.WRITE_OFF_COMPLETED_DATE" width="120"/>
+                                <a:column name="period_name" align="center" prompt="CSH_TRANSACTION_HEADERS.PERIOD_NAME" width="120"/>
+                                <a:column name="write_off_type" align="left" prompt="EXP_PREPAYMENT_POST.WRITE_OFF_TYPE" width="120"/>
+                                <a:column name="exp_report_number" align="left" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER" renderer="docdetail" width="120"/>
+                                <a:column name="transaction_num" align="left" prompt="CSH_PAYMENT.TRANSACTION_NUM" renderer="docdetail" width="120"/>
+                                <a:column name="csh_write_off_amount" align="right" prompt="EXP_PREPAYMENT_POST.TRANSACTION_AMOUNT" width="100"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="EXP_PREPAYMENT_POST.FINANCEINFORMATIONTAB" width="150">
+                        <a:grid id="financeInfor_gird" bindTarget="csh_preprepayment_financeInfor" marginHeight="260" navBar="true" style="margin-left:5px;margin-top:5px;">
+                            <a:columns>
+                                <a:column name="num" align="right" prompt="BGT_BUDGET_ITEMS_INTERFACE.BATCH_LINE_ID" width="50"/>
+                                <a:column name="description" align="left" width="120"/>
+                                <a:column name="responsibility_center_name" align="left" width="120"/>
+                                <a:column name="account_code" align="left" width="120"/>
+                                <a:column name="account_name" align="left" width="120"/>
+                                <a:column name="entered_amount_dr" align="right" width="100"/>
+                                <a:column name="entered_amount_cr" align="right" width="100"/>
+                                <a:column name="functional_amount_dr" align="right" width="100"/>
+                                <a:column name="functional_amount_cr" align="right" width="100"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+	        function cshPrepayInterPayeePostInitSize() {
+	                //描述宽度
+	            　　    var labelWidth = 75;
+	            　　    //标签宽度,5 = 3padding + 2border-spacing
+	            　　    var tagWidth = 150 + 5;
+	            　　    //页面宽度、高度
+	            　　    var vw = $A.getViewportWidth();
+	            　　    var vh = $A.getViewportHeight();
+	            　　    //留白宽度
+	            　　    var marginWidth = 35;
+	            　　    //自适应宽度
+	            　　    var autoWidth = vw - marginWidth;
+	            　　    //Form内部宽度，-2border
+	            　　    var formInnerWidth = autoWidth - 2;
+	            　　    //所占列数
+	            　　    var colSpan = 4;
+	            　　    //设置组件的自适应宽度
+	            　　    Ext.get('csh_prepay_inter_writeoff_head_form').setWidth(autoWidth + 4);
+	                   $('writeoffdetail_gird').setWidth(autoWidth + 4 - 17);
+	                   $('writeoffhistory_gird').setWidth(autoWidth + 4 - 17);
+	                   $('financeInfor_gird').setWidth(autoWidth + 4 - 17);
+	            }
+	            //Ext.fly(window).on('resize', cshPrepayInterPayeePostInitSize);
+	            cshPrepayInterPayeePostInitSize();
+            
+        		$('csh_preprepayment_financeInfor').setQueryUrl(/*${/request/@context_path}/autocrud/csh.csh_preprepayment_financeInfor/query*/$('csh_preprepayment_financeInfor_link').getUrl()+'?transaction_header_id=${/model/payment_header_detail/record/@transaction_line_id}');
+        		$('csh_preprepayment_financeInfor').query();
+        ]]></script>
+    </a:view>
+</a:screen>

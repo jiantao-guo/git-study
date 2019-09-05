@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Echo  
+    $Date: 2013-9-25 上午9:26:45  
+    $Revision: 1.0  
+    $Purpose: 获取银行账号时还要关联em_budget_element和pm_parameter_value，在此系统需要变更
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        am.account_id,
+                        am.bank_account,
+                        am.account_name,
+                        /*am.open_organ,*/
+                        (
+                        SELECT
+                            fc.COMPANY_SHORT_NAME
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_code = am.open_organ
+                        ) open_organ,
+                        am.open_bank,
+                        (SELECT
+                            scvv.code_value_name
+                        FROM
+                            sys_code_values_v scvv
+                        WHERE
+                            scvv.code       = 'OPEN_BANK' AND
+                            scvv.code_value = am.open_bank
+                        ) open_bank_cn,
+                        (SELECT
+                            scvv.code_value_name
+                        FROM
+                            sys_code_values_v scvv
+                        WHERE
+                            scvv.code       = 'ACCOUNT_PORPERTY' AND
+                            scvv.code_value = am.account_property
+                        ) account_property_cn,
+                        am.branch_bank,
+                        (SELECT
+                            bn.bank_name
+                        FROM
+                            bcdl_bank_num bn
+                        WHERE
+                            bn.bank_num = am.branch_bank
+                        ) branch_bank_cn,
+                        am.currency,
+                        (SELECT
+                            gcv.currency_name
+                        FROM
+                            gld_currency_vl gcv
+                        WHERE
+                            gcv.currency_code = am.currency
+                        ) currency_name
+                    FROM
+                        am_account_info am
+                    WHERE
+                        am.open_organ = ${@open_organ} AND
+                        (
+                            am.status = 'NORMAL' OR
+                            am.status ='CHANGED'
+                        )
+                    ) am #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="account_property_cn" databaseType="VARCHAR2" datatype="java.lang.String" prompt="性质"/>
+        <bm:field name="bank_account" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="160" forDisplay="true" forQuery="true" physicalName="BANK_ACCOUNT" prompt="银行账号"/>
+        <bm:field name="account_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="165" forDisplay="true" forQuery="true" physicalName="ACCOUNT_NAME" prompt="账户名称"/>
+        <bm:field name="open_bank" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="false" physicalName="OPEN_BANK" prompt="开户银行"/>
+        <bm:field name="open_bank_cn" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="94" forDisplay="true" forQuery="true" physicalName="OPEN_BANK_CN" prompt="开户银行"/>
+        <bm:field name="branch_bank" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="100" forDisplay="false" physicalName="BRANCH_BANK" prompt="支行信息"/>
+        <bm:field name="branch_bank_cn" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="290" forDisplay="true" forQuery="true" physicalName="BRANCH_BANK_CN" prompt="支行信息"/>
+        <bm:field name="currency" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="false" physicalName="CURRENCY" prompt="币种"/>
+        <bm:field name="currency_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="100" forDisplay="false" physicalName="CURRENCY_NAME" prompt="币种"/>
+        <bm:field name="account_id" databaseType="VARCHAR2" datatype="java.lang.Long" forDisplay="false" physicalName="CURRENCY_NAME"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="bank_account" queryExpression="am.bank_account like &apos;%&apos; || ${@bank_account} || &apos;%&apos;"/>
+        <bm:query-field field="account_name" queryOperator="like"/>
+        <bm:query-field field="open_bank_cn" queryOperator="like"/>
+        <bm:query-field field="branch_bank_cn" queryOperator="like"/>
+        <bm:query-field field="currency" queryOperator="like"/>
+        <!--收入户 支出户1 收入 3 其他 -->
+        <bm:query-field name="account_use1" queryExpression="exists (select 1 from am_account_info t  where t.account_use=&apos;1&apos; and t.bank_account = am.bank_account )"/>
+        <bm:query-field name="account_use3" queryExpression="exists (select 1 from am_account_info t  where t.account_use!=&apos;1&apos; and t.bank_account = am.bank_account )"/>
+        <!--是否直连-->
+        <bm:query-field name="account_interface" queryExpression="exists (select 1 from am_account_info t  where t.bet_status_code = &apos;DIRECT&apos; and t.bank_account = am.bank_account )"/>
+        <!--查询权限 -->
+        <bm:query-field name="query_op" queryExpression="exists (select 1 from cp_account_right_base_info t join cp_account_right_line_info l on t.base_id=l.base_id where t.user_id=${/session/@user_id} and t.enabled_flag= &apos;Y&apos; and l.query_flag=&apos;Y&apos;and account = am.bank_account )"/>
+        <!--付款权限 -->
+        <bm:query-field name="pay_op" queryExpression="exists (select 1 from cp_account_right_base_info t join cp_account_right_line_info l on t.base_id=l.base_id where t.user_id=${/session/@user_id} and t.enabled_flag= &apos;Y&apos; and l.query_flag=&apos;Y&apos; and l.pay_flag=&apos;Y&apos; and account = am.bank_account )"/>
+        <!--收款权限 -->
+        <bm:query-field name="receipt_op" queryExpression="exists (select 1 from cp_account_right_base_info t join cp_account_right_line_info l on t.base_id=l.base_id where t.user_id=${/session/@user_id} and t.enabled_flag= &apos;Y&apos; and l.query_flag=&apos;Y&apos; and l.gather_flag=&apos;Y&apos; and account = am.bank_account )"/>
+    </bm:query-fields>
+</bm:model>

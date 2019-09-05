@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-7-15 上午10:21:37  
+    $Revision: 1.0  
+    $Purpose: 资产清理挂账查询
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select * from (
+            						select t.segment3,
+									       t.segment_desc3,
+									       h.asset_id,
+									       h.asset_code,
+									       h.asset_name,
+									       nvl(sum(t.entered_amount_dr), 0) - nvl(sum(t.entered_amount_cr), 0) amount_balance,
+									       t.transaction_type,
+									       '资产申请单' as transaction_type_desc,
+									       erh.requisition_number,
+									       erh.description,
+									       decode(ert.base_trx_category,'ADJ',erl.pl_amount,'REV',erl.pl_amount,'RNT',erl.pl_amount,'LND',erl.pl_amount,'RET',erl.pl_amount,'DPL',erl.pl_amount,'BAC',erl.pl_amount,'LBK',erl.pl_amount,'ADD',erl.amount,'TRA',i.current_cost,'STL',erl.to_cost) as amount,
+									       erh.creation_date,
+									       erh.created_by,
+									       (select u.user_name || '_' || u.description
+									          from sys_user u
+									         where u.user_id = erh.created_by) created_by_name,
+									       erh.requisition_status,
+									       (select v.code_value_name
+									          from sys_service_lookup_v v
+									         where v.code = 'EAM_REQUISITION_STATUS'
+									           and v.code_value = erh.requisition_status
+									           and v.language = ${/session/@lang}) as requisition_status_desc,
+									       ert.base_trx_category,
+									       erh.requisition_header_id,
+									       null as page_name,
+									       null as documents_type_code
+									  from gl_account_entry          t,
+									       gld_set_of_books          s,
+									       eam_asset_books           b,
+									       eam_transaction_headers   eth,
+									       eam_asset_headers_vl      h,
+									       eam_requisition_headers   erh,
+									       eam_requisition_lines     erl,
+									       eam_requisition_types     ert,
+									       eam_document_trx_releases r,
+									       eam_asset_finance_info	 i
+									 where t.transaction_type = 'EAM_REQUISITION'
+									   and b.asset_book_id = ${@asset_book_id}
+									   and b.set_of_book_id = s.set_of_books_id
+									   and s.set_of_books_code = t.hec_sob_code
+									   and t.segment3 >= ${@accounts_code_from}
+									   and t.segment3 <= ${@accounts_code_to}
+									   and t.transaction_header_id = eth.transaction_header_id
+									   and eth.asset_id = h.asset_id
+									   and t.transaction_header_id = r.transaction_header_id
+									   and r.source_document_type = t.transaction_type
+									   and r.source_document_id = erh.requisition_header_id
+									   and r.source_document_line_id = erl.requisition_line_id
+									   and erl.requisition_header_id = erh.requisition_header_id
+									   and erh.ast_requisition_type_id = ert.ast_requisition_type_id
+									   and i.asset_id = h.asset_id
+									 group by t.segment3,
+									          t.segment_desc3,
+									          h.asset_id,
+									          h.asset_code,
+									          h.asset_name,
+									          t.transaction_type,
+									          erh.requisition_number,
+									          erh.description,
+									          decode(ert.base_trx_category,'ADJ',erl.pl_amount,'REV',erl.pl_amount,'RNT',erl.pl_amount,'LND',erl.pl_amount,'RET',erl.pl_amount,'DPL',erl.pl_amount,'BAC',erl.pl_amount,'LBK',erl.pl_amount,'ADD',erl.amount,'TRA',i.current_cost,'STL',erl.to_cost),
+									          erh.creation_date,
+									          erh.created_by,
+									          erh.requisition_status,
+									          ert.base_trx_category,
+									          erh.requisition_header_id
+									union
+									select t.segment3,
+									       t.segment_desc3,
+									       h.asset_id,
+									       h.asset_code,
+									       h.asset_name,
+									       nvl(sum(t.entered_amount_dr), 0) - nvl(sum(t.entered_amount_cr), 0) amount_balance,
+									       t.transaction_type,
+									       '资产报销单' as transaction_type_desc,
+									       erh.exp_report_number as requisition_number,
+									       erh.description,
+									       erl.report_amount as amount,
+									       erh.creation_date,
+									       erh.created_by,
+									       (select u.user_name || '_' || u.description
+									          from sys_user u
+									         where u.user_id = erh.created_by) created_by_name,
+									       erh.report_status as requisition_status,
+									       (select v.code_value_name
+									          from sys_service_lookup_v v
+									         where v.code = 'EXP_EXPENSE_REPORT_STATUS'
+									           and v.code_value = erh.report_status
+									           and v.language = ${/session/@lang}) as requisition_status_desc,
+									       null as base_trx_category,
+									       erh.exp_report_header_id as requisition_header_id,
+									       pv.page_name,
+									       null as documents_type_code
+									  from gl_account_entry              t,
+									       gld_set_of_books              s,
+									       eam_asset_books               b,
+									       eam_asset_headers_vl          h,
+									       exp_report_accounts           era,
+									       exp_report_headers            erh,
+									       exp_report_lines              erl,
+									       eam_asset_document_references r,
+									       exp_expense_report_types      ert,
+              							   exp_report_type_pages_v       pv
+									 where t.transaction_type = 'EXP_REPORT'
+									   and b.asset_book_id = ${@asset_book_id}
+									   and b.set_of_book_id = s.set_of_books_id
+									   and s.set_of_books_code = t.hec_sob_code
+									   and t.segment3 >= ${@accounts_code_from}
+									   and t.segment3 <= ${@accounts_code_to}
+									   and t.transaction_je_line_id = era.exp_report_je_line_id
+									   and era.exp_report_header_id = r.document_id
+									   and erl.exp_report_line_id = r.document_line_id
+									   and r.document_type = t.transaction_type
+									   and era.exp_report_header_id = erh.exp_report_header_id
+									   and erl.exp_report_header_id = erh.exp_report_header_id
+									   and ert.expense_report_type_id = erh.exp_report_type_id
+						               and ert.document_page_type = pv.page_type
+						               and pv.page_usage = 'QUERY'
+									   and r.asset_id = h.asset_id
+									 group by t.segment3,
+									          t.segment_desc3,
+									          h.asset_id,
+									          h.asset_code,
+									          h.asset_name,
+									          t.transaction_type,
+									          erh.exp_report_number,
+									          erh.description,
+									          erl.report_amount,
+									          erh.creation_date,
+									          erh.created_by,
+									          erh.report_status,
+									          erh.exp_report_header_id,
+									          pv.page_name
+									union
+									select t.segment3,
+									       t.segment_desc3,
+									       h.asset_id,
+									       h.asset_code,
+									       h.asset_name,
+									       nvl(sum(t.entered_amount_dr), 0) - nvl(sum(t.entered_amount_cr), 0) amount_balance,
+									       t.transaction_type,
+									       '通用交易单' as transaction_type_desc,
+									       erh.documents_number as requisition_number,
+									       erh.description,
+									       erl.amount_dr_current as amount,
+									       erh.creation_date,
+									       erh.created_by,
+									       (select u.user_name || '_' || u.description
+									          from sys_user u
+									         where u.user_id = erh.created_by) created_by_name,
+									       erh.job_status as requisition_status,
+									       (select v.code_value_name
+									          from sys_service_lookup_v v
+									         where v.code = 'JOB_STATUS'
+									           and v.code_value = erh.job_status
+									           and v.language = ${/session/@lang}) as requisition_status_desc,
+									       null as base_trx_category,
+									       erh.tra_general_header_id as requisition_header_id,
+									       null as page_name,
+									       m.type_code as documents_type_code
+									  from gl_account_entry     t,
+									       gld_set_of_books     s,
+									       eam_asset_books      b,
+									       eam_asset_headers_vl h,
+									       tra_general_headers  erh,
+									       tra_general_lines    erl,
+									       tra_documents_type_base_vl m
+									 where t.transaction_type = 'GENERAL_BUSINESS'
+									   and b.asset_book_id = ${@asset_book_id}
+									   and b.set_of_book_id = s.set_of_books_id
+									   and s.set_of_books_code = t.hec_sob_code
+									   and t.segment3 >= ${@accounts_code_from}
+									   and t.segment3 <= ${@accounts_code_to}
+									   and t.transaction_header_id = erh.tra_general_header_id
+									   and erl.tra_general_header_id = erh.tra_general_header_id
+									   and erl.e_asset_number = h.asset_code
+									   and m.type_id = erh.documents_type_id
+									 group by t.segment3,
+									          t.segment_desc3,
+									          h.asset_id,
+									          h.asset_code,
+									          h.asset_name,
+									          t.transaction_type,
+									          erh.documents_number,
+									          erh.description,
+									          erl.amount_dr_current,
+									          erh.creation_date,
+									          erh.created_by,
+									          erh.job_status,
+									          erh.tra_general_header_id,
+									          m.type_code
+									union
+									select t.segment3,
+									       t.segment_desc3,
+									       h.asset_id,
+									       h.asset_code,
+									       h.asset_name,
+									       nvl(sum(t.entered_amount_dr), 0) - nvl(sum(t.entered_amount_cr), 0) amount_balance,
+									       t.transaction_type,
+									       'FA' as transaction_type_desc,
+									       erh.requisition_number,
+									       erh.description,
+									       decode(ert.base_trx_category,'ADJ',erl.pl_amount,'REV',erl.pl_amount,'RNT',erl.pl_amount,'LND',erl.pl_amount,'RET',erl.pl_amount,'DPL',erl.pl_amount,'BAC',erl.pl_amount,'LBK',erl.pl_amount,'ADD',erl.amount,'TRA',i.current_cost,'STL',erl.to_cost) as amount,
+									       erh.creation_date,
+									       erh.created_by,
+									       (select u.user_name || '_' || u.description
+									          from sys_user u
+									         where u.user_id = erh.created_by) created_by_name,
+									       erh.requisition_status,
+									       (select v.code_value_name
+									          from sys_service_lookup_v v
+									         where v.code = 'EAM_REQUISITION_STATUS'
+									           and v.code_value = erh.requisition_status
+									           and v.language = ${/session/@lang}) as requisition_status_desc,
+									       ert.base_trx_category,
+									       erh.requisition_header_id,
+									       null as page_name,
+									       null as documents_type_code
+									  from gl_account_entry        t,
+									       gld_set_of_books        s,
+									       eam_asset_books         b,
+									       eam_asset_headers_vl    h,
+									       eam_requisition_headers erh,
+									       eam_requisition_lines   erl,
+									       eam_requisition_types   ert,
+									       eam_asset_finance_info	 i
+									 where t.transaction_type = 'FA'
+									   and b.asset_book_id = ${@asset_book_id}
+									   and b.set_of_book_id = s.set_of_books_id
+									   and s.set_of_books_code = t.hec_sob_code
+									   and t.segment3 >= ${@accounts_code_from}
+									   and t.segment3 <= ${@accounts_code_to}
+									   and t.transaction_header_id = erh.requisition_header_id
+									   and t.transaction_line_id = erl.requisition_line_id
+									   and erl.asset_id = h.asset_id
+									   and erl.requisition_header_id = erh.requisition_header_id
+									   and erh.ast_requisition_type_id = ert.ast_requisition_type_id
+									   and i.asset_id = h.asset_id
+									 group by t.segment3,
+									          t.segment_desc3,
+									          h.asset_id,
+									          h.asset_code,
+									          h.asset_name,
+									          t.transaction_type,
+									          erh.requisition_number,
+									          erh.description,
+									          decode(ert.base_trx_category,'ADJ',erl.pl_amount,'REV',erl.pl_amount,'RNT',erl.pl_amount,'LND',erl.pl_amount,'RET',erl.pl_amount,'DPL',erl.pl_amount,'BAC',erl.pl_amount,'LBK',erl.pl_amount,'ADD',erl.amount,'TRA',i.current_cost,'STL',erl.to_cost),
+									          erh.creation_date,
+									          erh.created_by,
+									          erh.requisition_status,
+									          ert.base_trx_category,
+									          erh.requisition_header_id)v
+									           #WHERE_CLAUSE#
+	             order by v.segment3,v.transaction_type,v.asset_code,v.requisition_number,v.creation_date
+]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="segment3" prompt="ACCOUNT_CODE"/>
+        <bm:field name="segment_desc3" prompt="GLD_ACCOUNTS.ACCOUNT_NAME"/>
+        <bm:field name="asset_id"/>
+        <bm:field name="asset_code" prompt="EAM_COUNTING_ANALYSIS_RESULTS.ASSET_CODE"/>
+        <bm:field name="asset_name" prompt="EAM_COUNTING_ANALYSIS_RESULTS.ASSET_NAME"/>
+        <bm:field name="amount_balance" prompt="ACCOUNT_BALANCE"/>
+        <bm:field name="transaction_type"/>
+        <bm:field name="transaction_type_desc" prompt="BGT_CHECK_LOGS.DOCUMENT_TYPE"/>
+        <bm:field name="requisition_number" prompt="CON_CONTRACT_HEADERS.DOCUMENT_NUM"/>
+        <bm:field name="description" prompt="AST_TRANSFER_TYPES.DESCRIPTION_ID"/>
+        <bm:field name="amount" prompt="CON_CONTRACT_HEADERS.DOCUMENT_AMOUNT"/>
+        <bm:field name="creation_date" prompt="CON_CONTRACT_HEADERS.SUBMITED_DATE"/>
+        <bm:field name="created_by"/>
+        <bm:field name="created_by_name" prompt="WFL_WORKFLOW_RULES.CREATED_BY"/>
+        <bm:field name="requisition_status"/>
+        <bm:field name="requisition_status_desc" prompt="PUR_PURCHASE_ORDER.DOCUMENT_STATUS"/>
+        <bm:field name="base_trx_category"/>
+        <bm:field name="requisition_header_id"/>
+        <bm:field name="page_name"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="transaction_type" queryOperator="="/>
+        <bm:query-field field="requisition_number" queryOperator="="/>
+        <bm:query-field field="requisition_status" queryOperator="="/>
+        <bm:query-field name="creation_date" queryExpression="v.creation_date &gt;= upper(${@req_date_from})"/>
+        <bm:query-field name="creation_date" queryExpression="v.creation_date &lt;= upper(${@req_date_to})"/>
+        <bm:query-field field="asset_code" queryOperator="="/>
+        <bm:query-field field="asset_name" queryExpression="v.asset_name like &apos;%&apos;||${@asset_name}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

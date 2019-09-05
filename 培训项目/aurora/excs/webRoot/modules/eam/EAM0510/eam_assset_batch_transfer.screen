@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spncer 3893
+    $Date: 2013-5-28 下午6:19:50  
+    $Revision: 1.0  
+    $Purpose: 资产批量调动
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="t1.code = &apos;EAM_ASSET_STATUS&apos; and t1.code_value in (&apos;INSTORE&apos;,&apos;USING&apos;,&apos;IN_PROCESS&apos;) and t1.language = ${/session/@lang}" model="sys.sys_service_lookup_v" rootPath="status"/>
+        <a:model-query defaultWhereClause="v.base_trx_category in (&apos;TRA&apos;, &apos;DEP&apos;) and v.ast_requisition_type_id = ${/parameter/@ast_requisition_type_id}" fetchAll="true" model="eam.eam0310.eam0310_default_trans_type" rootPath="eam_batch_transaction_types"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="eam_asset_batch_transfer_save_link" url="${/request/@context_path}/modules/eam/EAM0510/eam_asset_batch_transfer.svc"/>
+        <script><![CDATA[
+            Aurora.onReady(eam_asset_batch_transfer_init);
+            
+            function eam_asset_batch_transfer_init() {
+                var base_trx_category = '${/parameter/@base_trx_category}';
+                var head_ds = $('eam_asset_batch_lines_ds');
+                var head_meta = head_ds.getAt(0).getMeta();
+                var query_ds = $('eam_asset_batch_transfer_query_ds');
+                // query_ds.getField("responsibility_center_desc").setLovPara('unit_id', '${/parameter/@unit_id}');
+                query_ds.getField("responsibility_center_desc").setLovPara('asset_book_id', '${/parameter/@asset_book_id}');
+                
+                var result_ds = $('eam_asset_batch_transfer_result_ds');
+                
+             	var record = $('eam_asset_batch_lines_ds').getCurrentRecord();
+             	var to_company_desc = record.getField('to_company_desc');
+                to_company_desc.setLovPara('asset_book_id', '${/parameter/@asset_book_id}');
+                to_company_desc.setLovPara('company_id', '${/session/@company_id}');
+                
+                // if (base_trx_category == 'DEP') {
+                    // head_meta.getField('to_location').setReadOnly(true);
+                    // head_meta.getField('to_employee_desc').setReadOnly(true);
+                    // query_ds.getAt(0).getMeta().getField('location_desc').setRequired(true);
+                // } else {
+                    // result_ds.query();
+                // }
+                var to_unit_desc = record.getField('to_unit_desc');
+                to_unit_desc.setLovPara('base_trx_category', base_trx_category);
+                //to_unit_desc.setLovPara('responsibility_center_id', record.get('from_res_center_id'));
+                record.set('to_company_desc',decodeURI('${/parameter/@company_name}'));
+            }
+            
+            
+            function onQueryDsUpdate(ds, record, name, value, oldvalue) {
+                var base_trx_category = '${/parameter/@base_trx_category}';
+                var head_ds = $('eam_asset_batch_lines_ds');
+                var head_meta = head_ds.getAt(0).getMeta();
+                var head_record = head_ds.getAt(0);
+                var query_ds = $('eam_asset_batch_transfer_query_ds');
+                var query_record = query_ds.getAt(0);
+                var result_ds = $('eam_asset_batch_transfer_result_ds');
+                if (name == 'location_id') {
+                    if (base_trx_category == 'DEP') {
+                        if (Aurora.isEmpty(value)) {
+                            head_record.set('to_employee_desc', '');
+                            head_meta.getField('to_employee_desc').setReadOnly(true);
+                        } else {
+                            head_record.set('location_id', value);
+                            head_record.getField('to_employee_desc').setLovPara('location_id', value);
+                            head_record.set('to_employee_desc', '');
+                            head_meta.getField('to_employee_desc').setReadOnly(false);
+                        }
+                        result_ds.removeAll();
+                    }
+                    record.set('asset_from', '');
+                    record.set('asset_to', '');
+                    record.getField('asset_from').setLovPara('location_id', value || null);
+                    record.getField('asset_to').setLovPara('location_id', value || null);
+            
+                } else if (name == 'location_desc') {
+                    if (base_trx_category == 'DEP') {
+                        if (Aurora.isEmpty(value)) {
+                            head_record.set('to_location', '');
+                        } else {
+                            head_record.set('to_location', value);
+                        }
+                    }
+                }
+            }
+            //查询表单
+            
+            function batch_query() {
+                var query_rs = $('eam_asset_batch_transfer_query_ds').getCurrentRecord();
+                var record = $('eam_asset_batch_lines_ds').getCurrentRecord();
+                record.getField('to_unit_desc').setLovPara('responsibility_center_id', query_rs.get('responsibility_center_id'));
+                record.set('to_unit_id', '');
+                record.set('to_unit_desc', '');
+                $('eam_asset_batch_transfer_result_ds').query();
+            }
+            //重置表单
+            
+            function batch_reset() {
+                $('eam_asset_batch_transfer_query_ds').reset();
+            }
+            
+            //批量调动资产
+            
+            function batch_transfer_asset() {
+            
+                if (!$('eam_asset_batch_lines_ds').validate()) {
+                    return false;
+                }
+                var records = $('eam_asset_batch_transfer_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.SELECT_LINE_DATE}', null, 250, 100);
+                    return;
+                }
+                var batch_ds = $('eam_asset_batch_lines_ds').getCurrentRecord();
+                var responsibility_center_id = batch_ds.get('responsibility_center_id');
+                var datas = $('eam_asset_batch_transfer_result_ds').getJsonData(true);
+                var record = $('eam_asset_batch_lines_ds').getCurrentRecord();
+            
+                for (var i = 0;i < datas.length;i++) {
+                    datas[i].requisition_header_id = '${/parameter/@requisition_header_id}';
+                    datas[i].position_id = '${/parameter/@position_id}';
+                    datas[i].unit_id = '${/parameter/@unit_id}';
+                    datas[i].transaction_type_id = record.get('transaction_type_id');
+                    datas[i].to_location_address = record.get('to_location_address');
+                    datas[i].employee_id = '${/parameter/@employee_id}';
+                    datas[i].to_employee_id = record.get('to_employee_id');
+                    datas[i].to_company_id = record.get('to_company_id');
+                    datas[i].to_unit_id = record.get('to_unit_id');
+                    datas[i].responsibility_center_id = responsibility_center_id;
+            
+                }
+                //console.log(datas);
+                Aurora.request({
+                    url: $('eam_asset_batch_transfer_save_link').getUrl(),
+                    para: datas,
+                    success: function(args) {
+                        batch_back();
+                        eam0511_query();
+                    },
+                    scope: this
+                });
+            }
+            
+            function onLinesUpdateHandler(dataset, record, name, value) {
+                switch (name) {
+                case 'to_location_id':
+                    record.getField("to_employee_desc").setLovPara("location_id", value);
+                    record.set("to_employee_desc", null);
+                    break;
+                }
+            }
+            
+             function unitSelectFun(lov,r1,r2){
+                var using_unit_id = r1.get('to_unit_id');
+                var headDataSet = $('eam_asset_batch_lines_ds');
+                var record = headDataSet.getAt(0);
+                //使用人
+                lovField = record.getField("to_employee_desc");
+                lovField.setLovPara('unit_id', using_unit_id);
+                record.set('to_employee_desc','');
+                record.set('to_employee_id','');
+            }
+            
+            function batch_back() {
+                $('eam_asset_batch_transfer_window').close();
+            }
+            
+             function resCenterSelectFun(lov,r1,r2){
+                var record = $('eam_asset_batch_transfer_query_ds').getCurrentRecord();
+                record.getField('asset_from').setLovPara('responsibility_center_id', record.get('responsibility_center_id'));
+                record.getField('asset_to').setLovPara('responsibility_center_id', record.get('responsibility_center_id'));
+                
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="status_ds">
+                <a:datas dataSource="/model/status"/>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_batch_transfer_query_ds">
+                <a:fields>
+                    <a:field name="location_desc" lovGridHeight="300" lovHeight="425" lovService="eam.eam0510.eam0510_asset_location_with_type_lov?asset_book_id=${/parameter/@asset_book_id}&amp;company_id=${/parameter/@company_id}" lovWidth="500" title="目标管理单位选择">
+                        <a:mapping>
+                            <a:map from="description" to="location_desc"/>
+                            <a:map from="location_id" to="location_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="location_id"/>
+                    <a:field name="tag_number_from"/>
+                    <a:field name="asset_from" lovGridHeight="300" lovHeight="460" lovService="eam.eam0510.eam_asset_headers_batch_transfer_query?asset_book_id=${/parameter/@asset_book_id}&amp;category1=${/parameter/@category1}&amp;category2=${/parameter/@category2}&amp;category3=${/parameter/@category3}&amp;category4=${/parameter/@category4}" lovWidth="500" title="EAM_ASSET_HEADERS.SEARCH">
+                        <a:mapping>
+                            <a:map from="tag_number" to="tag_number_from"/>
+                            <a:map from="tag_number" to="asset_from"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tag_number_to"/>
+                    <a:field name="asset_to" lovGridHeight="300" lovHeight="460" lovService="eam.eam0510.eam_asset_headers_batch_transfer_query?asset_book_id=${/parameter/@asset_book_id}&amp;category1=${/parameter/@category1}&amp;category2=${/parameter/@category2}&amp;category3=${/parameter/@category3}&amp;category4=${/parameter/@category4}" lovWidth="500" title="EAM_ASSET_HEADERS.SEARCH">
+                        <a:mapping>
+                            <a:map from="tag_number" to="tag_number_to"/>
+                            <a:map from="tag_number" to="asset_to"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="responsibility_center_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam_responsibility_center_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.RESPONSIBILITY_CENTER_ID" required="false" title="责任中心">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="center_name_code_display" to="responsibility_center_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <!-- <a:event name="update" handler="onQueryDsUpdate"/> --><![CDATA[
+                    
+                    
+                    
+                    
+                ]]></a:events>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_batch_transfer_result_ds" pageSize="50" queryDataSet="eam_asset_batch_transfer_query_ds" queryUrl="${/request/@context_path}/autocrud/eam.eam0510.eam_asset_headers_batch_transfer_query/query?asset_book_id=${/parameter/@asset_book_id}&amp;category1=${/parameter/@category1}&amp;category2=${/parameter/@category2}&amp;category3=${/parameter/@category3}&amp;category4=${/parameter/@category4}&amp;ast_requisition_type_code=${/parameter/@ast_requisition_type_code}" selectable="true">
+                <a:fields>
+                    <a:field name="asset_id"/>
+                    <a:field name="tag_number" prompt="卡片号"/>
+                    <a:field name="asset_name" prompt="资产名称"/>
+                    <a:field name="status"/>
+                    <a:field name="start_use_date"/>
+                    <a:field name="status_desc" prompt="资产状态"/>
+                    <a:field name="current_location_desc" prompt="资产位置"/>
+                    <a:field name="from_res_center_id"/>
+                    <a:field name="from_management_id"/>
+                    <a:field name="from_company_id"/>
+                    <a:field name="from_unit_id"/>
+                    <a:field name="from_location_id"/>
+                    <a:field name="responsibility_center_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="eam_batch_trans_type">
+                <a:datas dataSource="/model/eam_batch_transaction_types"/>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_batch_lines_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="transaction_type_id" defaultValue="${/model/eam_batch_transaction_types/record/@transaction_type_id}"/>
+                    <a:field name="transaction_type" defaultValue="${/model/eam_batch_transaction_types/record/@description}" displayField="description" options="eam_batch_trans_type" prompt="EAM_REQUISITION_TYPES.DEFAULT_TRX_TYPE_DESC" readOnly="true" returnField="transaction_type_id" valueField="transaction_type_id"/>
+                    <a:field name="to_location" lovGridHeight="300" lovHeight="425" lovService="eam.eam0510.eam0510_asset_location_with_type_lov?asset_book_id=${/parameter/@asset_book_id}&amp;company_id=${/parameter/@company_id}" lovWidth="500" prompt="EAM_REQUISITION_LINES.TO_LOCATION_ID" title="EAM_REQUISITION_LINES.TO_LOCATION_ID">
+                        <a:mapping>
+                            <a:map from="location_id" to="to_location_id"/>
+                            <a:map from="description" to="to_location"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="to_location_id"/>
+                    <a:field name="to_employee_id"/>
+                    <a:field name="recipient" lovGridHeight="240" lovHeight="400" lovService="eam.eam0511.eam0511_recipients_query" lovWidth="500" prompt="EAM_REQUISITION_LINES.RECIPIENT" title="EAM_REQUISITION_LINES.RECIPIENT">
+                        <a:mapping>
+                            <a:map from="employee_id" to="to_employee_id"/>
+                            <a:map from="employee_name" to="recipient"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="to_company_id" defaultValue="${/parameter/@company_id}"/>
+                    <a:field name="to_company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov" lovWidth="550" required="true" title="目标机构">
+                        <a:mapping>
+                            <a:map from="company_id" to="to_company_id"/>
+                            <a:map from="company_short_name" to="to_company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="to_unit_id"/>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="to_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.common.eam_org_unit_lov" lovWidth="550" prompt="目标部门" required="true" title="目标部门">
+                        <a:mapping>
+                            <a:map from="unit_id" to="to_unit_id"/>
+                            <a:map from="unit_code_name" to="to_unit_desc"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="to_location_address" required="true"/>
+                    <a:field name="to_employee_id"/>
+                    <a:field name="to_employee_desc" lovGridHeight="300" lovHeight="425" lovService="eam.eam0311.eam0311_employee_assigns_lov" lovWidth="380" prompt="接收人" required="true" title="接收人">
+                        <a:mapping>
+                            <a:map from="name" to="to_employee_desc"/>
+                            <a:map from="employee_id" to="to_employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onLinesUpdateHandler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form labelWidth="100" title="HAP_QUERY_TITLE" width="600">
+                <!-- <a:hBox>
+                    <a:lov name="location_desc" bindTarget="eam_asset_batch_transfer_query_ds" prompt="管理单位"/>
+                </a:hBox> -->
+                <a:hBox>
+                    <a:lov name="asset_from" bindTarget="eam_asset_batch_transfer_query_ds" prompt="EAM_REQUISITION_RENT_TACKBACK.ASSET_FROM"/>
+                    <a:lov name="asset_to" bindTarget="eam_asset_batch_transfer_query_ds" prompt="EAM_REQUISITION_RENT_TACKBACK.ASSET_TO"/>
+                </a:hBox>
+                <a:hBox>
+                    <!-- <a:lov name="responsibility_center_desc" bindTarget="eam_asset_batch_transfer_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="batch_query"/>
+                            <a:event name="commit" handler="resCenterSelectFun"/>
+                        </a:events>
+                    </a:lov> --><![CDATA[
+                    
+                    
+                    
+                ]]></a:hBox>
+            </a:form>
+            <a:form labelWidth="100" title="" width="555">
+                <a:hBox>
+                    <!--  <a:comboBox name="transaction_type" bindTarget="eam_asset_batch_lines_ds" prompt="EAM_REQUISITION_TYPES.DEFAULT_TRX_TYPE_DESC"/>
+                    <a:textField name="to_location_address" bindTarget="eam_asset_batch_lines_ds" prompt="物理地址"/> -->
+                    <a:lov name="to_company_desc" bindTarget="eam_asset_batch_lines_ds" prompt="目标机构"/>
+                    <a:lov name="to_unit_desc" bindTarget="eam_asset_batch_lines_ds">
+                        <a:events>
+                            <a:event name="commit" handler="unitSelectFun"/>
+                        </a:events>
+                    </a:lov>
+                </a:hBox>
+                <a:hBox>
+                    <!-- <a:lov name="to_location" bindTarget="eam_asset_batch_lines_ds" prompt="EAM_REQUISITION_LINES.TO_LOCATION_ID"/> -->
+                    <a:textField name="to_location_address" bindTarget="eam_asset_batch_lines_ds" prompt="目标位置"/>
+                    <a:lov name="to_employee_desc" bindTarget="eam_asset_batch_lines_ds" prompt="EAM_REQUISITION_LINES.RECIPIENT"/>
+                </a:hBox>
+            </a:form>
+            <a:hBox>
+                <a:button click="batch_transfer_asset" text="PROMPT.BATCH_ASSET_TRANSFER" width="90"/>
+                <a:button click="batch_query" text="HAP_QUERY"/>
+                <a:button click="batch_back" text="HAP_BACK" width="60"/>
+            </a:hBox>
+            <a:grid bindTarget="eam_asset_batch_transfer_result_ds" height="300" navBar="true" width="600">
+                <a:toolBar>
+                    <a:label/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="tag_number" align="center" width="150"/>
+                    <a:column name="asset_name" align="center" width="160"/>
+                    <a:column name="status_desc" align="center" width="80"/>
+                    <a:column name="current_location_desc" width="160"/>
+                    <!--<a:column name="current_location_address"/>-->
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

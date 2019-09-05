@@ -1,0 +1,497 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Zealot  
+    $Date: 2015-3-9 下午3:51:13  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:view>
+        <a:link id="user_function_arguments_query_link" model="fnd.IDOC.IDOC1040.user_function_arguments_query" modelaction="query"/>
+        <script><![CDATA[
+            function columnValueClose() {
+                $('fnd_idoc_cvt_tab_column_value_window').close();
+            }
+            
+            function trimSeg(segmentName) {
+                return segmentName.replace('\[当前\]', '').replace('\[同级\]', '');
+            }
+            
+            function segmentFieldQuery(record) {
+                var query_record = $('column_value_segment_fields_query_ds').getCurrentRecord();
+                if (record.ds) {
+                    query_record.set('segment_type', trimSeg(record.get('segment_type')));
+                }
+                query_record.set('detail_id', '${/parameter/@detail_id}');
+                query_record.set('table_rule_id', '${/parameter/@table_rule_id}');
+                query_record.set('column_name', '${/parameter/@column_name}');
+                $('column_value_segment_fields_ds').query();
+            }
+            
+            function columnValueSave(grid, row, record, name) {
+                if (!$('column_value_ds').validate() || !$('column_value_type_ds').validate()) {
+                    return;
+                }
+            
+                var columnRecord = $('column_value_ds').getAt(0);
+                var columnValueTypeRecord = $('column_value_type_ds').getAt(0);
+            
+                var columnName = columnRecord.get('column_name');
+                var increaseKeepFlag = columnRecord.get('increase_keep_flag');
+                var columnValueType = columnValueTypeRecord.get('cond_value_type');
+                var columnValue;
+                var returnName;
+                if (columnName && columnValueType) {
+                    //条件值为IDOC下SEGMENT的Field
+                    if (columnValueType == 'IDOC_SEG_FIELD') {
+                        try {
+                            var currentSegment = $('column_value_segment_tree_ds').getCurrentRecord().get('segment_type');
+                            var currentLevel = $('column_value_segment_tree_ds').getCurrentRecord().get('index_level');
+                            var field_name = $('column_value_segment_fields_ds').getCurrentRecord().get('field_name');
+                        } catch (e) {
+                            Aurora.showInfoMessage('${l:HAP_ERROR}', '${l:FND_IDOC_CVT.SEG_FIELD_NULL}', null, 250, 100);
+                            return;
+                        }
+                        var segTreeStr = getSegTreeStr(currentSegment, currentLevel);
+                        if (!segTreeStr || !field_name) {
+                            Aurora.showInfoMessage('${l:HAP_ERROR}', '${l:FND_IDOC_CVT.SEG_FIELD_NULL}', null, 250, 100);
+                            return;
+                        }
+                        var segFieldStr = segTreeStr + '.' + field_name;
+                        columnValue = '#var{' + segFieldStr + '}var#';
+                    } else if (columnValueType == 'FUNCTION') {
+                        var functionName = $('column_value_fun_ds').getAt(0).get('package_function_name');
+                        if (!functionName) {
+                            Aurora.showInfoMessage('${l:HAP_ERROR}', '${l:FND_IDOC_CVT.FUNCTION_NULL}', null, 250, 100);
+                            return;
+                        }
+                        var paramStr = '';
+                        var paramRecords = $('column_value_fun_param_ds').getAll();
+                        for (var i = 0;i < paramRecords.length;i++) {
+                            if (!paramRecords[i].get('param_value')) {
+                                Aurora.showInfoMessage('${l:HAP_ERROR}', '${l:FND_IDOC_CVT.PARAM_VALUE_NULL}', null, 250, 100);
+                                return;
+                            }
+                            paramStr = paramStr + '\n' + paramRecords[i].get('param_name') + ' => ' + paramRecords[i].get('param_value') + ((i == paramRecords.length - 1) ? '' : ',');
+                        }
+                        columnValue = '#fun{' + functionName + '(' + paramStr + ')}fun#';
+                        returnName = columnName.toUpperCase();
+                    } else if (columnValueType == 'SEQUENCE') {
+                        if (!$('column_value_sequence_ds').validate()) {
+                            return;
+                        }
+                        var sequenceStr = $('column_value_sequence_ds').getAt(0).get('sequence_str');
+                        columnValue = '#seq{' + sequenceStr + '}seq#';
+                        returnName = columnName.toUpperCase();
+                    } else if (columnValueType == 'STRING') {
+                        if (!$('column_value_string_ds').validate()) {
+                            return;
+                        }
+                        var stringStr = $('column_value_string_ds').getAt(0).get('string_str');
+                        columnValue = '#str{' + stringStr + '}str#';
+                        returnName = columnName.toUpperCase();
+                    } else if (columnValueType == 'NUMBER') {
+                        if (!$('column_value_number_ds').validate()) {
+                            return;
+                        }
+                        var numberStr = $('column_value_number_ds').getAt(0).get('number_str');
+                        columnValue = '#num{' + numberStr + '}num#';
+                        returnName = columnName.toUpperCase();
+                    } else if (columnValueType == 'DATE') {
+                        if (!$('column_value_date_ds').validate()) {
+                            return;
+                        }
+                        var dateStr = $('column_value_date_ds').getAt(0).get('date_str');
+                        if (dateStr != 'sysdate') {
+                            columnValue = '#dat{' + dateStr + '}dat#';
+                            returnName = columnName.toUpperCase();
+                        }else{
+                            columnValue = dateStr;
+                            returnName = columnName.toUpperCase();
+                        }
+                    } else if (columnValueType == 'TIME') {
+                        if (!$('column_value_time_ds').validate()) {
+                            return;
+                        }
+                        var timeStr = $('column_value_time_ds').getAt(0).get('time_str');
+                        if (timeStr != 'sysdate') {
+                            columnValue = '#tim{' + timeStr + '}tim#';
+                            returnName = columnName.toUpperCase();
+                        }else{
+                            columnValue = timeStr;
+                            returnName = columnName.toUpperCase();
+                        }
+                    }
+                }
+            
+                var columnDs = $('fnd_idoc_cvt_tab_fields_ds');
+                columnDs.add(new Aurora.Record({
+                    field_name: columnName,
+                    increase_keep_flag: increaseKeepFlag,
+                    mapping_value: columnValue,
+                    return_name: returnName,
+                    table_rule_id: '${/parameter/@table_rule_id}'
+                }));
+                $('fnd_idoc_cvt_tab_fields_ds').submit();
+                columnValueClose();
+            }
+            
+            function getSegTreeStr(currentSegment, currentLevel) {
+                var sameLevelSegFlag;
+                if (currentSegment.indexOf('\[同级\]') != -1) {
+                    sameLevelSegFlag = true;
+                } else {
+                    sameLevelSegFlag = false;
+                }
+            
+                currentSegment = trimSeg(currentSegment);
+            
+                if (currentLevel != 1) {
+                    var ds = $('column_value_segment_tree_ds');
+                    var records = ds.getAll();
+                    var parentSegment;
+                    for (var i = 0;i < records.length;i++) {
+                        if (trimSeg(records[i].get('segment_type')) == currentSegment) {
+                            parentSegment = records[i].get('parent_segment');
+                            break;
+                        }
+                    }
+            
+                    return getSegTreeStr(parentSegment, currentLevel - 1) + '->' + currentSegment + (sameLevelSegFlag ? '[1]' : '[index' + currentLevel + ']');
+                } else {
+                    return currentSegment + (sameLevelSegFlag ? '[1]' : '[index' + currentLevel + ']');
+                }
+            }
+            
+            function columnValueTypeUpdate(dataSet, record, name, value, oldvalue) {
+                if (name == 'cond_value_type') {
+                    if (value == 'IDOC_SEG_FIELD') {
+                        $('column_value_type_tab').setEnabled(0);
+                        $('column_value_type_tab').setDisabled(1);
+                        $('column_value_type_tab').setDisabled(2);
+                        $('column_value_type_tab').setDisabled(3);
+                        $('column_value_type_tab').setDisabled(4);
+                        $('column_value_type_tab').setDisabled(5);
+                        $('column_value_type_tab').setDisabled(6);
+                        $('column_value_type_tab').selectTab(0);
+                        $('column_value_segment_tree_ds').setQueryParameter('detail_id', '${/parameter/@detail_id}');
+                        $('column_value_segment_tree_ds').query();
+                        $('column_value_segment_fields_query_ds').reset();
+                        $('column_value_segment_fields_ds').query();
+                    } else if (value == 'FUNCTION') {
+                        $('column_value_type_tab').setDisabled(0);
+                        $('column_value_type_tab').setEnabled(1);
+                        $('column_value_type_tab').setDisabled(2);
+                        $('column_value_type_tab').setDisabled(3);
+                        $('column_value_type_tab').setDisabled(4);
+                        $('column_value_type_tab').setDisabled(5);
+                        $('column_value_type_tab').setDisabled(6);
+                        $('column_value_type_tab').selectTab(1);
+                    } else if (value == 'SEQUENCE') {
+                        $('column_value_type_tab').setDisabled(0);
+                        $('column_value_type_tab').setDisabled(1);
+                        $('column_value_type_tab').setEnabled(2);
+                        $('column_value_type_tab').setDisabled(3);
+                        $('column_value_type_tab').setDisabled(4);
+                        $('column_value_type_tab').setDisabled(5);
+                        $('column_value_type_tab').setDisabled(6);
+                        $('column_value_type_tab').selectTab(2);
+                    } else if (value == 'STRING') {
+                        $('column_value_type_tab').setDisabled(0);
+                        $('column_value_type_tab').setDisabled(1);
+                        $('column_value_type_tab').setDisabled(2);
+                        $('column_value_type_tab').setEnabled(3);
+                        $('column_value_type_tab').setDisabled(4);
+                        $('column_value_type_tab').setDisabled(5);
+                        $('column_value_type_tab').setDisabled(6);
+                        $('column_value_type_tab').selectTab(3);
+                    } else if (value == 'NUMBER') {
+                        $('column_value_type_tab').setDisabled(0);
+                        $('column_value_type_tab').setDisabled(1);
+                        $('column_value_type_tab').setDisabled(2);
+                        $('column_value_type_tab').setDisabled(3);
+                        $('column_value_type_tab').setEnabled(4);
+                        $('column_value_type_tab').setDisabled(5);
+                        $('column_value_type_tab').setDisabled(6);
+                        $('column_value_type_tab').selectTab(4);
+                    } else if (value == 'DATE') {
+                        $('column_value_type_tab').setDisabled(0);
+                        $('column_value_type_tab').setDisabled(1);
+                        $('column_value_type_tab').setDisabled(2);
+                        $('column_value_type_tab').setDisabled(3);
+                        $('column_value_type_tab').setDisabled(4);
+                        $('column_value_type_tab').setEnabled(5);
+                        $('column_value_type_tab').setDisabled(6);
+                        $('column_value_type_tab').selectTab(5);
+                    } else if (value == 'TIME') {
+                        $('column_value_type_tab').setDisabled(0);
+                        $('column_value_type_tab').setDisabled(1);
+                        $('column_value_type_tab').setDisabled(2);
+                        $('column_value_type_tab').setDisabled(3);
+                        $('column_value_type_tab').setDisabled(4);
+                        $('column_value_type_tab').setDisabled(5);
+                        $('column_value_type_tab').setEnabled(6);
+                        $('column_value_type_tab').selectTab(6);
+                    }
+                }
+            }
+            
+            function onSegmentClick(node, record) {
+                segmentFieldQuery(record);
+            }
+            
+            function columnValueFunUpdate(ds, record, name, value, oldValue) {
+                if (name == 'function_name') {
+                    Aurora.request({
+                        url: $('user_function_arguments_query_link').getUrl(),
+                        para: {
+                            package_name: record.get('package_name'),
+                            function_name: record.get('function_name')
+                        },
+                        success: function(resp) {
+                            if (resp && resp.result && resp.result.record) {
+                                for (var i = 0;i < resp.result.record.length;i++) {
+                                    $('column_value_fun_param_ds').add(new Aurora.Record({
+                                        param_name: resp.result.record[i].argument_name
+                                    }));
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            
+            function colValCurrentTime() {
+                $('column_value_time_ds').getAt(0).set('time_str', 'sysdate');
+            }
+            
+            function colValCurrentDate() {
+                $('column_value_date_ds').getAt(0).set('date_str', 'sysdate');
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="column_value_ds" autoCreate="true" autoQuery="true" pageSize="15" selectable="true">
+                <a:fields>
+                    <a:field name="rule_id"/>
+                    <a:field name="detail_id"/>
+                    <a:field name="table_rule_id"/>
+                    <a:field name="condition_id"/>
+                    <a:field name="column_name" lovGridHeight="320" lovHeight="450" lovService="fnd.IDOC.IDOC1040.fnd_idoc_cvt_tab_fields_lov?table_rule_id=${/parameter/@table_rule_id}&amp;query_type=TABLE_COLUMN" lovWidth="500" prompt="FND_IDOC_CVT_TAB_FIELDS.FIELD_NAME" required="true" title="FND_IDOC_CVT_TAB_FIELDS.FIELD_NAME">
+                        <a:mapping>
+                            <a:map from="field_name" to="column_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="increase_keep_flag" checkedValue="Y" defaultValue="N" prompt="FND_IDOC_BPM_LINES.INCREASE_KEEP_FLAG" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="column_value_type_options_ds" lookupCode="FND_IDOC_CVT_MAPPING_COLUMN_VALUE_TYPE"/>
+            <a:dataSet id="column_value_type_ds">
+                <a:fields>
+                    <a:field name="cond_value_type_name" displayField="code_value_name" options="column_value_type_options_ds" prompt="FND_IDOC_CVT_COND_EDITOR.MAPPING_CONDITION_VALUE_TYPE" required="true" returnField="cond_value_type" valueField="code_value"/>
+                    <a:field name="cond_value_type"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="columnValueTypeUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="column_value_segment_tree_ds" fetchAll="true" loadData="true" model="fnd.IDOC.IDOC1040.fnd_idoc_segments_cond_editor_tree" queryUrl="${/request/@context_path}/autocrud/fnd.IDOC.IDOC1040.fnd_idoc_segments_cond_editor_tree/query?table_rule_id=${/parameter/@table_rule_id}&amp;segment_name=${/parameter/@segment_name}" selectable="true">
+                <a:fields>
+                    <a:field name="detail_id"/>
+                    <a:field name="rule_id"/>
+                    <a:field name="segment_type"/>
+                    <a:field name="expanded" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="column_value_segment_fields_query_ds" autoCreate="true" model="fnd.IDOC.IDOC1040.fnd_idoc_fields">
+                <a:fields>
+                    <a:field name="detail_id"/>
+                    <a:field name="table_rule_id"/>
+                    <a:field name="condition_id"/>
+                    <a:field name="column_name"/>
+                    <a:field name="field_name"/>
+                    <a:field name="data_type"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="column_value_segment_fields_ds" autoPageSize="true" fetchAll="true" model="fnd.IDOC.IDOC1040.fnd_idoc_fields" queryDataSet="column_value_segment_fields_query_ds" selectable="true" selectionModel="single">
+                <a:fields>
+                    <a:field name="detail_id"/>
+                    <a:field name="table_rule_id"/>
+                    <a:field name="condition_id"/>
+                    <a:field name="column_name"/>
+                    <a:field name="field_name" prompt="FND_IDOC_CVT_COND_EDITOR.FIELDS"/>
+                    <a:field name="data_type" prompt="FND_IDOC_CVT_COND_EDITOR.FIELDS_TYPE"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="column_value_fun_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="package_function_name" lovGridHeight="320" lovHeight="450" lovService="fnd.IDOC.IDOC1040.user_functions_for_lov" lovWidth="600" prompt="USER_FUNCTION.FUNCTION_NAME">
+                        <a:mapping>
+                            <a:map from="package_function_name" to="package_function_name"/>
+                            <a:map from="package_name" to="package_name"/>
+                            <a:map from="object_name" to="function_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="columnValueFunUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="column_value_fun_param_ds">
+                <a:fields>
+                    <a:field name="param_name" prompt="USER_FUNCTION.PARAM_NAME" required="true"/>
+                    <a:field name="param_value" prompt="USER_FUNCTION.PARAM_VALUE" required="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="column_value_sequence_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="sequence_str" lovGridHeight="320" lovHeight="450" lovService="fnd.IDOC.IDOC1040.user_sequence_for_lov" lovWidth="500" prompt="FND_IDOC_CVT_COND_EDITOR.SEQUENCE_NAME" required="true">
+                        <a:mapping>
+                            <a:map from="sequence_name" to="sequence_str"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="column_value_string_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="string_str" prompt="FND_IDOC_CVT_COND_EDITOR.STRING_STR" required="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="column_value_number_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="number_str" prompt="FND_IDOC_CVT_COND_EDITOR.NUMBER_STR" required="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="column_value_date_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="date_str" prompt="FND_IDOC_CVT_COND_EDITOR.DATE_STR" required="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="column_value_time_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="time_str" prompt="FND_IDOC_CVT_COND_EDITOR.TIME_STR" required="true"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="4" labelWidth="120" marginWidth="45" title="FND_IDOC_CVT_TAB_COND_COLUMNS.FND_IDOC_CVT_TAB_COND_COLUMNS">
+                <a:textField name="rule_name" bindTarget="fnd_idoc_convert_rules_ds" prompt="FND_IDOC_CONVERT_RULES.RULE_NAME_ID" readOnly="true"/>
+                <a:textField name="idoc_type_name" bindTarget="fnd_idoc_convert_rules_ds" prompt="FND_IDOC_CONVERT_RULES.IDOC_TYPE_ID" readOnly="true"/>
+                <a:textField name="segment_type" bindTarget="column_value_segment_tree_ds" prompt="FND_IDOC_CONVERT_DETAIL.SEGMENT_TYPE" readOnly="true"/>
+                <a:textField name="table_name" bindTarget="fnd_idoc_cvt_tables_ds" prompt="FND_IDOC_CVT_TABLES.TABLE_NAME" readOnly="true"/>
+            </a:form>
+            <a:form column="3" labelWidth="120" marginWidth="45" title="FND_IDOC_CVT_TAB_COND_COLUMNS.COND_MAPPING">
+                <a:lov name="column_name" bindTarget="column_value_ds" prompt="FND_IDOC_CVT_TAB_FIELDS.MAPPING_FIELD_NAME"/>
+                <a:comboBox name="cond_value_type_name" bindTarget="column_value_type_ds"/>
+                <a:checkBox name="increase_keep_flag" bindTarget="column_value_ds"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="columnValueSave" text="HAP_SAVE"/>
+            </a:hBox>
+            <a:tabPanel id="column_value_type_tab" marginHeight="280" marginWidth="45">
+                <a:tabs>
+                    <a:tab id="column_value_segment_tab" disabled="true" prompt="FND_IDOC_CVT_COND_EDITOR.SEGMENT_TAB" width="120">
+                        <a:hBox>
+                            <a:vBox>
+                                <a:form padding="0" showMargin="false" title="FND_IDOC_CONVERT_DETAIL.SEGMENT_TYPE" width="300">
+                                    <a:tree bindTarget="column_value_segment_tree_ds" displayField="segment_desc" expandField="expend_flag" height="440" idField="nr" parentField="parpno" sequenceField="hr">
+                                        <a:events>
+                                            <a:event name="click" handler="onSegmentClick"/>
+                                        </a:events>
+                                    </a:tree>
+                                </a:form>
+                            </a:vBox>
+                            <a:vBox>
+                                <a:form column="2" marginWidth="375" title="FND_IDOC_CVT_COND_EDITOR.FIELDS_QUERY">
+                                    <a:textField name="field_name" bindTarget="column_value_segment_fields_query_ds" prompt="FND_IDOC_CVT_COND_EDITOR.FIELDS">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="segmentFieldQuery"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:textField name="field_desc" bindTarget="column_value_segment_fields_query_ds" prompt="FND_IDOC_CVT_COND_EDITOR.FIELD_DESC">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="segmentFieldQuery"/>
+                                        </a:events>
+                                    </a:textField>
+                                </a:form>
+                                <a:hBox>
+                                    <a:button click="segmentFieldQuery" text="HAP_QUERY"/>
+                                </a:hBox>
+                                <a:grid bindTarget="column_value_segment_fields_ds" height="360" marginWidth="375" navBar="true">
+                                    <a:columns>
+                                        <a:column name="field_name" align="left" prompt="FND_IDOC_SEGMENT.FIELD_NAME" sortable="true" width="250"/>
+                                        <a:column name="field_desc" align="left" prompt="FND_IDOC_CVT_COND_EDITOR.FIELD_DESC" width="250"/>
+                                    </a:columns>
+                                    <a:events>
+                                        <a:event name="dblclick" handler="columnValueSave"/>
+                                    </a:events>
+                                </a:grid>
+                            </a:vBox>
+                        </a:hBox>
+                    </a:tab>
+                    <a:tab id="column_value_function_tab" disabled="true" prompt="FND_IDOC_CVT_COND_EDITOR.FUNCTION_TAB" width="120">
+                        <a:screenBody>
+                            <a:hBox>
+                                <a:lov name="package_function_name" bindTarget="column_value_fun_ds" width="500"/>
+                            </a:hBox>
+                            <a:grid id="column_value_fun_param_grid" bindTarget="column_value_fun_param_ds" height="440" marginWidth="64">
+                                <a:toolBar>
+                                    <a:label/>
+                                </a:toolBar>
+                                <a:columns>
+                                    <a:column name="param_name" width="250"/>
+                                    <a:column name="param_value" editor="column_value_fun_ta" width="250"/>
+                                </a:columns>
+                                <a:editors>
+                                    <a:textArea id="column_value_fun_ta"/>
+                                </a:editors>
+                            </a:grid>
+                        </a:screenBody>
+                    </a:tab>
+                    <a:tab id="column_value_sequence_tab" disabled="true" prompt="FND_IDOC_CVT_COND_EDITOR.SEQUENCE_TAB" width="120">
+                        <a:screenBody>
+                            <a:hBox>
+                                <a:lov name="sequence_str" bindTarget="column_value_sequence_ds"/>
+                            </a:hBox>
+                        </a:screenBody>
+                    </a:tab>
+                    <a:tab id="column_value_string_tab" disabled="true" prompt="FND_IDOC_CVT_COND_EDITOR.STRING_TAB" width="120">
+                        <a:screenBody>
+                            <a:hBox>
+                                <a:textField name="string_str" bindTarget="column_value_string_ds"/>
+                            </a:hBox>
+                        </a:screenBody>
+                    </a:tab>
+                    <a:tab id="column_value_number_tab" disabled="true" prompt="FND_IDOC_CVT_COND_EDITOR.NUMBER_TAB" width="120">
+                        <a:screenBody>
+                            <a:hBox>
+                                <a:textField name="number_str" bindTarget="column_value_number_ds"/>
+                            </a:hBox>
+                        </a:screenBody>
+                    </a:tab>
+                    <a:tab id="column_value_date_tab" disabled="true" prompt="FND_IDOC_CVT_COND_EDITOR.DATE_TAB" width="120">
+                        <a:screenBody>
+                            <a:hBox>
+                                <span><![CDATA[${l:FND_IDOC_CVT.DATE_FORMAT_IS}:YYYYMMDD]]></span>
+                            </a:hBox>
+                            <a:vBox>
+                                <a:textField name="date_str" bindTarget="column_value_date_ds"/>
+                                <a:button click="colValCurrentDate" text="FND_IDOC_CVT.CURRENT_DATE"/>
+                            </a:vBox>
+                        </a:screenBody>
+                    </a:tab>
+                    <a:tab id="column_value_time_tab" disabled="true" prompt="FND_IDOC_CVT_COND_EDITOR.TIME_TAB" width="120">
+                        <a:screenBody>
+                            <a:hBox>
+                                <span><![CDATA[${l:FND_IDOC_CVT.TIME_FORMAT_IS}:YYYYMMDD HH24:MI:SS]]></span>
+                            </a:hBox>
+                            <a:vBox>
+                                <a:textField name="time_str" bindTarget="column_value_time_ds"/>
+                                <a:button click="colValCurrentTime" text="FND_IDOC_CVT.CURRENT_TIME"/>
+                            </a:vBox>
+                        </a:screenBody>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

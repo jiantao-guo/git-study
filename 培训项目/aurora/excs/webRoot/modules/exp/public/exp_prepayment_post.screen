@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  报销单核销预付款
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_prepayment_post_record" rootPath="record"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_prepayment_post_payinfo" rootPath="payinfo"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_prepayment_post_typelist" rootPath="typelist"/>
+        <a:model-query model="expm.csh_preprepayment_financeInfor_query" rootPath="finance"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="delete_csh_write_off_link_1" model="db.exp_report_pkg.delete_csh_write_off" modelaction="batch_update"/>
+        <a:link id="get_exchange_rate_link_5" model="expm.get_exchange_rate" modelaction="query"/>
+        <a:link id="sys_fun_get_period_name_link_4" model="csh.sys_fun_get_period_name" modelaction="query"/>
+        <script><![CDATA[
+			function select_tab(tab, index){
+				if (index == 2){//选中财务信息tab
+					var selectRecord = $('writeOffHistory_ds').getSelected();
+					if (selectRecord.length == 1){
+						$('financeInformation_ds').setQueryParameter('write_off_id',selectRecord[0].get('write_off_id'));
+						$('financeInformation_ds').query();
+					} else {
+						Aurora.showMessage('${l:PROMPT}','${l:PROMPT.PLEASE_SELECT_ONE}');
+					}
+				}
+			}
+		
+			//校验：本次核销不能大于未核销
+			function writeOffAmount_change(dataSet, record, name, value, oldvalue){
+				if (value > record.get('unwrite_off_amount')){
+					Aurora.showMessage('${l:PROMPT}','${l:EXP_PREPAYMENT_POST.CHECK3}');
+					record.set('now_write_off_amount', oldvalue);
+				}
+			}
+			function back(){
+			 $('exp_prepayment_post_window').close();
+			}
+			//将隐藏的period_name修改
+			function reportDate_change(datepicker, date){
+				Aurora.request({
+    				url:/*${/request/@context_path}/autocrud/csh.sys_fun_get_period_name/query*/$('sys_fun_get_period_name_link_4').getUrl(),
+    				para:{
+    					p_date:Aurora.formatDate(date)
+    				},
+    				success:function(args){
+    					if (args.result.record.period_name){
+    						$('header_ds').getAt(0).set('period_name', args.result.record.period_name);
+    						change_exchangeRate();
+    					} else {
+    						Aurora.showMessage('${l:PROMPT}','${l:EXP_PREPAYMENT_POST.CHECK1}');
+    						$('header_ds').getAt(0).set('report_date', '');
+    						$('header_ds').getAt(0).set('period_name', '');
+    					}
+    				},
+    				scope:this
+    			});
+			}
+			//改变汇率
+			function change_exchangeRate(){
+				Aurora.request({
+					url:/*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/$('get_exchange_rate_link_5').getUrl(),
+					para:{
+						from_currency		: $('header_ds').getAt(0).get('functional_currency_id'),
+						to_currency			: $('header_ds').getAt(0).get('currency_code'),
+						exchange_rate_type	: $('header_ds').getAt(0).get('exchange_rate_type'),
+						exchange_date		: $('header_ds').getAt(0).get('report_date'),
+						exchange_period_name: $('header_ds').getAt(0).get('period_name')
+					},
+					success:function(args){
+						if (args.result.record.exchange_rate){
+							$('header_ds').getAt(0).set('exchange_rate_quotation', args.result.record.exchange_rate_quotation);
+							$('header_ds').getAt(0).set('exchaneg_rate', Aurora.formatDate(args.result.record.exchange_rate));
+						} else{
+							Aurora.showMessage('${l:PROMPT}','{l:EXP_PREPAYMENT_POST.CHECK2}');
+							$('header_ds').getAt(0).set('exchange_rate_quotation', '');
+							$('header_ds').getAt(0).set('exchaneg_rate', '');
+						}
+					}
+				});
+			}
+			//删除记录
+			function writeOffHistory_delete(){
+				var records	= $('writeOffHistory_ds').getJsonData(true);
+				for(var i=0; i< records.length; i++){
+					records[i]['_status'] = "delete";
+				}
+				
+				Aurora.request({
+							url:/*${/request/@context_path}/autocrud/expm.delete_csh_write_off/batch_update*/$('delete_csh_write_off_link_1').getUrl(),
+							para:records,
+							success:delete_success,
+							scope:this
+				});
+			}
+			function delete_success(){
+				window.location.reload();
+		    
+			}
+			
+			
+			function doSum(datas,name){        		
+        		var sum = 0;
+                for(var i=0;i<datas.length;i++){
+                    var r = datas[i];
+                    var d = r.get(name);
+                    var n = parseFloat(d);
+                    if(!isNaN(n)){                        
+                        sum +=n;
+                    }
+                }
+                var total = (typeof(sum)=='undefined' ? '' : parseFloat(sum).toFixed('${/model/finance/record/@precision}'));                
+                return total ;
+        	}		
+		]]></script>
+        <a:dataSets>
+            <!--头部dataset-->
+            <a:dataSet id="header_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="transaction_header_id" defaultValue="${/parameter/@payment_schedule_line_id}"/>
+                    <a:field name="functional_currency_id" defaultValue="${/model/record/record/@functional_currency_code}"/>
+                    <a:field name="period_name" defaultValue="${/model/payinfo/record/@period_name}"/>
+                    <a:field name="exp_report_number" defaultValue="${/model/payinfo/record/@exp_report_number}" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER" readOnly="true"/>
+                    <a:field name="report_date" defaultValue="${/model/payinfo/record/@report_date}" prompt="CSH_WRITE_OFF.WRITE_OFF_DATE" readOnly="true"/>
+                    <a:field name="payee_category" defaultValue="${/model/payinfo/record/@payee_category}" prompt="EXP_REPORT_HEADERS.PAYEE_CATEGORY" readOnly="true"/>
+                    <a:field name="payee_code" defaultValue="${/model/payinfo/record/@payee_code}" prompt="EXP_REPORT_HEADERS.PAYEE_ID" readOnly="true"/>
+                    <a:field name="currency_code" defaultValue="${/model/payinfo/record/@currency_code}" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE" readOnly="true"/>
+                    <a:field name="exchange_rate_type" defaultValue="${/model/payinfo/record/@exchange_rate_type}" prompt="EXP_REPORT_HEADERS.EXCHANGE_RATE_TYPE" readOnly="true"/>
+                    <a:field name="exchange_rate_quotation" defaultValue="${/model/payinfo/record/@exchange_rate_quotation}" prompt="EXP_REPORT_HEADERS.EXCHANGE_RATE_QUOTATION" readOnly="true"/>
+                    <a:field name="exchange_rate" defaultValue="${/model/payinfo/record/@exchange_rate}" prompt="EXP_REPORT_HEADERS.EXCHANGE_RATE" readOnly="true"/>
+                    <a:field name="due_amount" defaultValue="${/model/payinfo/record/@due_amount}" prompt="EXP_PREPAYMENT_POST.DUE_AMOUNT" readOnly="true"/>
+                    <a:field name="due_amount1" defaultValue="${/model/payinfo/record/@due_amount1}" prompt="EXP_PREPAYMENT_POST.EXCHANGE_RATE_TYPE" readOnly="true"/>
+                    <a:field name="contract_number" defaultValue="${/model/payinfo/record/@contract_number}" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER" readOnly="true"/>
+                    <a:field name="line_number" defaultValue="${/model/payinfo/record/@line_number}" prompt="CON_PAYMENT_SCHEDULES.PAYMENT_SCHEDULE_LINE_NUMBER" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <!--核销明细dataset-->
+            <a:dataSet id="writeOffDetail_ds" autoQuery="true" model="expm.csh_prepayment_write_off_writeoffdetail_query" queryUrl="${/request/@context_path}/autocrud/expm.csh_prepayment_write_off_writeoffdetail_query/query?payment_schedule_line_id=${/parameter/@payment_schedule_line_id}">
+                <a:fields>
+                    <a:field name="write_off_type" prompt="EXP_PREPAYMENT_POST.WRITE_OFF_TYPE"/>
+                    <a:field name="transaction_num" prompt="CSH_PAYMENT.TRANSACTION_NUM"/>
+                    <a:field name="transaction_date" prompt="CSH_TRANSACTION_HEADERS.TRANSACTION_DATE"/>
+                    <a:field name="transaction_amount" prompt="EXP_PREPAYMENT_POST.TRANSACTION_AMOUNT"/>
+                    <a:field name="unwrite_off_amount" prompt="EXP_PREPAYMENT_POST.UNWRITE_OFF_AMOUNT"/>
+                    <a:field name="now_write_off_amount" prompt="EXP_PREPAYMENT_POST.NOW_WRITE_OFF_AMOUNT"/>
+                    <a:field name="payment_schedule_line_id"/>
+                    <a:field name="transaction_header_id"/>
+                    <a:field name="write_off_date"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="writeOffAmount_change"/>
+                </a:events>
+            </a:dataSet>
+            <!--核销历史dataset-->
+            <a:dataSet id="writeOffHistory_ds" autoQuery="true" model="expm.csh_payment_transaction_posted_detail_writeoffhistory_query" queryUrl="${/request/@context_path}/autocrud/expm.csh_payment_transaction_posted_detail_writeoffhistory_query/query?payment_schedule_line_id=${/parameter/@payment_schedule_line_id}" selectable="true">
+                <a:fields>
+                    <a:field name="write_off_date" prompt="CSH_TRANSACTION_HEADERS.WRITE_OFF_COMPLETED_DATE"/>
+                    <a:field name="period_name" prompt="CSH_TRANSACTION_HEADERS.PERIOD_NAME"/>
+                    <a:field name="write_off_type" prompt="EXP_PREPAYMENT_POST.WRITE_OFF_TYPE"/>
+                    <a:field name="transaction_num" prompt="EXP_PRE_POST_RO.TRANSACTION_NUM"/>
+                    <a:field name="csh_write_off_amount" prompt="EXP_PRE_POST_RO.CSH_WRITE_OFF_AMOUNT" readOnly="true"/>
+                    <a:field name="write_off_id"/>
+                </a:fields>
+            </a:dataSet>
+            <!--财务信息dataset-->
+            <a:dataSet id="financeInformation_ds" model="expm.csh_preprepayment_financeInfor_query">
+                <a:fields>
+                    <a:field name="description" prompt="CSH_WRITE_OFF_ACCOUNTS.DESCRIPTION"/>
+                    <a:field name="responsibility_center_name" prompt="CSH_WRITE_OFF_ACCOUNTS.RESPONSIBILITY_CENTER_ID"/>
+                    <a:field name="account_code" prompt="CSH_WRITE_OFF_ACCOUNTS.ACCOUNT_ID"/>
+                    <a:field name="account_name" prompt="CSH_WRITE_OFF_ACCOUNTS.ACCOUNT_NAME"/>
+                    <a:field name="entered_amount_dr" prompt="CSH_WRITE_OFF_ACCOUNTS.ENTERED_AMOUNT_DR"/>
+                    <a:field name="entered_amount_cr" prompt="CSH_WRITE_OFF_ACCOUNTS.ENTERED_AMOUNT_CR" readOnly="true"/>
+                    <a:field name="functional_amount_dr" prompt="CSH_WRITE_OFF_ACCOUNTS.FUNCTIONAL_AMOUNT_DR"/>
+                    <a:field name="functional_amount_cr" prompt="CSH_WRITE_OFF_ACCOUNTS.FUNCTIONAL_AMOUNT_CR"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="4" labelWidth="100" title="EXP_PREPAYMENT_POST.QUERYFROM" width="850">
+                <a:textField name="exp_report_number" bindTarget="header_ds" width="120"/>
+                <a:datePicker name="report_date" id="report_date" bindTarget="header_ds" width="100">
+                    <a:events>
+                        <a:event name="select" handler="reportDate_change"/>
+                    </a:events>
+                </a:datePicker>
+                <a:comboBox name="payee_category" bindTarget="header_ds" width="100"/>
+                <a:lov name="payee_code" bindTarget="header_ds" width="80"/>
+                <a:lov name="currency_code" bindTarget="header_ds" width="120"/>
+                <a:lov name="exchange_rate_type" bindTarget="header_ds" width="100"/>
+                <a:comboBox name="exchange_rate_quotation" bindTarget="header_ds" width="100"/>
+                <a:textField name="exchange_rate" bindTarget="header_ds" width="80"/>
+                <a:textField name="due_amount" bindTarget="header_ds" width="120"/>
+                <a:textField name="due_amount1" bindTarget="header_ds" width="100"/>
+                <a:textField name="contract_number" bindTarget="header_ds" width="100"/>
+                <a:textField name="line_number" bindTarget="header_ds" width="80"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="back" text="PROMPT.RETURN"/>
+            </a:hBox>
+            <a:tabPanel height="450" width="880">
+                <a:tabs>
+                    <a:tab prompt="EXP_PREPAYMENT_POST.WRITEOFFDETAILTAB" selected="true">
+                        <a:grid id="writeOffDetail_grid" bindTarget="writeOffDetail_ds" height="400" navBar="true" width="850">
+                            <a:columns>
+                                <a:column name="write_off_type" align="center" width="150"/>
+                                <a:column name="transaction_num" align="center" width="150"/>
+                                <a:column name="transaction_date" align="center" width="150"/>
+                                <a:column name="transaction_amount" align="center" width="150"/>
+                                <a:column name="unwrite_off_amount" align="center" width="150"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="now_write_off_amount_tf"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="EXP_PREPAYMENT_POST.WRITEOFFHISTORYTAB">
+                        <a:grid id="writeOffHistory_grid" bindTarget="writeOffHistory_ds" height="400" navBar="true" width="850">
+                            <a:toolBar>
+                                <a:button click="writeOffHistory_delete" icon="${/request/@context_path}/images/remove.gif" text="HAP_DELETE"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="write_off_date" align="center" renderer="Aurora.formatDate" width="150"/>
+                                <a:column name="period_name" align="center" width="150"/>
+                                <a:column name="write_off_type" align="center" width="150"/>
+                                <a:column name="transaction_num" align="center" width="150"/>
+                                <a:column name="csh_write_off_amount" align="center" width="150"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="EXP_PREPAYMENT_POST.FINANCEINFORMATIONTAB">
+                        <a:grid id="financeInformation_grid" bindTarget="financeInformation_ds" height="400" navBar="true" width="850">
+                            <a:columns>
+                                <a:column name="description" align="center" width="120"/>
+                                <a:column name="responsibility_center_name" align="center" width="120"/>
+                                <a:column name="account_code" align="center" width="120"/>
+                                <a:column name="account_name" align="center" width="120"/>
+                                <a:column name="entered_amount_dr" align="center" width="80"/>
+                                <a:column name="entered_amount_cr" align="center" footerRenderer="doSum" width="80"/>
+                                <a:column name="functional_amount_dr" align="center" footerRenderer="doSum" width="80"/>
+                                <a:column name="functional_amount_cr" align="center" footerRenderer="doSum" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+                <a:events>
+                    <a:event name="select" handler="select_tab"/>
+                </a:events>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

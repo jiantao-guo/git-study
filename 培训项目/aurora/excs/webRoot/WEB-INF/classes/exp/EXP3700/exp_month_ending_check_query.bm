@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: admin  
+    $Date: 2011-9-8 下午01:42:16  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT a.*,g.currency_name
+                FROM (
+                      SELECT h.exp_report_header_id document_id,'02' document_category,
+                        /*'费用报销单' document_category_desc,*/
+                        (
+                          SELECT code_value_name
+                          FROM sys_code_values_v a
+                          WHERE a.code = 'EXP_VOUCHER_CODE'
+                            AND a.code_value = '02'
+                        ) document_category_desc,h.exp_report_number EXP_DOCUMENT_NUMBER,h.company_id,h.audit_flag,(
+                          SELECT v.company_code || '-' || v.company_short_name
+                          FROM fnd_companies_vl v
+                          WHERE v.company_id = h.company_id
+                        ) company_name,(
+                          SELECT ertv.description
+                          FROM exp_expense_report_types_vl ertv
+                          WHERE ertv.expense_report_type_id = h.exp_report_type_id
+                        ) type_description,(
+                          SELECT ee.name || '-' || ee.employee_code
+                          FROM exp_employees ee
+                          WHERE ee.employee_id = h.employee_id
+                        ) employee_name,h.currency_code,(
+                          SELECT SUM (l.report_amount)
+                          FROM exp_report_lines l
+                          WHERE l.exp_report_header_id = h.exp_report_header_id
+                        ) amount,TO_CHAR (h.report_date, 'YYYY-MM-DD') req_date,h.report_status status,(
+                          SELECT scvv.code_value_name
+                          FROM sys_code_values_v scvv
+                          WHERE scvv.code = 'EXP_EXPENSE_REPORT_STATUS'
+                            AND scvv.code_value = h.report_status
+                        ) status_desc,h.description,(
+                          SELECT NVL (SUM (W.CSH_WRITE_OFF_AMOUNT), 0)
+                          FROM CSH_WRITE_OFF W
+                          WHERE W.DOCUMENT_SOURCE = 'EXPENSE_REPORT'
+                            AND W.DOCUMENT_HEADER_ID = h.exp_report_header_id
+                        ) PAYED_AMOUNT,
+                        DECODE ((
+                            SELECT COUNT(*)
+                            FROM EXP_REPORT_PMT_SCHEDULES er
+                            WHERE er.exp_report_header_id = h.exp_report_header_id
+                          ),0, 'N','Y'
+                        ) payment_flag,
+                        DECODE (h.JE_CREATION_STATUS,'SUCCESS', 'Y','N'
+                        ) JE_CREATION_STATUS
+                      FROM (
+                          SELECT *
+                          FROM exp_report_headers h
+                          WHERE report_status = ${@report_status}
+                            AND EXISTS (
+                              SELECT 1
+                              FROM (
+                                  SELECT TO_NUMBER (${@company_id}) company_id
+                                  FROM dual
+                                  UNION ALL
+                                  SELECT fc.COMPANY_ID
+                                  FROM fnd_companies_vl fc
+                                  WHERE fc.COMPANY_TYPE = 1 START WITH fc.PARENT_COMPANY_ID =
+                                    DECODE (${@value_id},'Y', ${@company_id},-1
+                                    ) CONNECT BY PRIOR fc.COMPANY_ID = fc.PARENT_COMPANY_ID
+                                )
+                              WHERE h.company_id = company_id
+                            )
+                            AND NVL (h.reversed_flag, 'N') = ${@csh_reverse_select}
+                        ) h
+                      UNION
+                      SELECT h.exp_requisition_header_id document_id,'01' document_category,
+                        /*'费用申请单' document_category_desc,*/
+                        (
+                          SELECT code_value_name
+                          FROM sys_code_values_v a
+                          WHERE a.code = 'EXP_VOUCHER_CODE'
+                            AND a.code_value = '01'
+                        ) document_category_desc,h.exp_requisition_number EXP_DOCUMENT_NUMBER,h.company_id,null audit_flag,(
+                          SELECT v.company_code || '-' || v.company_short_name
+                          FROM fnd_companies_vl v
+                          WHERE v.company_id = h.company_id
+                        ) company_name,(
+                          SELECT ertv.description
+                          FROM exp_expense_req_types_vl ertv
+                          WHERE ertv.EXPENSE_REQUISITION_TYPE_ID = h.exp_requisition_type_id
+                        ) type_description,(
+                          SELECT ee.name || '-' || ee.employee_code
+                          FROM exp_employees ee
+                          WHERE ee.employee_id = h.employee_id
+                        ) employee_name,h.currency_code,(
+                          SELECT SUM (l.requisition_amount)
+                          FROM exp_requisition_lines l
+                          WHERE l.exp_requisition_header_id = h.exp_requisition_header_id
+                        ) amount,TO_CHAR (h.requisition_date, 'YYYY-MM-DD') req_date,h.requisition_status status,(
+                          SELECT scvv.code_value_name
+                          FROM sys_code_values_v scvv
+                          WHERE scvv.code = 'EXP_EXPENSE_REPORT_STATUS'
+                            AND scvv.code_value = h.requisition_status
+                        ) status_desc,h.description,0 PAYED_AMOUNT,'N' payment_flag,'N' JE_CREATION_STATUS
+                      FROM (
+                          SELECT *
+                          FROM exp_requisition_headers h
+                          WHERE requisition_status = ${@report_status}
+                            AND EXISTS (
+                              SELECT 1
+                              FROM (
+                                  SELECT TO_NUMBER (${@company_id}) company_id
+                                  FROM dual
+                                  UNION ALL
+                                  SELECT fc.COMPANY_ID
+                                  FROM fnd_companies_vl fc
+                                  WHERE fc.COMPANY_TYPE = 1 START WITH fc.PARENT_COMPANY_ID =
+                                    DECODE (${@value_id},'Y', ${@company_id},-1
+                                    ) CONNECT BY PRIOR fc.COMPANY_ID = fc.PARENT_COMPANY_ID
+                                )
+                              WHERE h.company_id = company_id
+                            )
+                            AND EXISTS (
+                              SELECT 1
+                              FROM exp_requisition_lines erl,exp_requisition_dists erd
+                              WHERE erl.exp_requisition_line_id = erd.exp_requisition_line_id
+                                AND erl.exp_requisition_header_id = h.exp_requisition_header_id
+                                AND NVL (erd.close_flag, 'N') = ${@close_flag}
+                            )
+                        ) h
+                      UNION
+                      SELECT h.payment_requisition_header_id document_id,'03' document_category,
+                        /*'借款申请单' document_category_desc,*/
+                        (
+                          SELECT code_value_name
+                          FROM sys_code_values_v a
+                          WHERE a.code = 'EXP_VOUCHER_CODE'
+                            AND a.code_value = '03'
+                        ) document_category_desc,h.requisition_number EXP_DOCUMENT_NUMBER,h.company_id,null audit_flag,(
+                          SELECT v.company_code || '-' || v.company_short_name
+                          FROM fnd_companies_vl v
+                          WHERE v.company_id = h.company_id
+                        ) company_name,
+                        /*'借款申请单' type_description,*/
+                        (
+                          SELECT code_value_name
+                          FROM sys_code_values_v a
+                          WHERE a.code = 'EXP_VOUCHER_CODE'
+                            AND a.code_value = 'PAYMENT_REQUISITION'
+                        ) type_description,(
+                          SELECT ee.name || '-' || ee.employee_code
+                          FROM exp_employees ee
+                          WHERE ee.employee_id = h.employee_id
+                        ) employee_name,h.currency_code,h.amount,TO_CHAR (h.requisition_date, 'YYYY-MM-DD') req_date,h.status status,(
+                          SELECT scvv.code_value_name
+                          FROM sys_code_values_v scvv
+                          WHERE scvv.code = 'PAYMENT_REQUISITION_STATUS'
+                            AND scvv.code_value = h.status
+                        ) status_desc,h.description,(
+                          SELECT NVL (SUM (r.amount), 0)
+                          FROM csh_payment_requisition_refs r
+                          WHERE r.payment_requisition_line_id IN (
+                              SELECT t.payment_requisition_line_id
+                              FROM csh_payment_requisition_lns t
+                              WHERE t.payment_requisition_header_id = h.payment_requisition_header_id
+                            )
+                        ) PAYED_AMOUNT,'Y' payment_flag,'N' JE_CREATION_STATUS
+                      FROM (
+                          SELECT *
+                          FROM csh_payment_requisition_hds h
+                          WHERE status = ${@report_status}
+                            AND EXISTS (
+                              SELECT 1
+                              FROM (
+                                  SELECT TO_NUMBER (${@company_id}) company_id
+                                  FROM dual
+                                  UNION ALL
+                                  SELECT fc.COMPANY_ID
+                                  FROM fnd_companies_vl fc
+                                  WHERE fc.COMPANY_TYPE = 1 START WITH fc.PARENT_COMPANY_ID =
+                                    DECODE (${@value_id},'Y', ${@company_id},-1
+                                    ) CONNECT BY PRIOR fc.COMPANY_ID = fc.PARENT_COMPANY_ID
+                                )
+                              WHERE h.company_id = company_id
+                            )
+                        ) h
+                    ) a,gld_currency_vl g #WHERE_CLAUSE#
+                ORDER BY a.exp_document_number DESC
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="report_status"/>
+                <bm:parameter name="company_id"/>
+                <bm:parameter name="value_id"/>
+                <bm:parameter name="csh_reverse_select"/>
+                <bm:parameter name="close_flag"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="document_category" dataType="java.lang.String" queryExpression="a.document_category = ${@document_category}"/>
+        <bm:query-field name="req_date_from" dataType="java.lang.String" queryExpression="a.REQ_DATE &gt;= ${@req_date_from}"/>
+        <bm:query-field name="req_date_to" dataType="java.lang.String" queryExpression="a.REQ_DATE &lt;= ${@req_date_to}"/>
+        <bm:query-field name="audit_flag" dataType="java.lang.String" queryExpression="a.audit_flag = ${@audit_flag}"/>
+        <bm:query-field name="payment_flag" dataType="java.lang.String" queryExpression="decode(a.amount-a.payed_amount,0,&apos;Y&apos;,&apos;N&apos;) = ${@payment_flag} and a.payment_flag=&apos;Y&apos;"/>
+        <bm:query-field name="je_creation_status" dataType="java.lang.String" queryExpression="a.JE_CREATION_STATUS = ${@je_creation_status}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="a.currency_code=g.currency_code"/>
+    </bm:data-filters>
+</bm:model>

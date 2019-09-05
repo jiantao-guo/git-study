@@ -1,0 +1,436 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spncer 3893
+    $Date: 2013-5-17 上午9:47:50  
+    $Revision: 1.0  
+    $Purpose: 费用申请单工作流审批界面创建资产台账
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="eam.eam0020.eam0020_asset_books_lov" queryOrderBy="asset_book_code" rootPath="eam0020_asset_books_list"/>
+        <a:model-query model="eam.eam0310.eam0310_asset_init_status" rootPath="eam0310_asset_status"/>
+        <a:model-query model="eam.eam0310.eam310_default_transaction_type" rootPath="default_transaction_type"/>
+        <a:model-query fetchAll="true" model="eam.eam0310.eam0310_employee_primary_position" rootPath="eam0311_employee_pmsg"/>
+        <a:model-query model="eam.eam0310.eam0310_sysdate_query" rootPath="sysdate"/>
+        <a:model-query model="eam.common.eam_currency_query" rootPath="eam_currency"/>
+        <a:model-query model="eam.common.eam_default_currency_code" rootPath="eam_default_currency"/>
+        <a:model-query defaultWhereClause="t.document_id = ${/parameter/@header_id} and t.reference_type = &apos;ADD&apos;" model="eam.common.eam_asset_ref_exp_req_query" rootPath="exp_req_ref_asset"/>
+        <a:model-query model="eam.common.eam_asset_default_source_type_query" rootPath="default_source_type"/>
+        <a:model-query defaultWhereClause="t.asset_id = nvl(${/model/exp_req_ref_asset/record/@asset_id},0)" model="eam.common.cux_eam_asset_finance_class_query" rootPath="asset_finance"/>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+            function init() {
+                if ('${/model/exp_req_ref_asset/record/@asset_id}') {
+                    $('eam0810_asset_management_result_ds').setQueryParameter('asset_id', '${/model/exp_req_ref_asset/record/@asset_id}');
+                    $('eam0810_asset_management_result_ds').query();
+                } else {
+                    var record = $('eam0810_asset_management_result_ds').getCurrentRecord();
+            
+                    record.set('gain_date', '${/model/sysdate/record/@sys_date}');
+                    record.set('start_use_date', '${/model/sysdate/record/@sys_date}');
+                    record.set('quantity', 1);
+                }
+            }
+            // 保存
+            
+            function eam0810_save() {
+            
+                if (!$('eam0810_asset_management_result_ds').validate()) {
+                    return false;
+                }
+            
+                var record = $('eam0810_asset_management_result_ds').getCurrentRecord();
+            
+                record.set('to_location_id', record.get('location_id'));
+            
+                $('eam0810_asset_management_result_ds').submit();
+            }
+            
+            function submit_success(dataSet, res) {
+                var asset_id = res.result.record.asset_id;
+                $('eam0810_asset_management_result_ds').setQueryParameter('asset_id', asset_id);
+                $('eam0810_asset_management_result_ds').query();
+                var head_id = '${/parameter/@header_id}';
+                var ds = $('exp_requisition_line_ds');
+                ds.setQueryParameter('head_id', head_id);
+                ds.query();
+            //    $('exp_requisition_head_ds').query();
+            
+            }
+            
+            function onUpdateFun(dataSet, record, name, value, oldValue) {
+                if (name == 'asset_book_id') {
+                    var lovField = record.getField("category_desc");
+                    record.getMeta().getField('category_desc').setReadOnly(false);
+                    record.set('category_id', '');
+                    record.set('category_desc', '');
+                    lovField.setLovPara('asset_book_id', record.get('asset_book_id'));
+                    lovField.setLovPara('asset_type', 'CIP');
+            
+                } else if (name == 'category_id') {
+                    var lovField1 = record.getField("entity_class_desc");
+                    record.getMeta().getField('entity_class_desc').setReadOnly(false);
+                    record.set('entity_class_id', '');
+                    record.set('entity_class_desc', '');
+                    lovField1.setLovPara('category_id', record.get('category_id'));
+            
+                } else if (name == 'quantity') {
+                    var price = record.get('price');
+                    record.set('cost', value * price);
+                } else if (name == 'price') {
+                    var quantity = record.get('quantity');
+                    record.set('cost', value * quantity);
+                } else if (name == 'gain_date' || name == 'start_use_date' || name == 'date_of_purchase') {
+                    record.validate('start_use_date');
+                    record.validate('date_of_purchase');
+                    record.validate('gain_date');
+                }else if (name == 'entity_class_desc') {
+                   record.getField("description").setReadOnly(false);                    
+                   var f1 = record.getMeta().getField('description');
+                   f1.setLovPara('entity_class_id',record.get('entity_class_id'));
+                   f1.setLovService('eam.eam_asset_req_entity_lov');
+                  
+                }
+            }
+            
+            function onFiLoadHandler(dataset) {
+                var record = dataset.getCurrentRecord();
+                if (record != null || record != undefined) {
+            
+                    if (!record.get("asset_id")) {
+                        var lovField = record.getField("gain_date");
+                        record.getMeta().getField('entity_class_desc').setDefaultValue("${/model/sysdate/record/@sys_date}");
+                    }
+            
+                    var lovField3 = record.getField("category_desc");
+                    var asset_book_id = record.get('asset_book_id');
+                    if (asset_book_id) {
+                        lovField3.setLovPara('asset_book_id', asset_book_id);
+                        lovField3.setLovPara('asset_type', 'CIP');
+                    }
+                }
+            }
+            
+            //date_of_purchase  gain_date  start_use_date
+            
+            function dateValidate(record, name, value) {
+                if (name == 'date_of_purchase' || name == 'gain_date' || name == 'start_use_date') {
+                    var date_of_purchase = record.get('date_of_purchase');
+                    var gain_date = record.get('gain_date');
+                    var start_use_date = record.get('start_use_date');
+            
+                    if (typeof(gain_date) != 'undefined' && !Ext.isEmpty(gain_date)) {
+                        if (!compareDate(date_of_purchase, gain_date)) {
+                            return '${l:EAM_ASSET_HEADERS.GAIN_DATE_VALIDATE}';
+                        }
+                    }
+            
+                    if (typeof(start_use_date) != 'undefined' && !Ext.isEmpty(start_use_date)) {
+                        if (!compareDate(gain_date, start_use_date)) {
+                            return '${l:EAM_ASSET_HEADERS.START_USE_DATE_VALIDATE}';
+                        }
+                    }
+            
+                    return true;
+                }
+            }
+            
+            function compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            // 返回
+            
+            function eam0810_back() {
+                $('exp_req_ref_eam_asset_screen').close();
+            }
+            
+            function onRefExpReqFocusHandler() {
+                var record = $("eam0810_asset_management_result_ds").getCurrentRecord();
+                var category_id = record.get("category_id");
+                $('asset_finance_ds').setQueryUrl("${/request/@context_path}/autocrud/eam.common.eam_asset_finance_class_query/query");
+                $('asset_finance_ds').setQueryParameter('category_id', category_id);
+                $('asset_finance_ds').query();
+            }
+            
+            function onCategoryHandler() {
+                var record = $("eam0810_asset_management_result_ds").getCurrentRecord();
+                var lovField = record.getField("category_desc");
+                var asset_book_id = record.get('asset_book_id');
+                if (asset_book_id) {
+                    lovField.setLovPara('asset_book_id', asset_book_id);
+                    lovField.setLovPara('asset_type', 'CIP');
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="eam0810_asset_books_list_ds">
+                <a:datas dataSource="/model/eam0020_asset_books_list"/>
+            </a:dataSet>
+            <a:dataSet id="eam_currency_ds">
+                <a:datas dataSource="/model/eam_currency"/>
+            </a:dataSet>
+            <a:dataSet id="asset_finance_ds">
+                <a:datas dataSource="/model/asset_finance"/>
+            </a:dataSet>
+            <a:dataSet id="eam0810_asset_allocate_element_type_ds" lookupCode="EAM_ALLOCATE_ELEMENT_TYPE"/>
+            <a:dataSet id="eam0810_asset_management_result_ds" autoCreate="true" model="eam.common.cux_eam_asset_headers_query" queryUrl="${/request/@context_path}/autocrud/eam.common.cux_eam_asset_headers_query/query?document_id=${/parameter/@header_id}" selectable="true" selectionModel="single" submitUrl="${/request/@context_path}/modules/eam/public/eam_asset_management_ref_exp_req_save.svc">
+                <a:fields>
+                    <a:field name="document_type" defaultValue="${/parameter/@document_type}"/>
+                    <a:field name="document_id" defaultValue="${/parameter/@header_id}"/>
+                    <a:field name="asset_id"/>
+                    <!--<a:field name="description" prompt="EAM_ASSET_HEADERS.DESCRIPTION" required="true"/>-->
+                    <a:field name="description" lovGridHeight="320" lovHeight="460" lovWidth="500" prompt="EAM_ASSET_HEADERS.DESCRIPTION" readOnly="true" required="true" title="EAM_ASSET_HEADERS.DESCRIPTION">
+                        <a:mapping>
+                            <a:map from="name" to="description"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="asset_book_id"/>
+                    <a:field name="asset_book_desc" displayField="asset_book_desc" options="eam0810_asset_books_list_ds" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" returnField="asset_book_id" valueField="asset_book_id"/>
+                    <a:field name="asset_code" prompt="EAM_ASSET_HEADERS.ASSET_CODE" readOnly="true" typeCase="upper"/>
+                    <a:field name="tag_number" prompt="EAM_ASSET_HEADERS.TAG_NUMBER" readOnly="true"/>
+                    <a:field name="status_desc" defaultValue="${/model/eam0310_asset_status/record/@status_desc}" prompt="EAM_ASSET_HEADERS.STATUS" readOnly="true"/>
+                    <a:field name="serial_number" prompt="EAM_ASSET_HEADERS.SERIAL_NUMBER"/>
+                    <a:field name="asset_source_type" defaultValue="${/model/default_source_type/record/@source_type}"/>
+                    <a:field name="asset_source_type_desc" defaultValue="${/model/default_source_type/record/@source_type_name}" prompt="EAM_ASSET_HEADERS.ASSET_SOURCE_TYPE" readOnly="true"/>
+                    <a:field name="lock_flag" checkedValue="Y" defaultValue="N" prompt="EAM_ASSET_HEADERS.LOCK_FLAG" uncheckedValue="N"/>
+                    <a:field name="date_of_purchase" prompt="EAM_ASSET_HEADERS.DATE_OF_PURCHASE"/>
+                    <a:field name="gain_date" prompt="EAM_ASSET_HEADERS.GAIN_DATE" required="true"/>
+                    <a:field name="start_use_date" prompt="EAM_ASSET_HEADERS.START_USE_DATE" required="true"/>
+                    <!--<a:field name="asset_unit" prompt="EAM_ASSET_HEADERS.ASSET_UNIT"/>
+                    <a:field name="asset_unit_desc" lovGridHeight="300" lovHeight="450" lovService="sys.sys_service_lookup_v?code=FRS_AMOUNT_UOM_CODE&amp;language=${/session/@lang}" lovWidth="550" prompt="EAM_ASSET_HEADERS.ASSET_UNIT" title="EAM_ASSET_HEADERS.ASSET_UNIT">
+                        <a:mapping>
+                            <a:map from="code_value" to="asset_unit"/>
+                            <a:map from="code_value_name" to="asset_unit_desc"/>
+                        </a:mapping>
+                    </a:field>-->
+                    <a:field name="asset_unit" prompt="EAM_ASSET_HEADERS.ASSET_UNIT"/>
+                    <a:field name="asset_unit_desc" lovGridHeight="300" lovHeight="450" lovService="fnd.fnd_uom_codes_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.ASSET_UNIT" title="EAM_ASSET_HEADERS.ASSET_UNIT">
+                        <a:mapping>
+                            <a:map from="uom_code" to="asset_unit"/>
+                            <a:map from="uom_name" to="asset_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="quantity" prompt="EAM_ASSET_HEADERS.QUANTITY" readOnly="true"/>
+                    <a:field name="cost" prompt="EAM_ASSET_HEADERS.COST" required="true"/>
+                    <a:field name="category_id"/>
+                    <a:field name="category_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0810.eam0810_asset_categories_from_req_lv" lovWidth="550" prompt="EAM_ASSET_HEADERS.CATEGORY_ID" required="true" title="EAM_ASSET_HEADERS.CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_id" to="category_id"/>
+                            <a:map from="description" to="category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_class_id"/>
+                    <a:field name="entity_class_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0810.eam0810_asset_entity_class_lv" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_CLASS_ID" required="true" title="EAM_ASSET_HEADERS.ENTITY_CLASS_ID">
+                        <a:mapping>
+                            <a:map from="class_id" to="entity_class_id"/>
+                            <a:map from="description" to="entity_class_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="location_id"/>
+                    <a:field name="to_location_id"/>
+                    <a:field name="install_position" lovGridHeight="250" lovHeight="400" lovService="eam.eam0310.eam0310_asset_location_with_type_lov?asset_book_id=${/parameter/@asset_book_id}" lovWidth="500" prompt="EAM_ASSET_HEADERS.INSTALL_POSITION" required="true" title="EAM_ASSET_HEADERS.INSTALL_POSITION">
+                        <a:mapping>
+                            <a:map from="location_id" to="location_id"/>
+                            <a:map from="location_code" to="location_code"/>
+                            <a:map from="description" to="install_position"/>
+                            <a:map from="location_type_desc" to="location_type_desc"/>
+                            <!-- <a:map from="value_man_company_id" to="value_man_company_id"/>
+                            <a:map from="value_man_company_desc" to="value_man_company_desc"/>
+                            <a:map from="value_man_unit_id" to="value_man_unit_id"/>
+                            <a:map from="value_man_unit_desc" to="value_man_unit_desc"/>
+                            <a:map from="value_man_position_id" to="value_man_position_id"/>
+                            <a:map from="value_man_position_desc" to="value_man_position_desc"/>
+                            <a:map from="value_man_company_id" to="entity_company_id"/>
+                            <a:map from="value_man_company_desc" to="entity_man_company_desc"/>
+                            <a:map from="entity_unit_id" to="entity_unit_id"/>
+                            <a:map from="entity_man_unit_desc" to="entity_man_unit_desc"/>
+                            <a:map from="entity_man_position_desc" to="entity_man_position_desc"/>
+                            <a:map from="entity_position_id" to="entity_position_id"/>
+                            <a:map from="responsibility_company_id" to="responsibility_company_id"/>
+                            <a:map from="responsibility_company_desc" to="responsibility_company_desc"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_desc" to="responsibility_center_desc"/> -->
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="location_type_desc" prompt="EAM_LOCATIONS.LOCATION_TYPE" readOnly="true"/>
+                    <a:field name="value_man_company_id"/>
+                    <a:field name="value_man_company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.VALUE_MAN_COMPANY_ID" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_id" to="value_man_company_id"/>
+                            <a:map from="company_short_name" to="value_man_company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="value_man_unit_id"/>
+                    <a:field name="value_man_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_unit_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.VALUE_MAN_UNIT_ID" readOnly="true" title="PUR_REQUISITION_ALLOCATE.UNIT_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="unit_id" to="value_man_unit_id"/>
+                            <a:map from="unit_code_name" to="value_man_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="value_man_position_id"/>
+                    <a:field name="value_man_position_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_position_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.VALUE_MAN_POSITION_ID" readOnly="true" title="BGT_BUDGET_ITEM_MAPPING.POSITION_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="position_id" to="value_man_position_id"/>
+                            <a:map from="position_code_name" to="value_man_position_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_company_id"/>
+                    <a:field name="entity_man_company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_MAN_COMPANY_ID" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_id" to="entity_company_id"/>
+                            <a:map from="company_short_name" to="entity_man_company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_unit_id"/>
+                    <a:field name="entity_man_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_unit_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_MAN_UNIT_ID" readOnly="true" title="PUR_REQUISITION_ALLOCATE.UNIT_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="unit_id" to="entity_unit_id"/>
+                            <a:map from="unit_code_name" to="entity_man_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_position_id"/>
+                    <a:field name="entity_man_position_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_position_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_MAN_POSITION_ID" readOnly="true" title="BGT_BUDGET_ITEM_MAPPING.POSITION_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="position_id" to="entity_position_id"/>
+                            <a:map from="position_code_name" to="entity_man_position_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_company_id"/>
+                    <a:field name="responsibility_company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.RESPONSIBILITY_COMPANY_ID" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_id" to="responsibility_company_id"/>
+                            <a:map from="company_short_name" to="responsibility_company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="responsibility_center_desc" lovGridHeight="300" lovHeight="450" lovService="expm.exp_responsibility_center_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.RESPONSIBILITY_CENTER_ID" readOnly="true" title="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="price" prompt="EXP_REPORT_LINES.PRIC" required="true"/>
+                    <a:field name="allocate_element_type"/>
+                    <a:field name="allocate_element_type_desc" displayField="code_value_name" options="eam0810_asset_allocate_element_type_ds" returnField="allocate_element_type" valueField="code_value"/>
+                    <a:field name="allocate_element_name"/>
+                    <a:field name="asset_finance_info_id"/>
+                    <a:field name="finance_class_id"/>
+                    <a:field name="asset_card_num" prompt="EAM_ASSET_FINANCE_INFO.ASSET_CARD_NUM" readOnly="true"/>
+                    <a:field name="currency_code" defaultValue="${/model/asset_header/record/@currency_code}"/>
+                    <a:field name="currency_desc" displayField="currency_name" options="eam_currency_ds" prompt="EAM_ASSET_FINANCE_INFO.CURRENCY_NAME" required="true" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="original_cost" defaultValue="0" prompt="EAM_ASSET_FINANCE_INFO.ORIGINAL_COST" readOnly="true"/>
+                    <a:field name="current_cost" defaultValue="0" prompt="EAM_ASSET_FINANCE_INFO.CURRENT_COST" readOnly="true"/>
+                    <a:field name="accumulated_dep_amt" prompt="EAM_ASSET_FINANCE_INFO.ACCUMULATED_DEP_AMT"/>
+                    <a:field name="impairment_loss_amt" defaultValue="0" prompt="EAM_ASSET_FINANCE_INFO.IMPAIRMENT_LOSS_AMT" readOnly="true"/>
+                    <a:field name="salvage_value" prompt="EAM_ASSET_FINANCE_INFO.SALVAGE_VALUE"/>
+                    <a:field name="start_depreciatite_date" prompt="EAM_ASSET_FINANCE_INFO.START_DEPRECIATITE_DATE"/>
+                    <a:field name="last_depr_period_name" prompt="EAM_ASSET_FINANCE_INFO.LAST_DEPR_PERIOD_NAME"/>
+                    <a:field name="last_depr_date" prompt="EAM_ASSET_FINANCE_INFO.LAST_DEPR_DATE"/>
+                    <a:field name="life_in_month" prompt="EAM_ASSET_FINANCE_INFO.LIFE_IN_MONTH"/>
+                    <a:field name="scrap_amount" prompt="EAM_REQUISITION_LINES.DISCARD_AMOUNT" readOnly="true"/>
+                    <a:field name="remaining_life_in_month" prompt="EAM_ASSET_FINANCE_INFO.REMAINING_LIFE_IN_MONTH"/>
+                    <a:field name="scrap_cost"/>
+                    <a:field name="finance_class_desc" displayField="description" options="asset_finance_ds" prompt="EAM_ASSET_FINANCE_INFO.FINANCE_CLASS_DESC" required="true" returnField="finance_class_id" valueField="class_id">
+                        <a:mapping>
+                            <a:map from="depreciate_flag" to="depreciate_flag"/>
+                            <a:map from="salvage_value_rate" to="salvage_value_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="depreciate_flag" checkedValue="Y" prompt="EAM_ASSET_FINANCE_INFO.DEPRECIATE_FLAG" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="salvage_value_rate" prompt="EAM_ASSET_FIN_CLASSES.SALVAGE_VALUE_RATE"/>
+                    <a:field name="address" prompt="EAM_ASSET_HEADERS.ADDRESS"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="onFiLoadHandler"/>
+                    <a:event name="update" handler="onUpdateFun"/>
+                    <a:event name="submitsuccess" handler="submit_success"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="1" labelWidth="100" title="EAM_ASSET_HEADERS.TITLE" width="720">
+                <a:box column="3">
+                    <a:textField name="asset_code" bindTarget="eam0810_asset_management_result_ds"/>
+                    <a:comboBox name="asset_book_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                    <a:lov name="category_desc" bindTarget="eam0810_asset_management_result_ds" prompt="资产类型">
+                        <a:events>
+                            <a:event name="focus" handler="onCategoryHandler"/>
+                        </a:events>
+                    </a:lov>
+                    <a:lov name="entity_class_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                    <a:lov name="description" bindTarget="eam0810_asset_management_result_ds"/>
+                </a:box>
+            </a:form>
+            <!-- 按钮 -->
+            <a:hBox>
+                <a:button click="eam0810_save" text="HAP_SAVE"/>
+                <a:button click="eam0810_back" text="HAP_BACK"/>
+            </a:hBox>
+            <a:tabPanel id="eam0810_asset_management_tab" height="230" width="920">
+                <a:tabs>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.BASIC_INFORMATION" width="80">
+                        <a:form height="200" labelWidth="100" width="890">
+                            <a:box column="3">
+                                <a:comboBox name="asset_source_type_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                <!--<a:datePicker name="date_of_purchase" bindTarget="eam0810_asset_management_result_ds"/>-->
+                                <a:datePicker name="gain_date" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:lov name="asset_unit_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                            </a:box>
+                            <a:box column="3">
+                                <!--<a:datePicker name="start_use_date" bindTarget="eam0810_asset_management_result_ds"/>-->
+                                <a:numberField name="quantity" allowDecimals="false" allowNegative="false" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:numberField name="price" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:numberField name="cost" allowDecimals="true" allowNegative="false" bindTarget="eam0810_asset_management_result_ds" decimalPrecision="2"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:textField name="status_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:lov name="install_position" bindTarget="eam0810_asset_management_result_ds" prompt="管理单位"/>
+                            </a:box>
+                            <a:box>
+                                <a:textField name="address" bindTarget="eam0810_asset_management_result_ds" width="617"/>
+                            </a:box>
+                        </a:form>
+                    </a:tab>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.FINANCIAL_INFORMATION" width="80">
+                        <a:form column="1" height="100" labelWidth="100" width="880">
+                            <a:box column="3">
+                                <a:comboBox name="finance_class_desc" bindTarget="eam0810_asset_management_result_ds">
+                                    <a:events>
+                                        <a:event name="focus" handler="onRefExpReqFocusHandler"/>
+                                    </a:events>
+                                </a:comboBox>
+                                <a:comboBox name="currency_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:textField name="asset_card_num" bindTarget="eam0810_asset_management_result_ds"/>
+                                <!-- <a:checkBox name="depreciate_flag" bindTarget="eam0810_asset_management_result_ds"/> -->
+                            </a:box>
+                            <a:box column="3">
+                                <a:numberField name="original_cost" allowDecimals="true" allowNegative="false" bindTarget="eam0810_asset_management_result_ds" decimalPrecision="2"/>
+                                <a:numberField name="current_cost" allowDecimals="true" allowNegative="false" bindTarget="eam0810_asset_management_result_ds" decimalPrecision="2"/>
+                                <a:numberField name="impairment_loss_amt" allowDecimals="true" allowNegative="false" bindTarget="eam0810_asset_management_result_ds" decimalPrecision="2"/>
+                            </a:box>
+                            <!-- <a:box column="3">
+                                <a:numberField name="accumulated_dep_amt" allowDecimals="true" allowNegative="false" bindTarget="eam0810_asset_management_result_ds" decimalPrecision="2"/>
+                                <a:numberField name="salvage_value_rate" allowDecimals="true" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds" decimalPrecision="3" readOnly="true"/>
+                                <a:numberField name="salvage_value" allowDecimals="true" allowNegative="false" bindTarget="eam0810_asset_management_result_ds" decimalPrecision="2" readOnly="true"/>
+                                <a:datePicker name="start_depreciatite_date" bindTarget="eam0810_asset_management_result_ds" renderer="Aurora.formatDate"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:textField name="scrap_amount" bindTarget="eam_asset_finance_info_result_ds"/>
+                                <a:numberField name="life_in_month" allowDecimals="false" allowNegative="false" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:numberField name="remaining_life_in_month" allowDecimals="false" allowNegative="false" bindTarget="eam0810_asset_management_result_ds"/>
+                            </a:box> -->
+                        </a:form>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	init();
+        ]]></script>
+    </a:view>
+</a:screen>

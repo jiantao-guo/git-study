@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lidandan3851 $
+    $Date: 2012/09/05 08:06:06 $
+    $Revision: 1.3 $
+    $Purpose: 用户定义
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <!--TODO: 修改dimension_type dimension_value 个人？还是设置? -->
+        <a:model-query defaultwhereclause="comments = &apos;SelfSet&apos;" model="sys.sys_config_customization_head" rootPath="ch"/>
+        <a:model-query defaultwhereclause="mod_type = &apos;set_attrib&apos; and head_id = ${/model/ch/record/@head_id} and array_name is null and id_value = ${/parameter/@did} and dimension_type = &apos;USER&apos; and dimension_value = ${/session/@user_id}" model="sys.SYS000.sys_config_customization" rootPath="ds"/>
+        <p:method-invoke className="aurora.application.features.cstm.CustomSourceCode" methodName="getAttributeValues" resultPath="/model/ds_pro">
+            <p:arguments>
+                <p:argument path="instance" type="uncertain.ocm.IObjectRegistry"/>
+                <p:argument type="java.lang.String" value="${/parameter/@source_file}"/>
+                <p:argument type="java.lang.String" value="${/parameter/@did}"/>
+                <p:argument path="/model/ds" type="uncertain.composite.CompositeMap"/>
+            </p:arguments>
+        </p:method-invoke>
+        <a:model-query defaultwhereclause="mod_type in (&apos;set_attrib&apos;,&apos;insert&apos;,&apos;delete&apos;,&apos;re_order&apos;) and head_id= ${/model/ch/record/@head_id} and id_value = ${/parameter/@id} and dimension_type = &apos;USER&apos; and array_name = &apos;columns&apos; and index_field = &apos;name&apos; and dimension_value = ${/session/@user_id}" model="sys.SYS000.sys_config_customization" rootPath="gd"/>
+        <p:method-invoke className="aurora.application.features.cstm.CustomSourceCode" methodName="getArrayList" resultPath="/model/result">
+            <p:arguments>
+                <p:argument path="instance" type="uncertain.ocm.IObjectRegistry"/>
+                <p:argument type="java.lang.String" value="${/parameter/@source_file}"/>
+                <p:argument type="java.lang.String" value="${/parameter/@id}"/>
+                <p:argument type="java.lang.String" value="columns"/>
+                <p:argument path="/model/gd" type="uncertain.composite.CompositeMap"/>
+            </p:arguments>
+        </p:method-invoke>
+        <a:model-query defaultwhereclause="mod_type = &apos;set_attrib&apos; and head_id = ${/model/ch/record/@head_id} and array_name is null and id_value = ${/parameter/@id} and dimension_type = &apos;USER&apos; and dimension_value = ${/session/@user_id}" model="sys.SYS000.sys_config_customization" rootPath="gp"/>
+        <p:method-invoke className="aurora.application.features.cstm.CustomSourceCode" methodName="getAttributeValues" resultPath="/model/grid_pro">
+            <p:arguments>
+                <p:argument path="instance" type="uncertain.ocm.IObjectRegistry"/>
+                <p:argument type="java.lang.String" value="${/parameter/@source_file}"/>
+                <p:argument type="java.lang.String" value="${/parameter/@id}"/>
+                <p:argument path="/model/gp" type="uncertain.composite.CompositeMap"/>
+            </p:arguments>
+        </p:method-invoke>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+            var recorder = false;
+            var dimension_type = 'USER';
+            var dimension_value = '${/session/@user_id}';
+            
+            function findPropertyRecordId(index_value,attrib_key){
+                var pds = $('array_ds');
+                var pl = pds.getAll();
+                for(var i=0;i<pl.length;i++){
+                    var r = pl[i];
+                    if(index_value == r.get('index_value') && attrib_key == r.get('attrib_key') && r.get('mod_type') == 'set_attrib'){
+                        return r.get('record_id');
+                    }
+                }
+            }
+            
+            
+            function save_customization(){
+                var propertity_list = [];
+                var dr = $('pro_ds').getCurrentRecord();
+                var sds = $('sys_customization_submit_ds');
+                sds.removeAll();
+                if(dr.dirty){
+                    for(var key in dr.modified){
+                        var data = {};
+                        data['head_id']= '${/model/ch/record/@head_id}';
+                        data['source_file']= '${/parameter/@source_file}';
+                        data['id_value']=  ((key == 'pageSize') ? '${/parameter/@did}' : '${/parameter/@id}');
+                        data['dimension_type']= dimension_type;
+                        data['dimension_value']= dimension_value;
+                        data['attrib_key']= key;
+                        data['attrib_value']= dr.get(key);
+                        var rid = dr.get(key+'_rid');
+                        if(!rid){
+                            data['_cus_stauts']='insert';
+                        }else{
+                            data['record_id'] = rid;
+                            var v = dr.get(key);
+                            if(Ext.isEmpty(v)){
+                                data['_cus_stauts']='delete';
+                            }else {
+                                data['_cus_stauts']='update';
+                            }
+                        }
+                        data['mod_type']='set_attrib';
+                        data['enable_flag']='Y';
+                        sds.create(data);
+                    }
+                }
+                
+                
+                var ds = $('columns_ds');
+                var all = ds.getAll();
+                for(var i=0;i<all.length;i++){
+                    var r = all[i];
+                    if(r.dirty){
+                        for(var key in r.modified){
+                            var data = {};
+                            data['attrib_key']=key;
+                            data['mod_type']= r.get('mod_type');
+                            data['attrib_value']=r.get(key);
+                            data['record_id'] = findPropertyRecordId(r.get('name'),key);
+                            data['index_value'] = r.get('name');
+                            propertity_list.add(new Aurora.Record(data));
+                        }
+                    }
+                }
+                
+                //处理属性的ds
+                for(var i=0;i<propertity_list.length;i++){
+                    var r = propertity_list[i];
+                    var rid = r.get('record_id');
+                    if(!rid){
+                        r.data['_cus_stauts']='insert';
+                    }else{
+                        var v = r.get('attrib_value');
+                        if(Ext.isEmpty(v)){
+                            r.data['_cus_stauts']='delete';
+                        }else {
+                            r.data['_cus_stauts']='update';
+                        }
+                    }
+                    r.data['head_id']= '${/model/ch/record/@head_id}';
+                    r.data['source_file']= '${/parameter/@source_file}';
+                    r.data['id_value']= '${/parameter/@id}';
+                    r.data['dimension_type']= dimension_type;
+                    r.data['dimension_value']= dimension_value;
+                    r.data['enable_flag']='Y';
+                    r.data['array_name']='columns';
+                    r.data['index_field']='name';
+                    sds.create(r.data);
+                }
+                
+                if(recorder){
+                    var order = [];
+                    var datas = ds.getAll();
+                    for(var j=0;j<datas.length;j++){
+                        var r = datas[j];
+                        order.add(r.get('name'))
+                    }
+                    var data = {};
+                    data['array_name']='columns';
+                    data['index_field']='name';
+                    data['fields_order']=order.join(',');
+                    data['head_id']= '${/model/ch/record/@head_id}';
+                    data['source_file']= '${/parameter/@source_file}';
+                    data['id_value']= '${/parameter/@id}';
+                    data['dimension_type']= dimension_type;
+                    data['dimension_value']= dimension_value;
+                    data['_cus_stauts']='reorder';
+                    data['mod_type']='re_order';
+                    data['enable_flag']='Y';
+                    sds.create(data);
+                }
+                sds.submit();
+            }
+            
+            function cancel_customization(){
+                $('sys_customization_grid').close();
+            }
+            
+            
+            function customizationReorderRenderer(value,record, name){
+                var sb = ['<a title="上移" href="javascript:customizationMoveUp(\''+record.ds.id+'\','+record.id+')"><img style="margin-top:3px;" src="${/request/@context_path}/images/up.png"></img></a>',
+                          '<a title="下移" href="javascript:customizationMoveDown(\''+record.ds.id+'\','+record.id+')"><img style="margin-top:3px;" src="${/request/@context_path}/images/down.png"></img></a>'                          
+                ];
+                return sb.join('')
+            }
+            
+            
+            function cust_columnNameRenderer(value,record, name){
+                value = record.get('name');
+                var gid = '${/parameter/@id}';
+                if(gid){
+                    var grid = $(gid);
+                    var td = grid.wrap.child('td[dataindex='+value+']');
+                    if(td){
+                        var dom = td.child('div').dom;
+                        if(dom) value = dom.innerHTML
+                    }
+                }
+                return value;
+            }
+            
+            function customizationMoveUp(did,id){
+                recorder = true;
+                var ds = $(did);
+                var r = ds.findById(id);
+                var i = ds.indexOf(r);
+                if(i==0)return;
+                var pr = ds.getAt(i-1);
+                ds.data[i-1]=r;
+                ds.data[i]=pr;
+                ds.fireEvent("load", ds);
+                ds.locate(ds.indexOf(pr)+1, true);
+            }
+            function customizationMoveDown(did,id){
+                recorder = true;
+                var ds = $(did);
+                var r = ds.findById(id);
+                var i = ds.indexOf(r);
+                if(i==(ds.getAll().length-1))return;
+                var pr = ds.getAt(i+1);
+                ds.data[i+1]=r;
+                ds.data[i]=pr;
+                ds.fireEvent("load", ds);
+                ds.locate(ds.indexOf(pr)+1, true);
+            }
+            
+            function onCustColumnUpdate(dataSet, record, name,value){
+                record.data['mod_type']='set_attrib';
+            }
+            
+            function onGridCustomizationSubmitSuccess(ds, res){
+                Aurora.showInfoMessage('成功','保存成功!',function(){
+                    cancel_customization();
+                });
+            }
+            
+            function beforeLoadColumnCustData(datas) {
+                for(var i=0;i<datas.length;i++){
+                    var data = datas[i];
+                    var value = data['name'];
+                    var gid = '${/parameter/@id}';
+                    if(gid){
+                        var grid = $(gid);
+                        var td = grid.wrap.child('td[dataindex='+value+']');
+                        if(td){
+                            var dom = td.child('div').dom;
+                            if(dom) value = dom.innerHTML
+                        }
+                    }
+                    data['prompt'] = value;
+                }
+                return datas;
+            }
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="sys_customization_submit_ds" submitUrl="${/request/@context_path}/modules/sys/sys_customization_update.svc">
+                <a:events>
+                    <a:event name="submitsuccess" handler="onGridCustomizationSubmitSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="align_dataset">
+                <a:datas>
+                    <a:record value="left"/>
+                    <a:record value="center"/>
+                    <a:record value="right"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="dataset_ds">
+                <a:datas dataSource="/model/ds_pro"/>
+            </a:dataSet>
+            <a:dataSet id="grid_pro">
+                <a:datas dataSource="/model/grid_pro"/>
+            </a:dataSet>
+            <a:dataSet id="array_ds">
+                <a:datas dataSource="/model/gd"/>
+            </a:dataSet>
+            <a:dataSet id="pro_ds" autoCreate="true"/>
+            <a:dataSet id="columns_ds" processFunction="beforeLoadColumnCustData">
+                <a:datas dataSource="/model/result"/>
+                <a:fields>
+                    <a:field name="width" datatype="int"/>
+                    <a:field name="align" displayField="value" options="align_dataset" returnField="align" valueField="value"/>
+                    <a:field name="lock" checkedValue="true" defaultValue="false" uncheckedValue="false"/>
+                    <a:field name="hidden" checkedValue="true" defaultValue="false" uncheckedValue="false"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onCustColumnUpdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="3" title="表格设置" width="542">
+                <a:numberField name="pageSize" allowDecimals="false" allowNegative="false" bindTarget="pro_ds" prompt="分页大小" width="80"/>
+                <a:numberField name="width" allowDecimals="false" allowNegative="false" bindTarget="pro_ds" prompt="表格宽度" width="80"/>
+                <a:numberField name="height" allowDecimals="false" allowNegative="false" bindTarget="pro_ds" prompt="表格高度" width="80"/>
+            </a:form>
+            <a:form padding="0" showmargin="false" title="列配置" width="440">
+                <a:grid bindTarget="columns_ds" height="370" style="border:none" width="540">
+                    <a:columns>
+                        <a:column name="name" prompt="name" width="120"/>
+                        <a:column name="prompt" editor="cust_grid_tf" prompt="CSH_PAY_REQ_HIDE_COLUMNS.COLNAME" width="120"/>
+                        <a:column name="width" align="right" editor="cust_grid_nf" prompt="列宽" width="50"/>
+                        <a:column name="align" align="center" editor="cust_grid_cbx" prompt="位置" width="60"/>
+                        <a:column name="lock" editor="cust_grid_cb" prompt="锁定" width="40"/>
+                        <a:column name="hidden" editor="cust_grid_cb" prompt="隐藏" width="40"/>
+                        <a:column name="sequence" align="center" prompt="排序" renderer="customizationReorderRenderer" width="40"/>
+                    </a:columns>
+                    <a:editors>
+                        <a:numberField id="cust_grid_nf" allowDecimals="false" allowNegative="false"/>
+                        <a:checkBox id="cust_grid_cb"/>
+                        <a:comboBox id="cust_grid_cbx"/>
+                        <a:textField id="cust_grid_tf"/>
+                    </a:editors>
+                </a:grid>
+            </a:form>
+        </a:screenBody>
+        <div class="win-toolbar" style="width:100%;height:38px;position:absolute; bottom:0px;">
+            <a:hBox style="float:right;margin-right:10px;margin-top:5px;">
+                <a:button click="save_customization" text="HAP_SAVE" width="90"/>
+                <a:button click="cancel_customization" text="HAP_CANCEL" width="90"/>
+            </a:hBox>
+        </div>
+        <script><![CDATA[
+        function initColumnData(){
+                var ds = $('dataset_ds');
+                var gds = $('grid_pro');
+                var all = ds.getAll();
+                var gall = gds.getAll();
+                var ps = 10;
+                var dsr = $('pro_ds').getCurrentRecord();
+                dsr.set('pageSize',ps);
+                var tl = all.concat(gall)
+                for(var i=0;i<tl.length;i++){
+                    var r = tl[i];
+                    var n = r.get('attrib_key');
+                    if(n == 'pageSize'||n == 'width' || n == 'height'){
+                        var v = r.get('attrib_value')||r.get('source_value');                        
+                        if(parseInt(v)){
+                            ps = parseInt(v);
+                            dsr.set(n,ps);
+                            dsr.set(n+'_rid',r.get('record_id'));
+                        }
+                    }
+                }         
+                dsr.commit();
+                
+                var pds = $('array_ds');
+                var cds = $('columns_ds');
+                var cl = cds.getAll();
+                var pl = pds.getAll();
+                var dl = [];
+                for(var i=0;i<pl.length;i++){
+                    var r = pl[i];
+                    var iv = r.get('index_value')
+                    for(var k=0;k<cl.length;k++){
+                        var cr = cl[k];
+                        if(iv == cr.get('name')){
+                            if(r.get('mod_type') == 'set_attrib'){
+                                var key = r.data['attrib_key'];
+                                cr.set(key,r.data['attrib_value']);
+                            }
+                            cr.commit();
+                            break;
+                        }
+                    }
+                }
+                var ads = $('array_ds');
+                var al = ads.getAll();
+                for(var i=0;i<al.length;i++){
+                    var r = al[i];
+                    if(r.get('mod_type') == 'delete'){
+                        cds.removeLocal(cds.find('record_id',r.get('record_id')));
+                    }
+                }
+            }
+            initColumnData();
+        ]]></script>
+    </a:view>
+</a:screen>

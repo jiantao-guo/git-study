@@ -1,0 +1,410 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Administrator  
+    $Date: 2017-7-25 上午9:33:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="using_csh_flag = &apos;Y&apos;" model="csh.csh_payment_methods_vl1" rootpath="pay_method_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="csh.csh_prepayment_req_employeelist" rootPath="employee_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="bgt.BGT7030.bgt_jour_default_head_data" rootPath="head_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="repayment_dist_maintain_link" url="${/request/@context_path}/modules/csh/CSH7030/csh_repayment_register_dists_maintain.screen"/>
+        <a:link id="CSH7010_submit_link" model="csh.CSH7010.csh_repayment_register_hds_maintain" modelaction="execute"/>
+        <a:link id="CSH7010_delete_all_link" model="csh.CSH7010.csh_rep_register_delete_all" modelaction="execute"/>
+        <a:link id="CSH7010_view_history_link" url="${/request/@context_path}/modules/bgt/BGT7030/bgt_jour_release_history.screen"/>
+        <a:link id="uploadFile_link" url="${/request/@context_path}/uploadFile.screen"/>
+        <script><![CDATA[
+            var header_id_bak = '${/parameter/@header_id}';
+            
+            
+            function saveFun() {
+                if ($('bgt_jour_release_headers_ds').validate()) {
+                    if ($('bgt_jour_release_lines_lns_ds').getAll().length < 1) {
+                        Aurora.showInfoMessage('${l:HAP_ERROR}', '${l:CSH_REPAYMENT_REGISTER.PLEASE_ADD_LINES}');
+                        return;
+                    }
+                    $('bgt_jour_release_headers_ds').submit();
+                }
+            }
+            
+            
+            function CSH7010_submitFun() {
+                var headerId = $('bgt_jour_release_headers_ds').getAt(0).get('header_id');
+                if (!headerId) {
+                    Aurora.showInfoMessage('${l:HAP_ERROR}', '${l:CSH7010.DOC_NOT_SAVE}', null, 250, 100);
+                    return;
+                }
+            
+                Aurora.request({
+                    url: $('CSH7010_submit_link').getUrl(),
+                    para: {
+                        header_id: headerId
+                    },
+                    success: function() {
+                        CSH7010_queryFun();
+                        CSH7010_closeFun();
+                    },
+                    scope: this
+                });
+            }
+            
+            function CSH7010_closeFun() {
+                $('repayment_register_create_window').close();
+            }
+            
+            
+            //鑾峰彇涓嬩竴涓鍙�
+            
+            function CSH7010_getNextLineNumber(ds) {
+                var max = 0;
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var cur = records[i].get('line_number');
+                    if (!Ext.isEmpty(cur) && !isNaN(cur) && cur > max) {
+                        max = cur;
+                    }
+                }
+                return max + 10;
+            }
+            
+            //[EVENT] 褰撴柊澧炶鏃惰皟鐢�
+            
+            function onLineAddFunction(ds, record, index) {
+                // 璁剧疆鍛樺伐涓哄彧璇�
+                var meta = $('bgt_jour_release_headers_ds').getAt(0).getMeta();
+                meta.getField('employee_name').setReadOnly(true);
+                meta.getField('company_name').setReadOnly(true);
+                meta.getField('company_account_number').setReadOnly(true);
+            
+                record.set('line_number', CSH7010_getNextLineNumber(ds));
+            }
+            
+            function beforecreateFunction() {
+                if (!$('bgt_jour_release_headers_ds').validateSelf()) {
+                    return false;
+                }
+            }
+            
+            // 鐐瑰嚮閫夋嫨鍊熸鐢宠鍗曡鏃惰缃甃OV鍙傛暟employee_id
+            
+            function CSH7010_setEmployeeId(lov) {
+                var head_record = $('bgt_jour_release_headers_ds').getAt(0);
+                var currency_code = head_record.get('currency_code');
+                var employee_id = head_record.get('employee_id');
+            
+                var requisition_number_field = $('bgt_jour_release_lines_lns_ds').getCurrentRecord().getMeta().getField('requisition_number');
+                requisition_number_field.setLovPara('employee_id', employee_id);
+                requisition_number_field.setLovPara('currency_code', currency_code);
+            }
+            
+            function CSH7010_setPartnerInfo(lov) {
+                var record = $('bgt_jour_release_lines_lns_ds').getCurrentRecord();
+                var partner_category = record.get('partner_category');
+                var partner_id = record.get('partner_id');
+                var account_name_meta = record.getMeta().getField('account_name');
+                account_name_meta.setLovPara('partner_category', partner_category);
+                account_name_meta.setLovPara('partner_id', partner_id);
+            }
+            
+            function CSH7010_setCompanyEmployeeId(lov) {
+                var ds = $('bgt_jour_release_headers_ds');
+                if (ds.getAll().length < 1) {
+                    ds.create();
+                }
+                var record = ds.getAt(0);
+                var employee_id = record.get('employee_id');
+                record.getMeta().getField('company_name').setLovPara('employee_id', employee_id);
+            }
+            
+            function CSH7010_setCompanyAccountNumberCompanyId(lov) {
+                var ds = $('bgt_jour_release_headers_ds');
+                if (ds.getAll().length < 1) {
+                    ds.create();
+                }
+                var record = ds.getAt(0);
+                var company_id = record.get('company_id');
+                record.getMeta().getField('company_account_number').setLovPara('company_id', company_id);
+            }
+            
+            
+            // 褰撹鏇存柊鎴栧垹闄ゆ椂锛屾洿鏂拌繕娆炬�閲戦
+            
+            function updateFunction(ds, record, name, value, oldValue) {
+                if (name == 'company_name') {
+                    record.set('unit_id', null);
+                    record.set('unit_name', null);
+                }
+            
+                if (name == 'proportion') {
+                    var sum_proportion = record.get('sum_proportion');
+                    if (sum_proportion == null || sum_proportion == "" || sum_proportion == undefined) {
+                        sum_proportion = '0%';
+                    }
+                    if (oldValue == null || oldValue == "" || oldValue == undefined) {
+                        oldValue = '0%';
+                    }
+                    var num = sum_proportion.replace('%', '');
+                    num = parseInt(num);
+                    var num1 = value.replace('%', '');
+                    num1 = parseInt(num1);
+                    var num2 = oldValue.replace('%', '');
+                    num2 = parseInt(num2);
+                    var num3 = (num + num1 - num2) + '%';
+                    record.set('sum_proportion', num3);
+                }
+            }
+            
+            // 鐐瑰嚮鈥滄煡鐪嬫棩蹇椻�鎸夐挳锛屾煡鐪嬫棩蹇�
+            
+            function CSH7010_view_history() {
+                var header_id = '${/parameter/@header_id}' || $('bgt_jour_release_headers_ds').getAt(0).get('header_id');
+                new Aurora.Window({
+                    id: 'csh_repayment_history_window',
+                    url: $('CSH7010_view_history_link').getUrl() + '?header_id=' + header_id,
+                    fullScreen: true,
+                    title: '${l:REC_REQUISITION_HISTORY}'
+                });
+            }
+            
+            //[EVENT] submitsuccess
+            
+            function onSaveSuccess(ds, res) {
+                $('view_histroy_btn').setVisible(true);
+                $('upload_file_btn').setVisible(true);
+                $('delete_all_btn').setVisible(true);
+                if (res.result.length > 0) {
+                    var document_number = res.result.record.document_number;
+                    $('bgt_jour_release_headers_ds').getCurrentRecord().set('document_number', document_number);
+                }
+                var header_id = ds.getCurrentRecord().get('header_id');
+                var t = header_id_bak == '' ? header_id : header_id_bak;
+                $('bgt_jour_release_lines_lns_ds').setQueryParameter('header_id', t);
+                $('bgt_jour_release_lines_lns_ds').query();
+            }
+            
+            // 涓婁紶闄勪欢
+            
+            function CSH7010_uploadFile() {
+            
+                var header_id = '${/parameter/@header_id}' || $('bgt_jour_release_headers_ds').getAt(0).get('header_id');
+            
+                var url = $('uploadFile_link').getUrl() + '?table_name=CSH_REPAYMENT_REGISTER_HDS&header_id=' + header_id;
+            
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'check_upload_file_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            
+            //add by Qu yuanyuan 鏁村崟鍒犻櫎
+            
+            function CSH7010_delete_all() {
+                var ds = $('bgt_jour_release_headers_ds');
+                var header_id = ds.getCurrentRecord().get('header_id');
+                Aurora.request({
+                    url: $('CSH7010_delete_all_link').getUrl() + '?header_id=' + header_id,
+                    scope: this,
+                    para: {
+                        header_id: header_id
+                    },
+                    success: function(ret) {
+                        Aurora.showMessage('${l:EXP_REP_PARTIALLY_SUBMITTED}', '${l:SUCCESSFUL_OPERATION}');
+                        CSH7010_queryFun();
+                        CSH7010_closeFun();
+                    }
+                });
+            }
+            
+            function CSH7030_assignDistributes(value, record, name) {
+                if (value) {
+                    return '<a href="javascript:CSH7030_openDistMaintainWindow(' + record.get('register_line_id') + ')">${l:CSH7030_DISTRIBUTE}</a>';
+                } else {
+                    return '';
+                }
+            
+            }
+            
+            function CSH7030_openDistMaintainWindow(register_line_id) {
+                new Aurora.Window({
+                    url: $('repayment_dist_maintain_link').getUrl() + '?register_line_id=' + register_line_id,
+                    title: '',
+                    fullScreen: true,
+                    id: 'repayment_dist_maintain_window'
+                });
+            }
+            
+            function cellclickFunction(grid, row, name, record, value) {
+                if (name == 'unit_name') {
+                    record.getMeta().getField('unit_name').setLovPara('company_id', record.get('company_id'));
+                }
+            
+                if (name == 'project_name') {
+                    record.getMeta().getField('project_name').setLovPara('company_id', record.get('company_id'));
+                    record.getMeta().getField('project_name').setLovPara('unit_id', record.get('unit_id'));
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="maintain_pay_method_list_ds">
+                <a:datas dataSource="/model/pay_method_list"/>
+            </a:dataSet>
+            <a:dataSet id="maintain_employee_ds">
+                <a:datas dataSource="/model/employee_list"/>
+            </a:dataSet>
+            <a:dataSet id="proportion_opt_ds">
+                <a:datas>
+                    <a:record value="20%"/>
+                    <a:record value="40%"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="maintain_repayment_status_ds" lookupCode="CSH_REPAYMENT_REGISTER_STATUS"/>
+            <a:dataSet id="bgt_jour_release_headers_ds" autoCreate="true" fetchAll="true" model="bgt.BGT7030.bgt_jour_release_headers_show" queryUrl="${/request/@context_path}/autocrud/bgt.BGT7030.bgt_jour_release_headers_show/query?header_id=${/parameter/@header_id}" submitUrl="${/request/@context_path}/modules/bgt/BGT7030/bgt_jour_release_save.svc">
+                <a:fields>
+                    <a:field name="employee_id" defaultValue="${/model/head_data/record/@employee_id}"/>
+                    <a:field name="employee_name" defaultValue="${/model/head_data/record/@employee_name}" readOnly="true"/>
+                    <a:field name="company_name" defaultValue="${/model/head_data/record/@company_name}" readOnly="true"/>
+                    <a:field name="company_id" defaultValue="${/model/head_data/record/@company_id}"/>
+                    <a:field name="document_number" readOnly="true"/>
+                    <a:field name="status_desc" defaultValue="${/model/head_data/record/@status_desc}" readOnly="true"/>
+                    <a:field name="requisition_date" defaultValue="${/model/head_data/record/@requisition_date}" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="onSaveSuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="bgt_jour_release_lines_lns_ds" bindName="line" bindTarget="bgt_jour_release_headers_ds" fetchAll="true" model="bgt.BGT7030.bgt_jour_release_lines" queryUrl="${/request/@context_path}/autocrud/bgt.BGT7030.bgt_jour_release_lines/query?header_id=${/parameter/@header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="project_number" required="true"/>
+                    <a:field name="project_name" lovGridHeight="320" lovHeight="450" lovLabelWidth="100" lovService="bgt.BGT7030.bgt_jour_realse_pro_lov" lovWidth="550" required="true">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="project_number"/>
+                            <a:map from="dimension_value_description" to="project_name"/>
+                            <a:map from="project_status_desc" to="project_status_desc"/>
+                            <a:map from="project_type_desc" to="type_level_desc"/>
+                            <a:map from="project_status" to="status_code"/>
+                            <a:map from="project_type" to="type_level_code"/>
+                            <a:map from="sum_proportion" to="sum_proportion"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="status_code"/>
+                    <a:field name="type_level_code"/>
+                    <a:field name="proportion" displayField="value" options="proportion_opt_ds" required="true" returnField="value" valueField="proportion"/>
+                    <a:field name="sum_proportion"/>
+                    <a:field name="notes"/>
+                    <a:field name="company_id"/>
+                    <a:field name="company_name" lovGridHeight="320" lovHeight="450" lovLabelWidth="100" lovService="bgt.BGT7030.bgt_jour_rel_company_lov" lovWidth="550" required="true">
+                        <a:mapping>
+                            <a:map from="company_short_name" to="company_name"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_id"/>
+                    <a:field name="unit_name" lovGridHeight="320" lovHeight="450" lovLabelWidth="100" lovService="bgt.BGT7030.exp_org_unit_lov" lovWidth="550" required="true">
+                        <a:mapping>
+                            <a:map from="unit_name" to="unit_name"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="type_level_desc" prompt="项目类型"/>
+                    <a:field name="project_status_desc" prompt="项目状态"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="onLineAddFunction"/>
+                    <a:event name="beforecreate" handler="beforecreateFunction"/>
+                    <a:event name="update" handler="updateFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <!-- <a:toolbarButton click="saveFun" text="HAP_SAVE" width="80"/>
+                <a:toolbarButton click="CSH7010_submitFun" text="HAP_SUBMIT" width="80"/>
+                <a:toolbarButton id="delete_all_btn" click="CSH7010_delete_all" text="HAP_DELETE_ALL_REPORT" width="80"/> -->
+                <a:toolbarButton id="view_histroy_btn" click="CSH7010_view_history" text="PROMPT.HISTORY" width="80"/>
+                <!-- <a:toolbarButton id="upload_file_btn" click="CSH7010_uploadFile" text="PROMPT.UPLOAD_ATTACHMENT" width="80"/> -->
+            </a:screenTopToolbar>
+            <!-- 澶�-->
+            <a:form id="bgt_jour_release_headers_form" title="CSH7010.REPAYMENT_REGISTER_MAINTAIN">
+                <a:box id="exp_rep_mt_standard_normal_box" column="3" style="width:100%">
+                    <a:textField name="document_number" bindTarget="bgt_jour_release_headers_ds" prompt="单据编号"/>
+                    <!-- <a:textField name="employee_name" bindTarget="bgt_jour_release_headers_ds" prompt="员工"/> -->
+                    <a:textField name="company_name" bindTarget="bgt_jour_release_headers_ds" prompt="公司"/>
+                    <a:textField name="employee_name" bindTarget="bgt_jour_release_headers_ds" prompt="申请人"/>
+                    <a:textField name="requisition_date" bindTarget="bgt_jour_release_headers_ds" prompt="申请日期"/>
+                    <a:textField name="status_desc" bindTarget="bgt_jour_release_headers_ds" prompt="申请状态"/>
+                </a:box>
+                <a:box id="exp_rep_mt_standard_ta_box">
+                    <a:textArea name="notes" bindtarget="bgt_jour_release_headers_ds" prompt="备注" width="1000"/>
+                </a:box>
+            </a:form>
+            <!-- 琛�-->
+            <a:grid id="bgt_jour_release_lines_grid" bindTarget="bgt_jour_release_lines_lns_ds" marginHeight="226" marginWidth="42">
+                <a:columns>
+                    <a:column name="line_number" align="center" prompt="行号" width="50"/>
+                    <a:column name="company_name" align="left" prompt="公司" width="150"/>
+                    <a:column name="unit_name" align="left" prompt="部门" width="150"/>
+                    <a:column name="project_name" prompt="项目" width="150"/>
+                    <a:column name="type_level_desc" width="150"/>
+                    <a:column name="project_status_desc" width="150"/>
+                    <a:column name="proportion" align="center" prompt="本次释放比例" width="150"/>
+                    <a:column name="sum_proportion" align="center" prompt="累计释放比例" width="150"/>
+                    <a:column name="notes" align="left" prompt="备注" width="300"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="int_pos_nf" allowDecimals="false" allowFormat="false" allowNegative="false"/>
+                    <a:textField id="txt_editor" maxLength="38"/>
+                    <a:numberField id="amount_nf" allowDecimals="true" allowNegative="false"/>
+                    <a:lov id="project_name_lov"/>
+                    <a:comboBox id="proportion_cb"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="cellclickFunction"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+            function CSH7010_init() {
+                if (Ext.isEmpty('${/parameter/@header_id}')) {
+                    $('view_histroy_btn').setVisible(false);
+                    $('upload_file_btn').setVisible(false);
+                    $('delete_all_btn').setVisible(false);
+                }
+                else {
+                    $('bgt_jour_release_headers_ds').query();
+                }
+            }
+            
+            CSH7010_init();
+            
+            function CSH7010_maintainAutoSize() {
+                //鎻忚堪瀹藉害
+                var labelWidth = 75;
+                //鏍囩瀹藉害,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //椤甸潰瀹藉害銆侀珮搴�
+                var vw = $A.getViewportWidth();
+                //鐣欑櫧瀹藉害
+                var marginWidth = 42;
+                //鑷�搴斿搴�
+                var autoWidth = vw - marginWidth;
+                //Form鍐呴儴瀹藉害锛�2border
+                var formInnerWidth = autoWidth - 2;
+                //鎵�崰鍒楁暟
+                var colSpan = 4;
+                //璁剧疆缁勪欢鐨勮嚜閫傚簲瀹藉害
+                Ext.get('bgt_jour_release_headers_form').setWidth(autoWidth + 4);
+                $('bgt_jour_release_lines_grid').setWidth(autoWidth);
+            }
+            
+            CSH7010_maintainAutoSize();
+        ]]></script>
+    </a:view>
+</a:screen>

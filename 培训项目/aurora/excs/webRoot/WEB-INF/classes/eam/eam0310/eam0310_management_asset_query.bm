@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2013-3-6 下午4:53:58  
+    $Revision: 1.0  
+    $Purpose: 源对象查询
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    asset_book_id,
+                    category_id,
+                    category_code,
+                    entity_class_code,
+                    finance_class_id,
+                    description,
+                    asset_id,
+                    DECODE(t1.source_asset_cost,0,'0.00',trim(TO_CHAR(t1.source_asset_cost,'999,999,990.00'))) source_asset_cost,
+                    DECODE(t1.source_asset_sum_cost,0,'0.00',trim(TO_CHAR(t1.source_asset_sum_cost,'999,999,990.00'))) source_asset_sum_cost,
+                    status,
+                    asset_name,
+                    asset_type,
+                    asset_code,
+                    post_status,
+                    tag_number,
+                    tag_number_old,
+                    lock_flag,
+                    fin_class_code,
+                    cost_value_type,
+                    cost_value_type_desc,
+                    using_unit_id,
+                    using_unit_name,
+                    DECODE(t1.current_cost,0,'0.00',trim(TO_CHAR(t1.current_cost,'999,999,990.00'))) current_cost,
+                    status_desc
+                FROM
+                    ( SELECT DISTINCT
+                        v.asset_book_id,
+                        v.category_id,
+                        v.category_code,
+                        (SELECT DISTINCT
+                            t.class_code
+                        FROM
+                            eam_asset_entity_classes t
+                        WHERE
+                            t.class_id = h.entity_class_id
+                        ) entity_class_code,
+                        i.finance_class_id,
+                        v.description,
+                        h.asset_id,
+                        (SELECT
+                            NVL(SUM(cost), 0)
+                        FROM
+                            eam_asset_cost_sources e
+                        WHERE
+                            e.source_asset_id = h.asset_id AND
+                            e.confirm_status <> 'NEW' AND
+                            e.asset_id       <> h.asset_id
+                        ) source_asset_sum_cost,
+                        h.status,
+                        NVL(i.original_cost, 0) source_asset_cost,--current_cost,
+                        d.description_text asset_name,
+                        v.asset_type,
+                        h.asset_code,
+                        h.post_status， h.tag_number,
+                        h.tag_number_old,
+                        h.lock_flag,
+                        fc.class_code fin_class_code,
+                        acs.cost_value_type,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_code_values_v v
+                        WHERE
+                            v.code       ='EAM_VALUE_TYPE' AND
+                            v.code_value = acs.cost_value_type
+                        ) cost_value_type_desc,
+                        h.using_unit_id,
+                        (SELECT
+                            eou.description
+                        FROM
+                            exp_org_unit_vl eou
+                        WHERE
+                            eou.unit_id = h.using_unit_id
+                        ) using_unit_name,
+                        i.original_cost,
+                        i.current_cost,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_service_lookup_v v
+                        WHERE
+                            v.enabled_flag = 'Y' AND
+                            v.code_value   = h.status AND
+                            code           = 'EAM_ASSET_STATUS' AND
+                            language       = ${/session/@lang}
+                        ) AS status_desc
+                    FROM
+                        eam_asset_categories_vl v,
+                        eam_asset_headers h,
+                        eam_asset_finance_info i,
+                        eam_asset_fin_classes fc,
+                        eam_asset_cost_sources acs,
+                        fnd_descriptions d
+                    WHERE
+                        v.category_id      = h.category_id AND
+                        v.category_sec_id  = h.category_sec_id AND
+                        h.fin_class_id     = fc.class_id AND
+                        v.asset_book_id    = h.asset_book_id AND
+                        h.description_id   = d.description_id AND
+                        h.asset_id         = i.asset_id AND
+                        i.finance_class_id = fc.class_id AND
+                        acs.asset_id       = h.asset_id AND
+                        acs.cost_source_id =
+                        (SELECT
+                            MIN(eas.cost_source_id)
+                        FROM
+                            eam_asset_cost_sources eas
+                        WHERE
+                            eas.asset_id = acs.asset_id
+                        ) AND
+                        h.asset_id <> ${@asset_id}
+                        -------1119-----------------------------------
+                        AND
+                        h.lock_flag = 'N' --
+                        AND
+                        h.post_status = 'Y' --
+                        AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            eam_asset_companies_vl eacv
+                        WHERE
+                            eacv.parent_company_id      = ${/session/@company_id} AND
+                            h.responsibility_company_id = eacv.company_id
+                        ) AND
+                        h.status ='IN_PROCESS'
+                        -----------------------------------------------------------------------------
+                        AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            eam_asset_cost_sources cs,
+                            eam_asset_headers eah2
+                        WHERE
+                            cs.source_asset_id  = h.asset_id AND
+                            cs.asset_id         = eah2.asset_id AND
+                            cs.document_type    = 'EAM_REQUISITION' AND
+                            cs.document_id      = ${@document_id} AND
+                            cs.document_line_id = ${@document_line_id} AND
+                            (
+                                cs.asset_id  = NVL(${@asset_id}, 0) 
+                                --OR eah2.status <> 'NEW'
+                            )
+                        ) AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            eam_asset_books_vl a,
+                            fnd_companies f
+                        WHERE
+                            f.set_of_books_id = a.set_of_book_id AND
+                            a.asset_book_id   = h.asset_book_id AND
+                            f.company_id      = ${/session/@company_id} AND
+                            a.enabled_flag    = 'Y'
+                        ) AND
+                        v.enabled_flag = 'Y' AND
+                        d.language     = ${/session/@lang}
+                    ) t1 #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="asset_book_id"/>
+        <bm:field name="category_id"/>
+        <bm:field name="category_code"/>
+        <bm:field name="entity_class_code"/>
+        <bm:field name="finance_class_id"/>
+        <bm:field name="asset_code"/>
+        <bm:field name="tag_number_old"/>
+        <bm:field name="tag_number" forDisplay="true" forQuery="true" prompt="资产卡片号"/>
+        <bm:field name="asset_name" forDisplay="true" forQuery="true" prompt="AST_ASSET_HEADERS.ASSET_NAME" queryExpression="v.asset_name like ${@asset_name}"/>
+        <bm:field name="using_unit_name" forDisplay="true" prompt="折旧承担部门"/>
+        <bm:field name="asset_type"/>
+        <bm:field name="source_asset_cost" forDisplay="true" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_COST"/>
+        <bm:field name="current_cost" forDisplay="true" prompt="当前成本"/>
+        <bm:field name="source_asset_sum_cost" forDisplay="true" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_SUM_COST"/>
+        <bm:field name="status_desc" forDisplay="true" prompt="资产状态"/>
+        <bm:field name="description" prompt="AST_ASSET_HEADER_DS.DESCRIPTION"/>
+        <bm:field name="asset_id"/>
+        <bm:field name="fin_class_code"/>
+        <bm:field name="post_status"/>
+        <bm:field name="lock_flag"/>
+        <bm:field name="status"/>
+        <bm:field name="cost_value_type"/>
+        <bm:field name="cost_value_type_desc"/>
+        <bm:field name="using_unit_id"/>
+    </bm:fields>
+    <bm:query-fields>
+        <!-- @ bywhf 20151106 -->
+        <bm:query-field field="asset_book_id" queryOperator="="/>
+        <!--  @<bm:query-field field="category_code" queryOperator="="/> -->
+        <!-- <bm:query-field field="entity_class_code" queryOperator="="/> -->
+        <bm:query-field field="tag_number" queryOperator="="/>
+        <bm:query-field field="lock_flag" queryOperator="="/>
+        <bm:query-field field="post_status" queryOperator="="/>
+        <bm:query-field field="asset_type" queryOperator="="/>
+        <bm:query-field field="description" queryOperator="like"/>
+        <bm:query-field field="asset_name" queryOperator="like"/>
+        <bm:query-field field="asset_code" queryOperator="like"/>
+        <bm:query-field field="category_id" queryOperator="="/>
+        <bm:query-field field="finance_class_id" queryOperator="="/>
+        <!--@ <bm:query-field field="fin_class_code" queryOperator="="/> -->
+        <!-- <bm:query-field field="cost_value_type" queryOperator="="/> -->
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="t1.status = ${@status}"/>
+        <bm:data-filter expression="t1.source_asset_sum_cost &lt; t1.source_asset_cost"/>
+    </bm:data-filters>
+</bm:model>

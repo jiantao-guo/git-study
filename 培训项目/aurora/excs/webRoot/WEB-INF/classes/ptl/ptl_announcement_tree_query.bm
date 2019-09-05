@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                WITH
+                    temp AS
+                    (SELECT
+                        ptl_util_pkg.get_announce_tree_id(${@announcement_type_id}) AS current_id
+                    FROM
+                        dual
+                    )
+                SELECT
+                    type_name,
+                    announcement_type_id,
+                    id,
+                    parent_id,
+                    (SELECT
+                        'tree-node-expanded'
+                    FROM
+                        temp
+                    WHERE
+                        current_id LIKE tv.id
+                        || '%' AND
+                        current_id != tv.id
+                    ) AS expended_class
+                FROM
+                    (SELECT
+                        e.element_title AS type_name,
+                        t.announcement_type_id,
+                        ptl_util_pkg.get_announce_tree_id(t.announcement_type_id) id,
+                        ptl_util_pkg.get_announce_tree_parent_id(t.announcement_type_id) parent_id
+                    FROM
+                        ptl_announcement_types_vl t,
+                        ptl_ele_announce_type_ref r,
+                        ptl_elements e,
+                        ptl_portals p
+                    WHERE
+                        t.announcement_type_id = r.announcement_type_id AND
+                        r.element_id           = e.element_id AND
+                        e.portal_id            = p.portal_id AND
+                        t.enabled_flag         = 'Y' AND
+                        p.portal_id           IN
+                        (SELECT
+                            l.portal_id
+                        FROM
+                            ptl_navigation_groups g,
+                            ptl_navigation_lines l
+                        WHERE
+                            g.group_id                                                                                              = l.group_id AND
+                            g.enabled_flag                                                                                          = 'Y' AND
+                            ptl_announcement_pkg.ptl_resource_prv_new_check('NAVIGATION', g.group_id, 'READ', ${/session/@user_id}) = 'Y' AND
+                            l.enable_flag                                                                                           = 'Y'
+                        GROUP BY
+                            l.portal_id
+                        )
+                    UNION ALL
+                    SELECT
+                        p.portal_title,
+                        NULL,
+                        TO_CHAR(p.sequence, 'fm0000000000'),
+                        NULL
+                    FROM
+                        ptl_portals_vl p
+                    WHERE
+                        p.portal_id IN
+                        (SELECT
+                            l.portal_id
+                        FROM
+                            ptl_navigation_groups g,
+                            ptl_navigation_lines l
+                        WHERE
+                            g.group_id                                                                                              = l.group_id AND
+                            ptl_announcement_pkg.ptl_resource_prv_new_check('NAVIGATION', g.group_id, 'READ', ${/session/@user_id}) = 'Y'
+                        )
+                    ) tv
+                ORDER BY
+                    id
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

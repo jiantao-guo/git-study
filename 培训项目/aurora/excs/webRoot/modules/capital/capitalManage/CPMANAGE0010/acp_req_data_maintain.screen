@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Rick  
+    $Date: 2016-6-2 15:22:41 
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="re_ge_data_link" model="capital.capitalManage.CPMANAGE0010.acp_req_data_maintain" modelaction="insert"/>
+        <a:link id="save_link" model="capital.capitalManage.CPMANAGE0010.acp_req_data_maintain" modelaction="update"/>
+        <a:link id="resent_link" model="capital.capitalManage.CPMANAGE0010.acp_req_data_maintain" modelaction="execute"/>
+        <a:link id="confirm_fail_link" model="capital.capitalManage.CPMANAGE0010.acp_req_confirm_status" modelaction="insert"/>
+        <a:link id="confirm_success_link" model="capital.capitalManage.CPMANAGE0010.acp_req_confirm_status" modelaction="update"/>
+        <a:link id="simulate_post_gl_link" model="capital.capitalManage.CPMANAGE0010.acp_req_confirm_status" modelaction="execute"/>
+        <script><![CDATA[
+            function query_fun() {
+                $('payment_ds').query();
+            }
+            
+            function reset_fun() {
+                var ds = $('query_ds');
+                ds.reset();
+            }
+            
+            function select_fun(ds, record) {
+                var pay_flag = record.get('pay_flag');
+                //模拟支付标志
+                var simulate_post_gl_flag = record.get('simulate_post_gl_flag');
+                $('simulate_post_gl_btn').disable();
+                //支付失败,可重新生成新的单据
+                if (pay_flag == '3') {
+                    $('save_btn').disable();
+                    $('sent_btn').disable();
+                    $('confirm_success_btn').disable();
+                    $('confirm_fail_btn').disable();
+                    if (record.get('repay_status') == 'N') {
+                        $('re_ge_data_btn').enable();
+                    } else {
+                        $('re_ge_data_btn').disable();
+                    }
+                    
+                    if(simulate_post_gl_flag == 'Y'){
+                         $('re_ge_data_btn').disable();
+                    }
+                    
+                    //模拟支付
+                    if(record.get('repay_status') == 'N' && (!simulate_post_gl_flag || simulate_post_gl_flag == 'N')){
+                       $('simulate_post_gl_btn').enable(); 
+                    }
+                } else if (pay_flag == '9') {
+                    //未支付,可发送至银行
+                    $('re_ge_data_btn').disable();
+                    $('confirm_success_btn').disable();
+                    $('confirm_fail_btn').disable();
+                    if (record.get('ori_detail_id')) {
+                        $('save_btn').enable();
+                    } else {
+                        $('save_btn').disable();
+                    }
+                    
+                    if(record.get('gather_account_name')){
+                        $('sent_btn').enable();
+                    }else{
+                        $('sent_btn').disable();
+                    }
+                } else if (pay_flag == '0') {
+                    //支付成功
+                    $('re_ge_data_btn').disable();
+                    $('save_btn').disable();
+                    $('sent_btn').disable();
+                    $('confirm_success_btn').disable();
+                    $('confirm_fail_btn').disable();
+                } else if (pay_flag == '1' || pay_flag == '2' || pay_flag == '4') {
+                    //支付中,落地,未知
+                    $('re_ge_data_btn').disable();
+                    $('save_btn').disable();
+                    $('sent_btn').disable();
+                    $('confirm_success_btn').enable();
+                    $('confirm_fail_btn').enable();
+                }
+            
+            }
+            
+            function unselect_fun(ds, record) {}
+            
+            
+            //重新支付
+            
+            function re_ge_data_fun() {
+                var selectRecord = $('payment_ds').getSelected();
+                if (selectRecord.length == 0) {
+                    return;
+                }
+                var body = Ext.getBody();
+                var param = {};
+                param.cux_pay_trans_details_id = selectRecord[0].get('cux_pay_trans_details_id');
+                Aurora.request({
+                    url: $('re_ge_data_link').getUrl(),
+                    para: param,
+                    success: function(res) {
+                        query_fun();
+                    },
+                    lockMessage: '正在操作,请稍后.....',
+                    scope: this
+                });
+            }
+            
+            function save_fun() {
+                if ($('payment_ds').validate()) {
+                    var param = $('payment_ds').getSelected()[0].data;
+                    Aurora.request({
+                        url: $('save_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            query_fun();
+                        },
+                        scope: this
+                    });
+                }
+            
+            }
+            
+            function resent_fun() {
+                var cur_record = $('payment_ds').getCurrentRecord();
+                if (cur_record.get('gather_account_name')) {
+                    if (cur_record.dirty) {
+                        Aurora.showInfoMessage('${l:PROMPT}', '请先保存!!', null, 250, 100);
+                        return;
+                    }
+                    var param = $('payment_ds').getSelected()[0].data;
+                    Aurora.request({
+                        url: $('resent_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            query_fun();
+                        },
+                        lockMessage : '正在支付,请稍后...',
+                        scope: this
+                    });
+                } else {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选择收款账号并保存!!', null, 250, 100);
+                }
+            
+            }
+            
+            //置為支付失敗
+            function cofirm_fail_fun() {
+                var cur_record = $('payment_ds').getCurrentRecord();
+                Aurora.showConfirm('提示', '确定要手动置为支付失败？', function okFun() {
+                    var param = $('payment_ds').getSelected()[0].data;
+                    Aurora.request({
+                        url: $('confirm_fail_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            query_fun();
+                        },
+                        scope: this
+                    });
+                }, function canFun() {});
+            }
+            
+             
+            //置為支付失敗
+            function cofirm_success_fun() {
+                var cur_record = $('payment_ds').getCurrentRecord();
+                Aurora.showConfirm('提示', '确定要手动置为支付成功？', function okFun() {
+                    var param = $('payment_ds').getSelected()[0].data;
+                    Aurora.request({
+                        url: $('confirm_success_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            query_fun();
+                        },
+                        scope: this
+                    });
+                }, function canFun() {});
+            }
+            
+            //模拟过账
+            function simulate_post_gl_fun(){
+                var cur_record = $('payment_ds').getCurrentRecord();
+                Aurora.showConfirm('提示', '是否需要模拟过账？', function okFun() {
+                    var param = $('payment_ds').getSelected()[0].data;
+                    Aurora.request({
+                        url: $('simulate_post_gl_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            query_fun();
+                        },
+                        scope: this
+                    });
+                }, function canFun() {});
+            }
+            
+            
+            
+            function gather_edit_fun(record, name, value) {
+                if (record.get('pay_flag') == '9' && record.get('ori_detail_id')) {
+                    if (record.get('payee_category') == 'VENDER') {
+                        record.getField('gather_account_name').setLovPara('vendor_id', record.get('payee_id'));
+                        record.getField('gather_account_name').setLovService('capital.capitalManage.CPMANAGE0010.csh_pay_req_ven_lov');
+                    } else if (record.get('payee_category') == 'EMPLOYEE') {
+                        record.getField('gather_account_name').setLovPara('employee_id', record.get('payee_id'));
+                        record.getField('gather_account_name').setLovService('capital.capitalManage.CPMANAGE0010.csh_pay_req_emp_lov');
+                    }
+                    return 'editor_lov';
+                } else {
+                    return '';
+                }
+            }
+            
+            function gather_renderer(value, record, name) {
+                if (record.get('pay_flag') == '9' && value) {
+                    return '<font color="red">' + value + '</font>';
+                } else {
+                    return value;
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="payee_category_ds" lookupCode="PAYMENT_OBJECT"/>
+            <a:dataSet id="inter_status_ds">
+                <a:datas>
+                    <a:record code_value="0" code_value_name="已传送"/>
+                    <a:record code_value="1" code_value_name="已读回"/>
+                    <a:record code_value="2" code_value_name="未传送"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="pay_flag_ds">
+                <a:datas>
+                    <a:record code_value="0" code_value_name="支付成功"/>
+                    <a:record code_value="3" code_value_name="支付失败"/>
+                    <a:record code_value="9" code_value_name="未支付"/>
+                    <a:record code_value="1" code_value_name="支付中"/>
+                    <a:record code_value="2" code_value_name="落地"/>
+                    <a:record code_value="4" code_value_name="未知"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="refund_status_ds">
+                <a:datas>
+                    <a:record code_value="1" code_value_name="未退票"/>
+                    <a:record code_value="2" code_value_name="已退票"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="user_id" defaultValue="${/session/@user_id}"/>
+                    <a:field name="payee_category_desc" displayField="code_value_name" options="payee_category_ds" returnField="payee_category" valueField="code_value"/>
+                    <a:field name="inter_status_cn" displayField="code_value_name" options="inter_status_ds" returnField="inter_status" valueField="code_value"/>
+                    <a:field name="pay_flag_cn" displayField="code_value_name" options="pay_flag_ds" returnField="pay_flag" valueField="code_value"/>
+                    <a:field name="refund_status_cn" displayField="code_value_name" options="refund_status_ds" returnField="refund_status" valueField="code_value"/>
+                    <a:field name="update_flag" defaultValue="Y"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="payment_ds" autoPageSize="true" autoQuery="true" model="capital.capitalManage.CPMANAGE0010.acp_req_data_maintain" queryDataSet="query_ds" selectable="true" selectionModel="single">
+                <a:fields>
+                    <a:field name="gather_account_name" lovHeight="700" lovWidth="1000" required="true">
+                        <a:mapping>
+                            <a:map from="account_name" to="gather_account_name"/>
+                            <a:map from="account_number" to="gather_account"/>
+                            <a:map from="bank_name" to="gather_bank_class_desc"/>
+                            <a:map from="bank_location" to="gather_bank_name"/>
+                            <a:map from="bank_location_code" to="gather_bank_number"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="select" handler="select_fun"/>
+                    <a:event name="unselect" handler="unselect_fun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="re_ge_data_btn" click="re_ge_data_fun" text="重新生成支付数据"/>
+                <a:toolbarButton id="save_btn" click="save_fun" text="保存"/>
+                <a:toolbarButton id="sent_btn" click="resent_fun" text="发送至银行"/>
+                <a:toolbarButton id="confirm_success_btn" click="cofirm_fail_fun" text="失败确认"/>
+                <a:toolbarButton id="confirm_fail_btn" click="cofirm_success_fun" text="成功确认"/>
+                <a:toolbarButton id="simulate_post_gl_btn" click="simulate_post_gl_fun" text="模拟过账"/>
+                <a:gridButton bind="grid_id" type="excel" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="form_id" bindTarget="query_ds" resultTarget="payment_ds" style="width:90%;border:none">
+                <a:formToolBar>
+                    <a:textField name="trade_code" bindTarget="query_ds" prompt="现金事物号"/>
+                    <a:textField name="bill_number" bindTarget="query_ds" prompt="业务单据号"/>
+                    <a:comboBox name="payee_category_desc" bindTarget="query_ds" prompt="EXP_REPORT_HEADERS.PAYEE_CATEGORY"/>
+                </a:formToolBar>
+                <a:formBody column="5">
+                    <a:datePicker name="payment_date_from" bindTarget="query_ds" prompt="付款日期从"/>
+                    <a:datePicker name="payment_date_to" bindTarget="query_ds" prompt="付款日期至"/>
+                    <a:datePicker name="creation_date_from" bindTarget="query_ds" prompt="创建日期从"/>
+                    <a:datePicker name="creation_date_to" bindTarget="query_ds" prompt="创建日期至"/>
+                    <a:numberField name="amount_from" bindTarget="query_ds" prompt="金额从"/>
+                    <a:numberField name="amount_to" bindTarget="query_ds" prompt="金额至"/>
+                    <a:comboBox name="pay_flag_cn" bindTarget="query_ds" prompt="支付状态"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="grid_id" bindTarget="payment_ds" marginHeight="100" navBar="true" navBarType="complex">
+                <a:columns>
+                    <a:column name="cux_pay_trans_details_id" align="center" prompt="接口ID" renderer="gather_renderer" width="50"/>
+                    <a:column name="document_type_cn" align="center" prompt="单据类型" renderer="gather_renderer" width="80"/>
+                    <a:column name="trade_code" align="center" prompt="现金事物号" renderer="gather_renderer" width="100"/>
+                    <a:column name="bill_number" align="center" prompt="业务单据号" renderer="gather_renderer" width="145"/>
+                    <!-- <a:column name="acp_equisition_number" align="center" prompt="付款单号" renderer="gather_renderer" width="145"/> -->
+                    <a:column name="amount" align="right" prompt="交易金额" renderer="Aurora.formatMoney" width="80"/>
+                    <a:column name="payment_account" align="center" prompt="付款账号" renderer="gather_renderer" width="100"/>
+                    <a:column name="payment_account_name" align="center" prompt="付款户名" renderer="gather_renderer" width="80"/>
+                    <a:column name="payee_category_desc" align="center" prompt="收方对象" renderer="gather_renderer" width="60"/>
+                    <a:column name="gather_account_name" align="center" editorFunction="gather_edit_fun" prompt="收方户名" renderer="gather_renderer" width="150"/>
+                    <a:column name="gather_account" align="center" prompt="收方账号" renderer="gather_renderer" width="100"/>
+                    <a:column name="gather_bank_class_desc" align="center" prompt="收方银行" renderer="gather_renderer" width="80"/>
+                    <a:column name="gather_bank_name" align="center" prompt="开户行" renderer="gather_renderer" width="100"/>
+                    <a:column name="gather_bank_number" align="center" prompt="开户行号" renderer="gather_renderer" width="100"/>
+                    <a:column name="pay_flag_cn" align="center" prompt="付款状态" renderer="gather_renderer" width="80"/>
+                    <a:column name="error_message" align="center" prompt="返回信息" renderer="gather_renderer" width="100"/>
+                    <a:column name="repay_status_cn" align="center" prompt="是否已重复支付" renderer="gather_renderer" width="100"/>
+                    <a:column name="simulate_post_gl_flag_desc" align="center" prompt="是否模拟过账" renderer="gather_renderer" width="100"/>
+                    <a:column name="ori_detail_id" align="center" prompt="原接口ID" renderer="gather_renderer" width="100"/>
+                    <a:column name="creation_date" align="center" prompt="创建日期" renderer="gather_renderer" width="100"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="editor_lov"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function init_size() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                var vh = $A.getViewportHeight();
+                //留白宽度
+                var marginWidth = 35 ;
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = autoWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置组件的自适应宽度
+                $('grid_id').setWidth(autoWidth);
+                $('form_id').setWidth(autoWidth);
+                //设置TextArea的自适应宽度,别问我最后那个6是哪里来的，试出来的
+            }
+            init_size();
+		]]></script>
+    </a:view>
+    <script><![CDATA[
+
+    ]]></script>
+</a:screen>

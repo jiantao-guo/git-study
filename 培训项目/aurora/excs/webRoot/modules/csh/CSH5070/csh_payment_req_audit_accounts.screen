@@ -1,0 +1,320 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="csh.csh_pay_req_create_init_currency" rootPath="company_currency_code"/>
+        <a:model-query model="csh.CSH5070.csh_pay_req_audit_account_init_exch_rate_type" rootPath="exchange_rate_type"/>
+        <a:model-query defaultWhereClause="enabled_flag =&apos;Y&apos;" model="gld.gld_exchangerate_types_vl" rootPath="exchangerate_types"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="gld_get_period_name_link_2" model="expm.gld_get_period_name" modelaction="query"/>
+        <a:link id="sys_fun_get_period_name_link_6" model="csh.sys_fun_get_period_name" modelaction="query"/>
+        <script><![CDATA[
+
+            function journalDateChange(com, value, oldValue) {
+                var dateStr = $('audit_account_header_ds').getAt(0).get('journal_date');
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/csh.sys_fun_get_period_name/query*/
+                    $('sys_fun_get_period_name_link_6').getUrl(),
+                    para: {
+                        p_date: dateStr
+                    },
+                    success: setPeriodName,
+                    scope: this
+                });
+            }
+            
+            function setPeriodName(args) {
+                var periodName = args.result.record.period_name;
+                if (periodName) {
+                    $('period_name').setValue(periodName);
+                    changeRate();
+                } else {
+                    Aurora.showErrorMessage('${l:PROMPT}', '${l:EXP_EXPENSE_REPORT_REVERSE.CHECK1}', null, 250, 100);
+                }
+            }
+            
+            function confirmFunction_crete_journal() {
+                var auditAccountDs = $('audit_account_header_ds');
+                var auditAccountRecord = auditAccountDs.getAt(0);
+                if (!auditAccountDs.validate()) {
+                    return;
+                }
+                var recordsData = $('audit_account_result_ds').getJsonData(true);
+                var auditAccount_date = auditAccountRecord.get('journal_date');
+                var period_name = auditAccountRecord.get('period_name');
+                if (recordsData.length == 0) {
+                    Aurora.showErrorMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}', null, 250, 100);
+                    return;
+                }
+                if (!auditAccount_date) {
+                    Aurora.showErrorMessage('${l:PROMPT}', '${l:EXP_EXPENSE_REPORT_AUDITACCOUNT.CHECK2}', null, 250, 100);
+                    return;
+                }
+                if (!period_name) {
+                    Aurora.showErrorMessage('${l:PROMPT}', '${l:EXP_EXPENSE_REPORT_AUDITACCOUNT.CHECK3}', null, 250, 100);
+                    return;
+                }
+                var param = $('audit_account_header_ds').getJsonData(false)[0];
+                param['detail'] = recordsData;
+                Aurora.request({
+                    url: /*csh_pay_req_audit_account_create_control.svc*/
+                    $('csh_pay_req_audit_account_create_control_link').getUrl(),
+                    para: param,
+                    success: auditAccountSuccess,
+                    scope: this
+                });
+            }
+            
+            function auditAccountSuccess() {
+                var infoMessage = Aurora.showInfoMessage('${l:PROMPT}', '${l:FND_DIMENSION_VALUES.OPR_SUC}', function() {
+            
+                    $('audit_result_ds').query();
+                    infoMessage.close();
+                    $('csh_payment_req_audit_accounts_screen').close();
+                }, 250, 100);
+            }
+            
+            function backFunction_crete_journal() {
+                $('csh_payment_req_audit_accounts_screen').close();
+            }
+            
+            function editorFunction_audit_account(record, name) {
+            
+                if (name == 'exchange_rate_type_display') {
+                    if (record.get('currency_code') == '${/model/company_currency_code/record/@del_currency}') {
+                        return '';
+                    } else {
+                        return 'combobox_audit_account';
+                    }
+                }
+            
+                if (name == 'exchange_rate_quotation_display') {
+                    if (record.get('exchange_rate_type') == 'MANUAL') {
+                        return 'combobox_audit_account';
+                    } else {
+                        return '';
+                    }
+                }
+            
+                if (name == 'exchange_rate') {
+                    if (record.get('exchange_rate_type') == 'MANUAL') {
+                        return 'textfield_audit_account';
+                    } else {
+                        return '';
+                    }
+                }
+            
+                return '';
+            }
+            
+            function updateFunction_audit_account(dataSet, record, name) {
+            
+                if (name == "exchange_rate_type") {
+                    var f_cur_code = '${/model/company_currency_code/record/@del_currency}';
+                    var cur_code = record.get('currency_code');
+                    if (!record.get('exchange_rate_type')) {
+                        record.set('exchange_rate_type', '${/model/exchange_rate_type/record/@value_code}');
+                    }
+                    var from_currency = f_cur_code;
+                    var to_currency = cur_code;
+                    var exchange_rate_type = record.get('exchange_rate_type');
+            
+                    var exchange_date = $('audit_account_header_ds').getAt(0).get('journal_date');
+                    var exchange_period_name = $('audit_account_header_ds').getAt(0).get('period_name');
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/csh.get_exchange_rate/query*/
+                        $('get_exchange_rate_link_11').getUrl(),
+                        para: {
+                            from_currency: from_currency,
+                            to_currency: to_currency,
+                            exchange_rate_type: exchange_rate_type,
+                            exchange_date: exchange_date,
+                            exchange_period_name: exchange_period_name
+                        },
+                        success: function(args) {
+                            var result = args.result.record;
+                            if (result.exchange_rate) {
+                                $('audit_account_result_ds').getCurrentRecord().set('exchange_rate', result.exchange_rate);
+                                $('audit_account_result_ds').getCurrentRecord().set('exchange_rate_quotation', result.exchange_rate_quotation);
+                            } else {
+                                var v = $('audit_account_result_ds').getCurrentRecord();
+                                if ($('audit_account_result_ds').getCurrentRecord().get('exchange_rate_type') != 'MANUAL') {
+                                    Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 250, 100);
+                                }
+                            }
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            // function callchange(args) {
+            
+                // var result = args.result.record;
+                // if (result.exchange_rate) {
+                    // $('audit_account_result_ds').getCurrentRecord().set('exchange_rate', result.exchange_rate);
+                    // $('audit_account_result_ds').getCurrentRecord().set('exchange_rate_quotation', result.exchange_rate_quotation);
+                // } else {
+                    // if ($('audit_account_result_ds').getCurrentRecord().get('exchange_rate_type') != 'MANUAL') {
+                        // Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 250, 100);
+                    // }
+                // }
+            // }
+            
+            function changeRate() {
+                var records = $('audit_account_result_ds').getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    var f_cur_code = '${/model/company_currency_code/record/@del_currency}';
+                    var cur_code = record.get('currency_code');
+                    if (f_cur_code != cur_code) {
+                        if (!record.get('exchange_rate_type')) {
+                            record.set('exchange_rate_type', '${/model/exchange_rate_type/record/@value_code}');
+                        }
+                        var from_currency = f_cur_code;
+                        var to_currency = cur_code;
+                        var exchange_rate_type = record.get('exchange_rate_type');
+            
+                        var exchange_date = $('audit_account_header_ds').getAt(0).get('journal_date');
+                        var exchange_period_name = $('audit_account_header_ds').getAt(0).get('period_name');
+                        Aurora.request({
+                            url: /*${/request/@context_path}/autocrud/csh.get_exchange_rate/query*/
+                            $('get_exchange_rate_link_11').getUrl(),
+                            para: {
+                                from_currency: from_currency,
+                                to_currency: to_currency,
+                                exchange_rate_type: exchange_rate_type,
+                                exchange_date: exchange_date,
+                                exchange_period_name: exchange_period_name
+                            },
+                            success: function(args) {
+            
+                                var result = args.result.record;
+                                if (result.exchange_rate) {
+                                    record.set('exchange_rate', result.exchange_rate);
+                                    record.set('exchange_rate_quotation', result.exchange_rate_quotation);
+                                } else {
+                                    if (record.get('exchange_rate_type') != 'MANUAL') {
+                                        Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 250, 100);
+                                    }
+                                }
+                            },
+                            scope: this
+                        });
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="rate_quotation_ds" lookupCode="EXCHANGE_RATE_QUOTATION"/>
+            <a:dataSet id="com_cur_code_ds">
+                <a:datas dataSource="/model/company_currency_code"/>
+                <a:fields>
+                    <a:field name="del_currency"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exchange_rate_type_ds">
+                <a:datas dataSource="/model/exchange_rate_type"/>
+                <a:fields>
+                    <a:field name="value_code"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exchangerate_types_ds">
+                <a:datas dataSource="exchangerate_types"/>
+                <a:fields>
+                    <a:field name="type_code"/>
+                    <a:field name="type_name"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="audit_account_header_ds">
+                <a:fields>
+                    <a:field name="journal_date" defaultValue="${/parameter/@journal_date}" prompt="EXP_REPORT_ACCOUNTS.JOURNAL_DATE" required="true"/>
+                    <a:field name="period_name" prompt="BGT_CHECK_LOGS.PERIOD_NAME" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="audit_account_result_ds" autoPageSize="true" autoQuery="true" model="csh.csh_payment_req_audit_accounts_query" selectable="true">
+                <a:fields>
+                    <a:field name="currency_code" prompt="CSH_PAYMENT_REQUISITION_HDS.CURRENCY_CODE"/>
+                    <a:field name="exchange_rate_type"/>
+                    <a:field name="exchange_rate_type_display" displayField="type_name" options="exchangerate_types_ds" prompt="CSH_TRANSACTION_ACCOUNTS.EXCHANGE_RATE_TYPE" returnField="exchange_rate_type" valueField="rate_method_code"/>
+                    <a:field name="exchange_rate" prompt="BGT_JOURNAL_INTERFACE.EXCHANGE_RATE"/>
+                    <a:field name="exchange_rate_quotation"/>
+                    <a:field name="exchange_rate_quotation_display" displayField="code_value_name" options="rate_quotation_ds" prompt="BGT_JOURNAL_INTERFACE.EXCHANGE_RATE_QUOTATION" returnField="exchange_rate_quotation" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateFunction_audit_account"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <script><![CDATA[
+
+            function loadComplete() {
+                var journal_date = '${/parameter/@journal_date}';
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.gld_get_period_name/query*/
+                    $('gld_get_period_name_link_2').getUrl(),
+                    para: {
+                        p_date: journal_date
+                    },
+                    success: setPeriodName,
+                    scope: this
+                });
+            }
+            loadComplete();
+        ]]></script>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>  
+                <a:toolbarButton click="confirmFunction_crete_journal" text="PROMPT.OK" width="80"/>
+                <a:toolbarButton click="backFunction_crete_journal" text="HAP_BACK" width="80"/>
+            </a:screenTopToolbar>
+            <a:form column="2" id="csh5070audit_form" title="PROMPT.CREATE_JE"  >
+                <a:datePicker name="journal_date" bindTarget="audit_account_header_ds">
+                    <a:events>
+                        <a:event name="change" handler="journalDateChange"/>
+                    </a:events>
+                </a:datePicker>
+                <a:textField name="period_name" id="period_name" bindTarget="audit_account_header_ds"/>
+            </a:form> 
+            <a:grid id="csh5070accrate_gd" bindTarget="audit_account_result_ds"  marginHeight="160" marginWidth="45" navBar="true" >
+                <a:columns>
+                    <a:column name="currency_code" align="center" width="130"/>
+                    <a:column name="exchange_rate_type_display" align="center" editorFunction="editorFunction_audit_account" width="200"/>
+                    <a:column name="exchange_rate_quotation_display" align="center" editorFunction="editorFunction_audit_account" width="100"/>
+                    <a:column name="exchange_rate" align="center" editorFunction="editorFunction_audit_account" width="130"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="combobox_audit_account"/>
+                    <a:textField id="textfield_audit_account"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function csh5070accrateInitSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度
+                var vw = parseInt(Aurora.getCookie('vw'));
+                //自适应宽度
+                var marginWidth = 45;
+                //Form的自适宽度，需要 -4
+                var formMarginWidth = marginWidth - 4;
+                //Form的宽度
+                var formWidth = vw - formMarginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = formWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置Form的宽度自适应
+                Ext.get('csh5070audit_form').setWidth(formWidth); 
+                Ext.get('csh5070_payreq_csh_form').setWidth(formWidth); 
+                //设置Grid的宽度自适应 
+                $('csh5070accrate_gd').setWidth(formWidth);
+            }
+            //Ext.fly(window).on('resize', csh5070accrateInitSize);
+            csh5070accrateInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

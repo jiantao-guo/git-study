@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: waiwaids  
+    $Date: 2011-10-11 上午9:27:54  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="pur_purchase_order_receive_assign_link" url="${/request/@context_path}/modules/pur/PUR5410/pur_purchase_order_receive_assign.screen"/>
+        <a:link id="pur_purchase_order_readonly_link_2" url="${/request/@context_path}/modules/pur/public/pur_purchase_order_readonly.screen"/>
+        <a:link id="pur_purchase_order_receive_save_control_link" url="${/request/@context_path}/modules/pur/PUR5410/pur_purchase_order_receive_save_control.svc"/>
+        <script><![CDATA[
+            //重置查询条件
+            function resetBtn(){
+                $('pur_order_find_ds').reset();
+            }
+            //查询
+            function queryBtn(){
+                $('pur_order_receive_ds').query();
+            }
+            //接收采购订单
+            function saveBtn(){
+                var records = $('pur_order_receive_ds').getSelected();
+                if(records.length<1){
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR_PURCHASE_ORDER_RECEIVE.PLEASE_SELECT_ORDER_LINE}');
+                    return;
+                }
+                var datas = [];
+                var param = {};
+                for(var i=0;i<records.length;i++)
+                {   
+                    var record = records[i];
+                    var data = records[i].data;
+                    datas.push(data);
+                }
+                param['details'] = datas;
+                Aurora.request({
+                            url     : /*pur_purchase_order_receive_save_control.svc*/$('pur_purchase_order_receive_save_control_link').getUrl(),
+                            para    : param,
+                            success : function(args){
+                                if(args.result.transaction_number!=undefined){
+                                    Aurora.showMessage('${l:PROMPT}', '${l:PUR_PURCHASE_ORDER_RECEIVE.CREATE_RECEIVE_TANS_NUMBER}'+args.result.transaction_number);
+                                    $('pur_ordere_receive_gd').onLoad();
+                                }
+                            },
+                            scope   : this
+                        });
+            }
+            //对于接收采购订单的接收数量进行验证
+            function numVailFn(record, name, value){
+                var no_receive_quanitty = record.get('no_receive_quanitty');
+                if(no_receive_quanitty<value){
+                    Aurora.showMessage('${l:PROMPT}', "${l:PUR_PURCHASE_ORDER_RECEIVE.CHECK_RECEIVE_AMOUNT}");
+                    return;
+                }
+                return true;
+            }
+            //对于订单编号渲染
+            function order_read_renderer(value, record, name){
+                    var head_id = record.get('pur_order_header_id');
+                    var url = /*pur_purchase_order_readonly.screen*/$('pur_purchase_order_readonly_link_2').getUrl()+'?head_id=' + head_id;
+                    return '<a href="#" onclick="view_order(\'' + url + '\')">' + record.get('pur_order_number') + '</a>';
+            }
+            //弹出采购订单维护页面 
+            function view_order(url) {
+                new Aurora.Window({
+                    id: 'pur_order_maintain',
+                    url: url,
+                    title: '${l:PUR_PURCHASE_ORDER.ORDER_MAINTAIN}',
+                    height: 600,
+                    width: 1030
+                });
+            }
+            //分配行渲染
+            function order_assign(value, record, name){
+                if(record.get('pur_order_line_id')){
+                    var url = /*pur_purchase_order_receive_assign.screen*/$('pur_purchase_order_receive_assign_link').getUrl()+'?line_id=' + record.get('pur_order_line_id');
+                    return '<a href="#" onclick="view_receive_order_assign(\'' + url + '\')">' + '${l:PUR_PURCHASE_ORDER_RECEIVE.ORDER_ASSIGN}' + '</a>';
+                }
+            }
+            //分配行弹出页面
+            function view_receive_order_assign(url) {
+                new Aurora.Window({
+                    id: 'pur_receive_order_assign',
+                    url: url,
+                    title: '${l:PUR_PURCHASE_ORDER_RECEIVE.RECEIVE_BY_LINE}',
+                    width: 850,
+                    height: 540
+                });
+            }
+           ]]></script>
+        <a:dataSets>
+            <!--订单类型下拉列表DS -->
+            <a:dataSet id="pur_order_type_list_ds" autoQuery="true" model="pur.PUR5410.pur_order_type_combox"/>
+            <!--是否要使用lookupCode，还是按照1.0里的只给予查询到三种接收状态 -->
+            <!--<a:dataSet id="pur_order_status_list_ds" lookupCode="PUR_OPERATION_STATUS" />-->
+            <a:dataSet id="pur_order_status_list_ds" autoQuery="true" model="pur.pur_release_status_list"/>
+            <!-- 设置查询条件的DS-->
+            <a:dataSet id="pur_order_find_ds">
+                <a:fields>
+                    <a:field name="buyer_display" lovGridHeight="300" lovHeight="460" lovService="pur.pur_buyers_lov" lovWidth="500" lovlabelWidth="200" title="PUR_BUYERS.BUYER_CODE">
+                        <a:mapping>
+                            <a:map from="buyer_code" to="buyer_code"/>
+                            <a:map from="description" to="buyer_display"/>
+                            <a:map from="buyer_id" to="buyer_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="order_type_id_display" displayField="description" options="pur_order_type_list_ds" returnField="pur_order_type_id" valueField="order_type_id"/>
+                    <a:field name="receive_status_display" displayField="code_value_name" options="pur_order_status_list_ds" returnField="receive_status" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <!--订单接受显示列表DS -->
+            <a:dataSet id="pur_order_receive_ds" model="pur.PUR5410.pur_purchase_order_receive_query" queryDataSet="pur_order_find_ds" selectable="true">
+                <a:fields>
+                    <a:field name="on_receive_quanitty" required="true" validator="numVailFn"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form title="PUR_PURCHASE_ORDER_RECEIVE.PUR_PURCHASE_ORDER_QUERY" width="800">
+                <a:hBox labelWidth="90">
+                    <a:lov name="buyer_display" bindTarget="pur_order_find_ds" prompt="PUR_BUYERS.BUYER_ID" width="100"/>
+                    <a:textField name="vender_name" bindTarget="pur_order_find_ds" prompt="PUR_ORDER_HEADERS.VENDER_ID" width="280"/>
+                    <a:textField name="pur_order_number" bindTarget="pur_order_find_ds" prompt="PUR_ORDER_NUMBER" width="100"/>
+                </a:hBox>
+                <a:hBox labelWidth="90">
+                    <a:datePicker name="document_date" bindTarget="pur_order_find_ds" prompt="PUR_ORDER_HEADERS.DOCUMENT_DATE" width="100"/>
+                    <a:datePicker name="date_to" bindTarget="pur_order_find_ds" prompt="PUR_ORDER_LINES.DATE_TO" width="100"/>
+                    <a:comboBox name="order_type_id_display" bindTarget="pur_order_find_ds" prompt="PUR_ORDER_HEADERS.ORDER_TYPE_ID" width="82"/>
+                    <a:comboBox name="receive_status_display" bindTarget="pur_order_find_ds" prompt="PUR_ORDER_LINES.RECEIVE_STATUS" width="100"/>
+                </a:hBox>
+                <a:hBox labelWidth="90">
+                    <a:textField name="item_code" bindTarget="pur_order_find_ds" prompt="INV_SYSTEM_ITEMS.ITEM_CODE" width="100"/>
+                    <a:textField name="item_desc" bindTarget="pur_order_find_ds" prompt="INV_SYSTEM_ITEMS.DESCRIPTION_ID" width="280"/>
+                </a:hBox>
+                <a:hBox labelWidth="90">
+                    <a:textField name="expense_item_code" bindTarget="pur_order_find_ds" prompt="PUR_REQUISITION_ALLOCATE.EXPENSE_ITEM_CODE" width="100"/>
+                    <a:textField name="expense_item_desc" bindTarget="pur_order_find_ds" prompt="PUR_REQUISITION_ALLOCATE.EXPENSE_ITEM_DESC" width="280"/>
+                </a:hBox>
+            </a:form>
+            <a:hBox>
+                <a:button click="queryBtn" text="HAP_QUERY"/>
+                <a:button click="resetBtn" text="HAP_RESET"/>
+            </a:hBox>
+            <a:hBox>
+                <a:button click="saveBtn" text="PROMPT.SAVE"/>
+            </a:hBox>
+            <a:grid id="pur_ordere_receive_gd" bindTarget="pur_order_receive_ds" height="360" navBar="true" width="900">
+                <a:columns>
+                    <a:column name="pur_order_number" lock="true" prompt="PUR_ORDER_HEADERS.PUR_ORDER_NUMBER" renderer="order_read_renderer" width="120"/>
+                    <a:column name="document_date" lock="true" prompt="PUR_ORDER_HEADERS.DOCUMENT_DATE" width="80"/>
+                    <a:column name="vender_name" prompt="PUR_SYSTEM_VENDERS.VENDER_ID" width="100"/>
+                    <a:column name="line_number" prompt="PUR_ORDER_LINES.LINE_NUMBER" width="40"/>
+                    <a:column name="line_desc" prompt="PUR_ORDER_LINES.LINE_DESC" width="100"/>
+                    <a:column name="expense_item_desc" prompt="PUR_REQUISITION_ALLOCATE.EXPENSE_ITEM_DESC" width="80"/>
+                    <a:column name="item_desc" prompt="INV_SYSTEM_ITEMS.DESCRIPTION_ID" width="100"/>
+                    <a:column name="primary_quantity" prompt="PUR_ORDER_LINES.PRIMARY_QUANTITY" width="80"/>
+                    <a:column name="no_receive_quanitty" prompt="PUR_ORDER_LINES.NO_RECEIVE_QUANITTY" width="80"/>
+                    <a:column name="on_receive_quanitty" editor="on_receive_quan_ed" prompt="PUR_ORDER_LINES.ON_RECEIVE_QUANITTY" width="80"/>
+                    <a:column prompt="" renderer="order_assign" width="80"/>
+                    <a:column name="date_from" prompt="PUR_ORDER_LINES.DATE_FROM" width="80"/>
+                    <a:column name="date_to" prompt="PUR_ORDER_LINES.DATE_TO" width="80"/>
+                    <a:column name="buyer_desc" prompt="PUR_BUYERS.DESCRIPTION_ID" width="100"/>
+                    <a:column name="receive_status_desc" prompt="PUR_ORDER_LINES.RECEIVE_STATUS" width="70"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="on_receive_quan_ed" allowNegative="false" decimalPrecision="10"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

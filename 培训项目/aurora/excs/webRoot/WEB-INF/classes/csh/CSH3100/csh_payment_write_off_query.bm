@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="doc_number">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+			select *
+			  from (select erh.exp_report_header_id doc_id,
+			  			   erh.exp_report_type_id	type_id,
+			  			   erh.exp_report_number doc_number,
+			               cwo.csh_write_off_amount amount,
+			               erh.employee_id,
+			               (select ee.name
+			                  from exp_employees ee
+			                 where ee.employee_id = erh.employee_id) employee_name,
+			               nvl(erh.audit_flag, 'N') success_flag,
+			               cprl.payment_requisition_header_id header_id,
+			               'EXP_REPORT'	doc_type
+			          from csh_transaction_headers      cthr,
+			               csh_transaction_lines        ctlr,
+			               csh_write_off                cwo,
+			               exp_report_headers           erh,
+			               csh_payment_requisition_refs cprr,
+			               csh_payment_requisition_lns  cprl,
+			               csh_transaction_lines        ctl
+			         where cthr.transaction_header_id = ctlr.transaction_header_id
+			           and cwo.csh_transaction_line_id = ctlr.transaction_line_id
+			           and cwo.document_header_id = erh.exp_report_header_id
+			           and cthr.source_payment_header_id = ctl.transaction_header_id
+			           and ctl.transaction_line_id = cprr.csh_transaction_line_id
+			           and cprr.payment_requisition_line_id =
+			               cprl.payment_requisition_line_id
+			           and cwo.write_off_type = 'PREPAYMENT_EXPENSE_REPORT'
+			           and cwo.document_source = 'EXPENSE_REPORT'
+			        union
+			        select crrh.register_header_id doc_id,
+			        	   null type_id,
+			        	   crrh.register_number doc_number,
+			               crrh.total_amount amount,
+			               crrh.employee_id employee_id,
+			               (select ee.name
+			                  from exp_employees ee
+			                 where ee.employee_id = crrh.employee_id) employee_name,
+			               decode(crrh.repayment_status, 'COMPLETELY_CONFIRM', 'Y', 'N') success_flag,
+			               cprl.payment_requisition_header_id header_id,
+			               'CSH_REPAYMENT'	doc_type
+			          from csh_transaction_headers      cthr,
+			               csh_transaction_lines        ctlr,
+			               csh_repayment_register_hds   crrh,
+			               csh_repayment_register_lns   crrl,
+			               csh_payment_requisition_refs cprr,
+			               csh_payment_requisition_lns  cprl
+			         where cthr.transaction_header_id = ctlr.transaction_header_id
+			           and crrh.register_header_id = crrl.register_header_id
+			           and crrl.requisition_line_id = cprl.payment_requisition_line_id
+			           and cprl.payment_requisition_line_id =
+			               cprr.payment_requisition_line_id
+			           and cprr.csh_transaction_line_id = ctlr.transaction_line_id
+			        /*union
+			        select cthr.transaction_header_id doc_id,
+			        	   null type_id,
+			        	   cthr.transaction_num doc_number,
+			               ctlr.transaction_amount amount,
+			               (select su.employee_id
+			                  from sys_user su
+			                 where su.user_id = cthr.created_by) employee_id,
+			               (select ee.name
+			                  from sys_user su, exp_employees ee
+			                 where su.user_id = cthr.created_by
+			                   and ee.employee_id = su.employee_id) employee_name,
+			               nvl(cth.posted_flag, 'N') success_flag,
+			               cprl.payment_requisition_header_id header_id,
+			               'CSH_TRANSACTION'	doc_type
+			          from csh_transaction_headers      cth,
+			               csh_transaction_lines        ctl,
+			               csh_transaction_headers      cthr,
+			               csh_transaction_lines        ctlr,
+			               csh_payment_requisition_refs cprr,
+			               csh_payment_requisition_lns  cprl
+			         where cth.transaction_header_id = ctl.transaction_header_id
+			           and cthr.transaction_header_id = ctlr.transaction_line_id
+			           and cth.transaction_header_id = cthr.source_header_id
+			           and ctl.transaction_line_id = cprr.csh_transaction_line_id
+			           and cprr.payment_requisition_line_id =
+			               cprl.payment_requisition_line_id
+			           and cth.transaction_type = 'PAYMENT'
+			           and cthr.transaction_type = 'PAYMENT'
+                 	   and cthr.returned_flag = 'R'*/) v
+				           #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="doc_number" queryExpression="v.doc_number like &apos;%&apos;||trim(${@doc_number})||&apos;%&apos;"/>
+        <bm:query-field name="amount_from" queryExpression="v.amount &gt;= ${@amount_from}"/>
+        <bm:query-field name="amount_to" queryExpression="v.amount &lt;= ${@amount_to}"/>
+        <bm:query-field name="success_flag" queryExpression="v.success_flag = ${@success_flag}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="v.header_id = ${@header_id}"/>
+    </bm:data-filters>
+</bm:model>

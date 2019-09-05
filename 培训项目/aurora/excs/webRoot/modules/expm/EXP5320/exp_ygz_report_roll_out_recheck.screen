@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: HM  
+    $Date: 2016-4-22 上午9:27:32  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="exp.EXP1330.exp_ygz_usage_types_lov" rootPath="usage_type"/>
+        <a:model-query model="gl.gl_segment_description" rootPath="segment_descs"/>
+        <a:model-query fetchAll="true" model="exp.EXP1340.exp_ygz_invoice_types_lov" rootPath="invoice_type"/>
+    </a:init-procedure>
+    <a:view package="aurora.ui.std" template="default">
+        <a:link id="exp_report_readonly_link" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl.screen"/>
+        <a:link id="exp_report_roll_out_recheck_submit_link" url="${/request/@context_path}/modules/expm/EXP5320/exp_ygz_report_roll_out_recheck_control.svc"/>
+        <script><![CDATA[
+            function exp5320_YGZRollOutQueryFun() {
+                $('exp_ygz_report_roll_out_recheck_result_ds').query();
+            }
+            
+            function exp5320_YGZRollOutResetFun() {
+                $('exp_ygz_report_roll_out_recheck_query_ds').reset();
+            }
+            
+            //同意或拒绝
+            function exp5320_YGZRollOutRecheckSubmitFun(roll_out_status) {
+                var records = $('exp_ygz_report_roll_out_recheck_result_ds').getSelected();
+                var datas = [];
+                var url = $('exp_report_roll_out_recheck_submit_link').getUrl();
+                if (records.length > 0) {
+                    for (var i = 0;i < records.length;i++) {
+                        var data = new Object();
+                        data['exp_report_line_id'] = records[i].get('exp_report_line_id');
+                        data['roll_out_status'] = roll_out_status;
+                        datas.push(data);
+                    }
+                    Aurora.request({
+                        url: url,
+                        para: datas,
+                        success: function() {
+                            $('exp_ygz_report_roll_out_recheck_result_ds').query();
+                            return Aurora.showMessage('${l:PROMPT}', '操作成功！');
+                        }
+                    });
+                } else {
+                    return Aurora.showMessage('${l:PROMPT}', '${l:EXP_REPORT.SELECT_DATA}');
+                }
+            }
+            
+            function exp5320_YGZRollOutAgreeFun() {
+                exp5320_YGZRollOutRecheckSubmitFun('Y');
+            }
+            
+            function exp5320_YGZRollOutRejectFun() {
+                exp5320_YGZRollOutRecheckSubmitFun('N');
+            }
+            
+            function checkNotEmpty(obj) {
+                return typeof(obj) != 'undefined' && !Ext.isEmpty(obj);
+            }
+            
+            function cdateValidator(record, name, value) {
+                if (name == 'create_date_from' || name == 'create_date_to') {
+                    var start_date = record.get('create_date_from');
+                    var end_date = record.get('create_date_to');
+                    if (checkNotEmpty(start_date) && checkNotEmpty(end_date) && (start_date > end_date)) {
+                        return '开始日期不能大于结束日期';
+                    }
+                }
+                return true;
+            }
+            
+            function expYGZOnUpdateQueryDsFun(ds, record, name, value, oldvalue) {
+                if (name == 'company_name') {
+                    if (Aurora.isEmpty(value)) {
+                        record.getField('all_company_flag').setReadOnly(true);
+                        record.set('all_company_flag', 'N');
+                    } else {
+                        record.getField('all_company_flag').setReadOnly(false);
+                    }
+                }
+            }
+            
+            function expRepNumRenderer(value, record, name) {
+                var header_id = record.get('exp_report_header_id');
+                var type_id = record.get('exp_report_type_id');
+                return '<a href="javascript:detailNewWindow(' + header_id + ',' + type_id + ');">' + value + '</a>';
+            }
+            
+            function detailNewWindow(header_id, type_id) {
+                new Aurora.Window({
+                    title: '',
+                    id: 'exp_report_maintain_screen',
+                    fullScreen: true,
+                    url: /*${/request/@context_path}/modules/expm/exp_report_readonly_wfl.screen*/
+                    $('exp_report_readonly_link').getUrl() + '?exp_report_header_id=' + header_id + '&exp_report_type_id=' + type_id,
+                    width: 950,
+                    height: 600
+                });
+            }
+            // added by HM @2016-04-13 营改增-税率显示
+            
+            function expYGZtaxRateRenderer(value, record, name) {
+                if (Aurora.isEmpty(value)) {
+                    return value;
+                } else if (isNaN(value)) {
+                    return '';
+                } else {
+                    return Aurora.formatNumber(value * 100, 0) + '%';
+                }
+            }
+            
+            function indexChangeFunction(ds, record) {
+                var exp_report_header_id = record.get('exp_report_header_id');
+                var exp_report_line_id = record.get('exp_report_line_id');
+                var toRecord = $('exp_report_query_finance_result_ds2').getCurrentRecord();
+                if (toRecord) {
+                    toRecord.setQueryParameter('exp_report_header_id', exp_report_header_id);
+                    toRecord.setQueryParameter('exp_report_line_id', exp_report_line_id);
+                }
+                return;
+            }
+            function summaryRenderer(datas, name) {
+                var sum = 0;
+                for (var i = 0;i < datas.length;i++) {
+                    var r = datas[i];
+                    var d = r.get(name);
+                    var n = parseFloat(d);
+                    if (!isNaN(n)) {
+                        sum += n;
+                    }
+                }   
+                   var total = (typeof(sum) == 'undefined' ? '' : parseFloat(sum).toFixed(3));
+                   if(name == 'report_amount'){
+                    return '<font>' + '报销金额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'tax_amount'){
+                    return '<font>' + '税额额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'sale_amount'){
+                    return '<font>' + '不含税金额合计：' + Convert(total) + '</font>';
+                  }
+                  if(name == 'roll_out_amount'){
+                    return '<font>' + '转出金额合计：' + Convert(total) + '</font>';
+                  }
+                  if(name == 'invoice_amount'){
+                    return '<font>' + '发票金额合计：' + Convert(total) + '</font>';
+                  }
+                  if(name == 'invoice_tax_amount'){
+                    return '<font>' + '发票税额合计：' + Convert(total) + '</font>';
+                  }
+                 
+            }
+             function Convert(value) {
+                if(value){
+            	var s = value;
+            	 s += "";
+            	 if (s.indexOf(".") == -1){ s += ".00";}
+            	 if (/\.\d$/.test(s)){ s += "0";}   //正则判断
+                 while (/\d{4}(\.|,)/.test(s)){
+            	 	s = s.replace(/(\d)(\d{3}(\.|,))/, "$1,$2"); 
+            	 }       
+            	   return s;  
+                }else{
+                    return '';
+                }      
+           }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="exp_ygz_invoice_type_ds">
+                <a:datas dataSource="/model/invoice_type"/>
+            </a:dataSet>
+            <a:dataSet id="exp_report_status_ds" lookupCode="EXP_EXPENSE_REPORT_STATUS"/>
+            <a:dataSet id="vat_invoice_status_ds" lookupCode="VMS_INVOICE_STATUS"/>
+            <a:dataSet id="yes_or_no_ds" lookupCode="YES_NO"/>
+            <a:dataSet id="exp_ygz_usage_type_ds">
+                <a:datas dataSource="/model/usage_type"/>
+            </a:dataSet>
+            <a:dataSet id="vat_input_tax_structure_detail_ds" fetchAll="true" loadData="true" model="exp.EXP1350.exp_ygz_input_tax_struc_dtl_lov"/>
+            <a:dataSet id="exp_ygz_report_roll_out_recheck_query_ds">
+                <a:fields>
+                    <a:field name="exp_report_number" prompt="单据编号"/>
+                    <a:field name="exp_report_type_id"/>
+                    <a:field name="exp_report_type_desc" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="expm.EXP2160.exp_report_types_query" lovWidth="540" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID" title="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID">
+                        <a:mapping>
+                            <!-- <a:map from="expense_report_type_id" to="exp_report_type_id"/> -->
+                            <a:map from="description" to="exp_report_type_desc"/>
+                            <a:map from="expense_report_type_code" to="exp_report_type_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exp_report_type_code"/>
+                    <a:field name="company_name" lovGridHeight="320" lovHeight="450" lovService="fnd.fnd_companies_lov" lovWidth="550" prompt="机构" title="机构查询">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="code_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="all_company_flag" checkedValue="Y" defaultValue="N" prompt="包含子公司" uncheckedValue="N"/>
+                    <a:field name="invoice_type"/>
+                    <a:field name="invoice_type_desc" displayField="type_name" options="exp_ygz_invoice_type_ds" prompt="发票类型" readOnly="false" returnField="invoice_type" valueField="type_code"/>
+                    <a:field name="invoice_number" prompt="发票号码"/>
+                    <!-- <a:field name="invoice_status" defaultValue="30"/> -->
+                    <!-- <a:field name="invoice_status_desc" defaultValue="已认证" displayField="code_value_name" options="exp_ygz_invoice_status_ds" prompt="发票状态" returnField="invoice_status" valueField="code_value"/> -->
+                    <a:field name="usage_type"/>
+                    <a:field name="usage_type_desc" autoComplete="true" lovGridHeight="320" lovHeight="450" lovLabelWidth="100" lovService="exp.EXP1330.exp_ygz_usage_types_lov" lovWidth="540" prompt="抵扣规则" title="抵扣规则查询">
+                        <a:mapping>
+                            <a:map from="type_code" to="usage_type"/>
+                            <a:map from="type_name" to="usage_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="create_date_from" prompt="EXP_REPORT_HEADERS.REPORT_DATE_FROM" validator="cdateValidator"/>
+                    <a:field name="create_date_to" prompt="EXP_REPORT_HEADERS.REPORT_DATE_TO" validator="cdateValidator"/>
+                    <a:field name="roll_out_per_from" prompt="转出比例从(%)"/>
+                    <a:field name="roll_out_per_to" prompt="转出比例到(%)"/>
+                    <a:field name="roll_out_amount_from" prompt="转出金额从"/>
+                    <a:field name="roll_out_amount_to" prompt="转出金额到"/>
+                    <a:field name="invoice_status_desc" displayField="code_value_name" options="vat_invoice_status_ds" returnField="invoice_status" valueField="code_value"/>
+                    <a:field name="invoice_status"/>
+                    <a:field name="audit_flag" defaultValue="Y"/>
+                    <a:field name="audit_flag_desc" defaultValue="是" displayField="code_value_name" options="yes_or_no_ds" prompt="审核状态" readOnly="true" returnField="audit_flag" valueField="code_value"/>
+                    <a:field name="input_tax_structure_detail"/>
+                    <a:field name="input_tax_struc_detail_desc" displayField="type_name" options="vat_input_tax_structure_detail_ds" returnField="input_tax_structure_detail" valueField="type_code"/>
+                    <a:field name="report_status"/>
+                    <a:field name="report_status_desc" displayField="code_value_name" options="exp_report_status_ds" returnField="report_status" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="expYGZOnUpdateQueryDsFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_ygz_report_roll_out_recheck_result_ds" autoPageSize="true" autoQuery="true" model="expm.EXP5320.exp_ygz_report_roll_out_recheck" queryDataSet="exp_ygz_report_roll_out_recheck_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="usage_type_desc" displayField="type_name" options="exp_ygz_usage_type_ds" returnField="usage_type" valueField="type_code"/>
+                    <a:field name="usage_type"/>
+                    <a:field name="invoice_status_desc" displayField="code_value_name" options="vat_invoice_status_ds" returnField="invoice_status" valueField="code_value"/>
+                    <a:field name="invoice_status"/>
+                    <a:field name="input_tax_structure_detail"/>
+                    <a:field name="input_tax_struc_detail_desc" displayField="type_name" options="vat_input_tax_structure_detail_ds" returnField="input_tax_structure_detail" valueField="type_code"/>
+                    <a:field name="invoice_type"/>
+                    <a:field name="invoice_type_desc" displayField="type_name" options="vat_invoice_type_ds" required="true" returnField="invoice_type" valueField="type_code">
+                        <a:mapping>
+                            <a:map from="special_invoice" to="special_invoice"/>
+                            <a:map from="einvoice_flag" to="einvoice_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="special_invoice"/>
+                    <a:field name="report_status"/>
+                    <a:field name="report_status_desc" displayField="code_value_name" options="exp_report_status_ds" returnField="report_status" valueField="code_value"/>
+                    <a:field name="audit_flag"/>
+                    <a:field name="audit_flag_desc" displayField="code_value_name" options="yes_or_no_ds" returnField="audit_flag" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="indexchange" handler="indexChangeFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_report_query_finance_result_ds2" bindName="head" bindTarget="exp_ygz_report_roll_out_recheck_result_ds" fetchAll="true" queryUrl="${/request/@context_path}/autocrud/expm.EXP5320.exp_report_recheck_roll_out_accounts_query/query"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="exp5320_YGZRollOutResetFun" style="margin-left:20px" text="PROMPT.RESET" width="80"/>
+                <a:toolbarButton click="exp5320_YGZRollOutAgreeFun" text="WFL_WORKFLOW_BTN_AGGREE" width="80"/>
+                <a:toolbarButton click="exp5320_YGZRollOutRejectFun" text="PROMPT.REJECT" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="exp_ygz_report_roll_out_recheck_query_ds" resultTarget="exp_ygz_report_roll_out_recheck_result_ds" style="width:100%;border:none">
+                <!-- <a:accordionPanel style="width:99%;margin-left:5px">
+                <a:accordions>
+                    <a:accordion prompt="报销单转出" selected="true" style="margin-left:5px;margin-top:10px;width:99%">
+                        <a:box column="4" labelWidth="100"> -->
+                <a:formToolBar labelWidth="100">
+                    <a:textField name="exp_report_number" bindTarget="exp_ygz_report_roll_out_recheck_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp5320_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:textField>
+                    <a:lov name="exp_report_type_desc" bindTarget="exp_ygz_report_roll_out_recheck_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp5320_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:lov>
+                    <a:lov name="usage_type_desc" bindTarget="exp_ygz_report_roll_out_recheck_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp5320_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:lov>
+                </a:formToolBar>
+                <a:formBody column="5" labelWidth="100">
+                    <!-- <a:lov name="company_name" bindTarget="exp_ygz_report_roll_out_recheck_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp5320_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:lov> -->
+                    <!-- <a:checkBox name="all_company_flag" bindTarget="exp_ygz_report_roll_out_recheck_query_ds"/> -->
+                    <a:comboBox name="invoice_type_desc" bindTarget="exp_ygz_report_roll_out_recheck_query_ds"/>
+                    <!-- <a:comboBox name="invoice_status_desc" bindTarget="exp_ygz_report_roll_out_recheck_query_ds"/> -->
+                    <!-- <a:numberField name="roll_out_per_from" allowDecimals="false" allowNegative="false" bindTarget="exp_ygz_report_roll_out_recheck_query_ds" max="100" min="0">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp5320_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:numberField>
+                    <a:numberField name="roll_out_per_to" allowDecimals="false" allowNegative="false" bindTarget="exp_ygz_report_roll_out_recheck_query_ds" max="100" min="0">
+                        <a:events>
+                            <a:event name="enterdown" allowDecimals="false" allowNegative="false" autoSelect="true" handler="exp5320_YGZRollOutQueryFun" max="100" min="0"/>
+                        </a:events>
+                    </a:numberField> -->
+                    <a:numberField name="roll_out_amount_from" bindTarget="exp_ygz_report_roll_out_recheck_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp5320_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:numberField>
+                    <a:numberField name="roll_out_amount_to" bindTarget="exp_ygz_report_roll_out_recheck_query_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="exp5320_YGZRollOutQueryFun"/>
+                        </a:events>
+                    </a:numberField>
+                    <a:datePicker name="report_date_from" bindTarget="exp_ygz_report_roll_out_recheck_query_ds" prompt="报销日期从"/>
+                    <a:datePicker name="report_date_to" bindTarget="exp_ygz_report_roll_out_recheck_query_ds" prompt="报销日期到"/>
+                    <a:textField name="invoice_code" bindTarget="exp_ygz_report_roll_out_recheck_query_ds" prompt="发票代码"/>
+                    <a:textField name="invoice_number" bindTarget="exp_ygz_report_roll_out_recheck_query_ds" prompt="发票号码"/>
+                    <a:datePicker name="invoice_date_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票日期从"/>
+                    <a:datePicker name="invoice_date_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票日期到"/>
+                    <a:numberField name="invoice_amount" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票金额"/>
+                    <a:numberField name="invoice_tax_amount" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票税额"/>
+                    <a:numberField name="report_amount_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="报销金额从"/>
+                    <a:numberField name="report_amount_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="报销金额到"/>
+                    <a:textField name="tax_rate" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="税率(%)"/>
+                    <a:numberField name="tax_amount_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="税额从"/>
+                    <a:numberField name="tax_amount_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="税额到"/>
+                    <a:numberField name="sale_amount_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="不含税金额从"/>
+                    <a:numberField name="sale_amount_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="不含税金额到"/>
+                    <a:numberField name="adjusted_full_deductions_from" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后全额抵扣税额从"/>
+                    <a:numberField name="adjusted_full_deductions_to" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后全额抵扣税额到"/>
+                    <a:numberField name="adjusted_partial_deductions_from" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后部分抵扣税额从"/>
+                    <a:numberField name="adjusted_partial_deductions_to" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后部分抵扣税额到"/>
+                    <a:numberField name="adjustable_tax_deductible_from" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后不抵扣税额从"/>
+                    <a:numberField name="adjustable_tax_deductible_to" bindTarget="exp_ygz_report_roll_out_query_ds" decimalPrecision="2" prompt="调整后不抵扣税额到"/>
+                    <a:comboBox name="input_tax_struc_detail_desc" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="进项分类"/>
+                    <a:comboBox name="invoice_status_desc" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="发票状态"/>
+                    <a:comboBox name="report_status_desc" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="状态"/>
+                    <a:comboBox name="audit_flag_desc" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="审核标志"/>
+                    <a:datePicker name="audit_date_from" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="审核日期从"/>
+                    <a:datePicker name="audit_date_to" bindTarget="exp_ygz_report_roll_out_query_ds" prompt="审核日期到"/>
+                </a:formBody>
+                <!-- </a:box>
+                    </a:accordion>
+                </a:accordions>
+            </a:accordionPanel> -->
+            </a:queryForm>
+            <a:grid id="expYGZResultGrid" bindTarget="exp_ygz_report_roll_out_recheck_result_ds" height="320" marginWidth="30" navBar="true" style="margin-left:5px;margin-top:5px">
+                <a:columns>
+                    <a:column name="exp_report_number" align="center" lock="true" prompt="单据编号" renderer="expRepNumRenderer" width="150"/>
+                    <a:column name="exp_report_type_desc" align="center" prompt="单据类型" width="150"/>
+                    <a:column name="line_number" align="center" prompt="行号" width="50"/>
+                    <!-- <a:column name="company_name" align="center" prompt="机构" width="120"/> -->
+                    <a:column name="report_date" align="center" prompt="报销日期" renderer="Aurora.formatDate" width="100"/>
+                    <a:column name="invoice_status_desc" align="center" prompt="发票状态" width="80"/>
+                    <!-- <a:column name="roll_out_per" align="right" prompt="转出比例" renderer="expYGZtaxRateRenderer" width="60"/> -->
+                    <a:column name="roll_out_amount" align="center" footerRenderer="summaryRenderer" prompt="转出金额" renderer="Aurora.formatMoney" width="160"/>
+                    <a:column name="invoice_type_desc" align="center" prompt="发票类型" width="120"/>
+                    <a:column name="invoice_code" align="center" prompt="发票代码" width="100"/>
+                    <a:column name="invoice_number" align="center" prompt="发票号码" width="100"/>
+                    <a:column name="invoice_date" align="center" prompt="发票日期" width="100"/>
+                    <a:column name="invoice_amount" align="center" footerRenderer="summaryRenderer" prompt="发票金额" renderer="Aurora.formatMoney" width="160"/>
+                    <a:column name="invoice_tax_amount" align="center" footerRenderer="summaryRenderer" prompt="发票税额" renderer="Aurora.formatMoney" width="160"/>
+                    <a:column name="report_amount" align="center" footerRenderer="summaryRenderer" prompt="报销金额" renderer="Aurora.formatMoney" width="160"/>
+                    <a:column name="tax_rate" align="center" prompt="税率(%)" width="80"/>
+                    <a:column name="tax_amount" align="center" footerRenderer="summaryRenderer" prompt="税额" renderer="Aurora.formatMoney" width="160"/>
+                    <a:column name="sale_amount" align="center" footerRenderer="summaryRenderer" prompt="不含税金额" renderer="Aurora.formatMoney" width="160"/>
+                    <a:column name="usage_type_desc" align="center" prompt="抵扣规则" width="120"/>
+                    <a:column name="adjusted_full_deductions" align="center" prompt="调整后全额抵扣税额" renderer="Aurora.formatMoney" width="120"/>
+                    <a:column name="adjusted_partial_deductions" align="center" prompt="调整后部分抵扣税额" renderer="Aurora.formatMoney" width="120"/>
+                    <a:column name="adjustable_tax_deductible" align="center" prompt="调整后不抵扣税额" renderer="Aurora.formatMoney" width="120"/>
+                    <a:column name="input_tax_struc_detail_desc" align="center" prompt="进项分类" width="120"/>
+                    <a:column name="invoice_status_desc" align="center" prompt="发票状态" width="80"/>
+                    <a:column name="report_status_desc" align="center" prompt="状态" width="80"/>
+                    <a:column name="audit_flag_desc" align="center" prompt="审核标志" width="80"/>
+                    <a:column name="audit_date" align="center" prompt="审核日期" sortable="true" width="80"/>
+                    <a:column name="deductions_remark" prompt="抵扣备注" width="160"/>
+                </a:columns>
+            </a:grid>
+            <a:grid autoFocus="false" bindTarget="exp_report_query_finance_result_ds2" height="180" marginWidth="30" navBar="true" style="margin-top:5px;margin-left:5px;">
+                <a:columns>
+                    <a:column name="description" prompt="EXP_REPORT_ACCOUNTS.DESCRIPTION" sortable="true" width="150"/>
+                    <a:column name="period_name" align="center" prompt="EXP_REPORT_ACCOUNTS.PERIOD_NAME" sortable="true" width="80"/>
+                    <a:column name="company_short_name" align="center" prompt="FND_COMPANIES.COMPANY_SHORT_NAME_ID" sortable="true" width="100"/>
+                    <a:column name="responsibility_center_name" align="center" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME_ID" sortable="true" width="100"/>
+                    <a:column name="account_code" align="center" prompt="GLD_ACCOUNTS.ACCOUNT_CODE" sortable="true" width="100"/>
+                    <a:column name="account_desc" align="center" prompt="GLD_ACCOUNTS.DESCRIPTION" sortable="true" width="100"/>
+                    <a:column name="entered_amount_dr" align="right" prompt="借方金额" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="entered_amount_cr" align="right" prompt="贷方金额" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="functional_amount_cr" align="right" prompt="CSH_PAY_REQ.FUNCTIONAL_AMOUNT_CR" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="account_segment1" align="center" prompt="${/model/segment_descs/record/@segment1_desc}" width="100"/>
+                    <a:column name="account_segment2" align="center" prompt="${/model/segment_descs/record/@segment2_desc}" width="100"/>
+                    <a:column name="account_segment3" align="center" prompt="${/model/segment_descs/record/@segment3_desc}" width="100"/>
+                    <a:column name="account_segment4" align="center" prompt="${/model/segment_descs/record/@segment4_desc}" width="100"/>
+                    <a:column name="account_segment5" align="center" prompt="${/model/segment_descs/record/@segment5_desc}" width="100"/>
+                    <a:column name="account_segment6" align="center" prompt="${/model/segment_descs/record/@segment6_desc}" width="100"/>
+                    <a:column name="account_segment7" align="center" prompt="${/model/segment_descs/record/@segment7_desc}" width="100"/>
+                    <a:column name="account_segment8" align="center" prompt="${/model/segment_descs/record/@segment8_desc}" width="100"/>
+                    <a:column name="account_segment9" align="center" prompt="${/model/segment_descs/record/@segment9_desc}" width="100"/>
+                    <a:column name="account_segment10" align="center" prompt="${/model/segment_descs/record/@segment10_desc}" width="100"/>
+                    <a:column name="account_segment11" align="center" prompt="${/model/segment_descs/record/@segment11_desc}" width="100"/>
+                    <a:column name="account_segment12" align="center" prompt="${/model/segment_descs/record/@segment12_desc}" width="100"/>
+                    <a:column name="account_segment13" align="center" prompt="${/model/segment_descs/record/@segment13_desc}" width="100"/>
+                    <a:column name="account_segment14" align="center" prompt="${/model/segment_descs/record/@segment14_desc}" width="100"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

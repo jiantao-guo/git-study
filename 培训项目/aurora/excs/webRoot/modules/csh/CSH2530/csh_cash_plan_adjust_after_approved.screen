@@ -1,0 +1,566 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2012-7-26 下午4:23:24  
+    $Revision: 1.0  
+    $Purpose: 资金计划明细页面
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query model="csh.CSH2530.csh_cash_plan_adjust_after_approved_detail" rootPath="after_approved_detail"/>
+        <a:model-query model="csh.CSH2530.csh2530_cash_plan_source_flag" rootPath="source_flag"/>
+        <a:model-query model="csh.CSH2530.csh_cash_plan_update_mgt_items_query" rootPath="mgt_items"/>
+        <a:model-query model="csh.CSH2530.csh_cash_plan_update_mgt_items_line_query" rootPath="mgt_items_line"/>
+        <a:model-query model="csh.CSH2530.csh2530_default_exchange_rate_type" rootPath="default_exchange_rate_type"/>
+        <a:model-query model="csh.CSH2530.csh2530_functional_currency_code" rootPath="functional_currency_code"/>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+        		
+        		var csh2530_max_line = '${/model/after_approved_detail/record/@max_line_number}';
+    		
+    			// 查询
+    			function csh2530_detail_save() {
+    			    if(!$('csh2530_detail_hds_ds').validate() && !$('csh2530_detail_lns_ds').validate()) {
+    			        return;
+    			    }
+    			    
+    			    csh2530_records = $('csh2530_detail_lns_ds').getAll();
+    			    var csh2530_para = {};
+    			    var csh2530_data = [];
+    			    
+    			    for(var i=0; i<csh2530_records.length; i++) {
+    			        csh2530_records[i].data['cash_plan_header_id'] = '${/parameter/@cash_plan_header_id}';
+    			        
+    			        if(csh2530_records[i].get('cash_plan_line_id')) {
+    			            csh2530_records[i].data['_status'] = 'update';
+    			        } else {
+    			            csh2530_records[i].data['_status'] = 'insert';
+    			        }
+    			        csh2530_data.push(csh2530_records[i].data);
+    			    }
+    			    
+    			    csh2530_para['lines'] = csh2530_data;
+    			    Aurora.request({
+    			        para: csh2530_para,
+    			        url: 'csh_cash_plan_lines_save.svc',
+    			        success: function(args) {
+    			            $('csh2530_detail_lns_ds').query();
+    			        },
+    			        failure: function(args) {
+    			            return;
+    			        },
+    			        error: function(args) {
+    			            return;
+    			        }
+    			    });
+    			}
+    			
+    			// 重置
+    			function csh2530_detail_back() {
+    			    history.go(-1);
+    			}
+    			
+    			// 管理精度中的3个lov控制  
+    			function csh2530_detail_onUpdateHandler(dataSet, record, name, value, oldvalue) {
+    			     
+    			    var csh2530_partner_category = record.getMeta().getField('partner_category');
+    			    var csh2530_partner_name = record.getMeta().getField('partner_name');
+    			    switch(name) {
+    			        case 'company_id': 
+    			        	if(value) { 
+    			        		csh2530_partner_name.setLovPara('company_id', value);
+    			        	    csh2530_partner_category.setReadOnly(false);
+    			        	} else {
+    			        	    // 设置为只读
+    			        	    csh2530_partner_category.setReadOnly(true);
+    			        	    csh2530_partner_name.setReadOnly(true);
+    			        	    // 清空数据
+    			        	    record.set('partner_category', null);
+    			        	    record.set('partner_name', null);
+    			        	}
+    			        	break;
+    			       	case 'partner_category_id':
+    			       		if(value) { 
+    			        		csh2530_partner_name.setLovPara('partner_category_id', value);
+    			        	    csh2530_partner_name.setReadOnly(false);
+    			       		} else {
+    			        	    csh2530_partner_name.setReadOnly(true);
+    			        	    record.set('partner_name', null);
+    			       		}
+    			       		break;
+    			    }
+    			}
+    			 
+    			// 打开明细
+    			function csh2530_detail_numberRenderer(value, record, name) {
+    			    switch(name) {
+    			        case 'cash_plan_number':
+    			        	return '<a href="javascript:csh2530_detail_viewDetail(' + record.get('cash_plan_header_id') + ')">' + value + '</a>';
+    			    }
+    			}
+    			
+    			// 调整
+    			function csh2530_detail_adjustRenderer(value, record, name) {
+    			    if(record.isNew) {
+    			        return '';
+    			    } else {
+    			    	return '<a href="javascript:csh2530_detail_viewDetail(' + record.get('cash_plan_line_id') + ')">${l:GLD_PERIOD_STATUS.ADJUST}</a>';    
+    			    }
+    			}
+    			
+    			// 跳转到调整页面
+    			function csh2530_detail_viewDetail(cash_plan_line_id) {
+    			    new Aurora.Window({
+    			        title: '${l:CSH_CASH_PLAN_QUERY.LINE_ADJUST}',
+    			        id: 'csh2530_line_details_window',
+    			        url: 'csh_cash_plan_line_details.screen?cash_plan_line_id=' + cash_plan_line_id,
+    			        width: 970,
+    			        height: 425
+    			    });
+    			}
+    			
+        		// 编辑器
+        		function  csh2530_editorFun(record, name) {
+        		    if(record.isNew) {
+        		        switch(name) {
+        		            case 'line_number': 
+        		            	return 'csh2530_numField';
+        		            case 'cash_plan_item_desc': 
+        		            	return 'csh2530_lov';
+        		            case 'date_from': 
+        		            	return 'csh2530_datePicker';
+        		            case 'date_to': 
+        		            	return 'csh2530_datePicker';
+        		            case 'currency_desc': 
+        		            	return 'csh2530_comboBox';
+        		            case 'exchange_rate_type_desc': 
+        		            	return 'csh2530_comboBox';
+        		            case 'exchange_rate_quotation_desc': 
+        		            	return 'csh2530_comboBox';
+        		            case 'exchange_rate': 
+        		            	return 'csh2530_rate';
+        		            case 'orientation_desc': 
+        		            	return 'csh2530_comboBox';
+        		            case 'increment_amount': 
+        		            	return 'csh2530_money'; 
+        		            case 'assign_amount': 
+        		            	return 'csh2530_money'; 
+        		            case 'line_notes': 
+        		            	return 'csh2530_txtField';
+        		        }
+        		    } else {
+        		        return '';
+        		    }
+        		}
+        	
+        		// 查看来源
+        		function csh2530_detail_view() {
+        		    alert('查看来源');
+        		}
+        		
+        		// 添加行时给定默认值
+        		function csh2530_onLnsAddHandler(dataSet, record, index) {
+        		    
+        		    if(!$('csh2530_detail_hds_ds').validate()) {return false;}
+        		    
+        		    csh2530_max_line = parseFloat(csh2530_max_line) + 10;
+        		    record.set('line_number', csh2530_max_line);
+        		    
+        		    csh2530_formRecord = $('csh2530_detail_hds_ds').getCurrentRecord();
+        		    
+        		    record.set('company_id', csh2530_formRecord.get('company_id'));
+        		    record.set('operation_unit_id', csh2530_formRecord.get('operation_unit_id'));
+        		    record.set('responsibility_center_id', csh2530_formRecord.get('responsibility_center_id'));
+        		    record.set('unit_id', csh2530_formRecord.get('unit_id'));
+        		    record.set('partner_category_id', csh2530_formRecord.get('partner_category_id'));
+        		    record.set('partner_id', csh2530_formRecord.get('partner_id'));
+        		    record.set('project_id', csh2530_formRecord.get('project_id'));
+        		}
+        		
+        		// 验证时间
+        		function csh2530_validator(record, name, value) {
+        		    if(name == 'date_from' || name == 'date_to'){
+				        var date_from = record.get('date_from');
+				        var date_to = record.get('date_to');
+				        if(date_to){
+				            if(date_from >= date_to){
+				                //校验不通过返回字符串
+				                return '${l:EXP_REPORT_MAINTAIN.DATE_VALIDATE}';
+				            }
+				        }
+				        //校验通过返回true
+				        return true;
+				    } else if (name == 'increment_amount') {
+				        if(value <= 0) {
+				            return '${l:INCREMENT_AMOUNT_ERROR}';
+				        }
+				    } else if (name == 'exchange_rate') {
+				        if(value <= 0) {
+				            return '${l:EXCHANGE_RATE_ERROR}';
+				        }
+				    }
+        		}
+        		
+        		// 行修改事件
+        		function csh2530_onLnsUpdateHandler(dataSet, record, name, value, oldvalue) {
+                    
+                    if (name == 'date_from' || name == 'date_to') {
+                        record.validate((name == 'date_from') ? 'date_to' : 'date_from');
+                    } else if (name == 'increment_amount') {
+                        record.validate('increment_amount');
+                    } else if (name == 'currency') {
+                        if (value == 'CNY') {
+                            record.set('exchange_rate_type', '');
+                            record.set('exchange_rate_quotation', '');
+                            record.set('exchange_rate', 1);
+                        } else {
+                            if ('${/model/default_exchange_rate_type/@value_code}') {
+                                record.set('exchange_rate_type', '${/model/default_exchange_rate_type/@value_code}');
+                                // 获取汇率标价方法
+                                csh2530_getRateQuotation(record);
+                            }
+                        }
+                    } else if (name == 'exchange_rate_type') {
+                        // 获取汇率标价方法
+                        csh2530_getRateQuotation(record);
+                    } else if (name == 'exchange_rate') {
+                        record.validate('exchange_rate');
+                    }
+                }
+        		
+    			// 获取汇率标价方法
+    			function csh2530_getRateQuotation(record) {
+    			    
+    			    var csh2530_exchange_rate_type = record.get('exchange_rate_type');
+    			    // 如果是手工维护就让他自己填写汇率信息
+    			    if(csh2530_exchange_rate_type == 'MANUAL' ) {
+		       		    record.set('exchange_rate_quotation', '');
+		       		    record.set('exchange_rate', '');
+					} else {
+						var csh2530_funCurrencyCode =  '${/model/functional_currency_code/record/@functional_currency_code}'; 
+						var csh2530_currencyCode = record.get('currency');
+						record.set('from_currency', csh2530_funCurrencyCode);
+						record.set('to_currency', csh2530_currencyCode);
+						// 获取标价方法和汇率
+						csh2530_getExchageRate(record);
+					}
+    			}
+    			
+    			// 获取标价方法和汇率
+    			function csh2530_getExchageRate(record) {
+    			    Aurora.request({
+    			        para: record.data,
+    			        url: '${/request/@context_path}/autocrud/csh.get_exchange_rate/query',
+    			        success: function(args) {
+    			            // 将查询结果设置到页面中
+    			            csh2530_setExchageRate(record, args);
+    			        },
+    			        failure: function(args) {
+    			            return;
+    			        },
+    			        error: function(args) {
+    			            return;
+    			        }
+    			    });
+    			}
+    			
+    			// 将查询结果设置到页面中
+	            function csh2530_setExchageRate(record, args) {
+	                var csh2530_exchange_rate_quotation = args.result.exchange_rate_quotation;
+	                var csh2530_exchange_rate = args.result.exchange_rate;
+	                
+	                if(csh2530_exchange_rate) {
+						record.set('exchange_rate_quotation', csh2530_exchange_rate_quotation);
+						record.set('exchange_rate', csh2530_exchange_rate);
+					}else{
+						Aurora.showMessage('${l:PROMPT}', '${l:CSH_PAYMENT_REQUISITION_PAYMENT_PAY.CHECK3}', function() {
+						    record.set('exchange_rate_quotation','');
+							record.set('exchange_rate','');
+							record.set('exchange_rate_desc','');
+						});
+				    }
+	            }
+	            
+        		// 列修饰
+        		function csh2530_amountRenderer(value, record, name) {
+        		    // 通过汇率标价方法和汇率获取本位币金额
+        		    // 如果是直接标价，本位币金额=金额*汇率
+        		    // 如果是间接标价，本位币金额=金额/汇率
+        		    var csh2530_rate_quotation = record.get('exchange_rate_quotation');
+        		    var csh2530_exchange_rate = record.get('exchange_rate');
+        		    
+        		    if(csh2530_exchange_rate) {
+        		        switch(name) {
+        		            case 'increment_functional_amount':
+        		            	if(record.get('increment_amount')) {
+		        		            if(csh2530_rate_quotation == 'INDIRECT QUOTATION') {
+		    		        	        return parseFloat(record.get('increment_amount') / csh2530_exchange_rate).toFixed(2);
+		    		        	    } else {
+		    		        	        return parseFloat(record.get('increment_amount') * csh2530_exchange_rate).toFixed(2);
+		    		        	    }
+		    		        	}
+		    		        	return '';
+		    		       	case 'assign_functional_amount':
+		    		       		if(record.get('assign_amount')) {
+		        		            if(csh2530_rate_quotation == 'INDIRECT QUOTATION') {
+		    		        	        return parseFloat(record.get('assign_amount') / csh2530_exchange_rate).toFixed(2);
+		    		        	    } else {
+		    		        	        return parseFloat(record.get('assign_amount') * csh2530_exchange_rate).toFixed(2);
+		    		        	    }
+		    		        	}
+		    		        	return '';
+        		        }
+        		        
+        		    } else {
+        		        return '';
+        		    }
+        		}
+        		
+        		// 汇总
+        		function csh2530_footerRenderer(datas, name) {
+        		    var csh2530_sum = 0;
+        		    var csh2530_n = 0;
+        		    
+	                for(var i=0; i<datas.length; i++){
+
+	                    csh2530_n = parseFloat(datas[i].get(name));
+	                    if(!isNaN(csh2530_n)){    
+	                        // 如果是支出就要转为负 
+	                        if(datas[i].get('orientation') == 'OUT') {
+	                            csh2530_n = -csh2530_n;
+	                        }                   
+	                        csh2530_sum += csh2530_n;
+	                    }
+	                }
+	                var csh2530_total = (typeof(csh2530_sum)=='undefined' ? '' : parseFloat(csh2530_sum).toFixed(2));                
+	               
+	                return '<font size=1>' + Aurora.formatMoney(csh2530_total) + '</font>';
+        		}
+    	]]></script>
+        <a:dataSets>
+            <!-- 币种 ds -->
+            <a:dataSet id="csh2530_cash_plan_currency_ds" loadData="true" model="csh.CSH2530.csh2530_cash_plan_currency"/>
+            <!-- 汇率类型 ds -->
+            <a:dataSet id="csh2530_cash_plan_exchange_rate_type_ds" loadData="true" model="csh.CSH2530.csh2530_cash_plan_exchange_rate_type"/>
+            <!-- 汇率标价方法 ds -->
+            <a:dataSet id="csh2530_cash_plan_exchange_quotation_ds" loadData="true" model="csh.CSH2530.csh2530_cash_plan_exchange_quotation"/>
+            <!-- 流向 ds -->
+            <a:dataSet id="csh2530_cash_plan_line_orientation_ds" loadData="true" model="csh.CSH2530.csh2530_cash_plan_line_orientation"/>
+            <!-- form ds -->
+            <a:dataSet id="csh2530_detail_hds_ds">
+                <a:datas dataSource="/model/after_approved_detail"/>
+                <a:fields>
+                    <a:field name="cash_plan_number" prompt="CSH_CASH_PLAN_INTERFACE.CASH_PLAN_NUMBER" readOnly="true"/>
+                    <a:field name="cash_plan_description" prompt="CSH_CASH_PLAN_HEADERS.CASH_DESCRIPTION" readOnly="true"/>
+                    <a:field name="cash_plan_structure_desc" prompt="CASH_PLAN_STRUCTURE" readOnly="true"/>
+                    <a:field name="cash_plan_type_desc" prompt="CSH_CASH_PLAN_TYPES.CASH_PLAN_TYPE_CODE" readOnly="true"/>
+                    <a:field name="year" prompt="BGT_JOURNAL_HEADERS.PERIOD_YEAR" readOnly="true"/>
+                    <a:field name="period_name" prompt="BGT_BALANCE_RUNNING_PARAMETERS.PERIOD_NAME" readOnly="true"/>
+                    <a:field name="notes" prompt="EXP_EMPLOYEE.NOTES" readOnly="true"/>
+                    <a:field name="status" prompt="STATUS" readOnly="true"/>
+                    <!-- 公司 -->
+                    <a:field name="company_code"/>
+                    <a:field name="company_id"/>
+                    <a:field name="company_short_name" lovGridHeight="250" lovHeight="400" lovService="csh.CSH2530.csh_cash_plan_maintain_company_lov" lovWidth="600" prompt="CSH_PAYMENT_REQUISITION_HDS.COMPANY_ID" title="CSH_PAYMENT_REQUISITION_HDS.COMPANY_ID">
+                        <a:mapping>
+                            <a:map from="company_short_name" to="company_short_name"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <!-- 伙伴类型 -->
+                    <a:field name="partner_category_code"/>
+                    <a:field name="partner_category_id"/>
+                    <a:field name="partner_category" lovGridHeight="250" lovHeight="400" lovService="csh.CSH2530.csh_cash_plan_partner_category_lov" lovWidth="600" prompt="PARTNER_CATEGORY" readOnly="true" title="PARTNER_CATEGORY">
+                        <a:mapping>
+                            <a:map from="name" to="partner_category"/>
+                            <a:map from="value" to="partner_category_code"/>
+                            <a:map from="id" to="partner_category_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <!-- 伙伴 -->
+                    <a:field name="partner_code"/>
+                    <a:field name="partner_id"/>
+                    <a:field name="partner_name" lovGridHeight="250" lovHeight="400" lovService="csh.CSH2530.csh_cash_plan_partner_lov" lovWidth="600" prompt="PARTNER_CODE" readOnly="true" title="PARTNER_CODE">
+                        <a:mapping>
+                            <a:map from="partner_desc" to="partner_name"/>
+                            <a:map from="partner_code" to="partner_code"/>
+                            <a:map from="partner_id" to="partner_id"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="csh2530_detail_onUpdateHandler"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 动态构建lov部分的ds -->
+            <a:dataSet id="csh2530_head_holder_ds" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="csh2530_head_holder"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- grid ds -->
+            <a:dataSet id="csh2530_detail_lns_ds" autoQuery="true" model="csh.CSH2530.csh_cash_plan_adjust_after_approved_line_query" queryUrl="${/request/@context_path}/autocrud/csh.CSH2530.csh_cash_plan_adjust_after_approved_line_query/query?cash_plan_header_id=${/parameter/@cash_plan_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="currency_desc" displayField="currency_name" options="csh2530_cash_plan_currency_ds" required="true" returnField="currency" valueField="currency_code"/>
+                    <a:field name="exchange_rate_type_desc" displayField="type_name" options="csh2530_cash_plan_exchange_rate_type_ds" returnField="exchange_rate_type" valueField="type_code"/>
+                    <a:field name="exchange_rate_quotation_desc" displayField="name" options="csh2530_cash_plan_exchange_quotation_ds" returnField="exchange_rate_quotation" valueField="value"/>
+                    <a:field name="orientation_desc" displayField="code_value_name" options="csh2530_cash_plan_line_orientation_ds" required="true" returnField="orientation" valueField="code_value"/>
+                    <a:field name="cash_plan_item_id"/>
+                    <a:field name="cash_plan_item_desc" lovGridHeight="250" lovHeight="400" lovService="csh.CSH2530.csh_cash_plan_create_items_lov?cash_plan_structure_id=${/model/after_approved_detail/record/@cash_plan_structure_id}" lovWidth="600" required="true" title="CSH_CASH_PLAN_INTERFACE.CASH_PLAN_ITEM_ID">
+                        <a:mapping>
+                            <a:map from="cash_plan_item_id" to="cash_plan_item_id"/>
+                            <a:map from="description" to="cash_plan_item_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="date_from" required="true" validator="csh2530_validator"/>
+                    <a:field name="date_to" required="true" validator="csh2530_validator"/>
+                    <a:field name="increment_amount" required="true" validator="csh2530_validator"/>
+                    <a:field name="line_number" required="true"/>
+                    <a:field name="cash_plan_item_desc" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="csh2530_onLnsAddHandler"/>
+                    <a:event name="update" handler="csh2530_onLnsUpdateHandler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <!-- 资金计划头信息 -->
+            <a:form title="CSH2530_ADJUST_AFTER_APPROVE_QUERY" width="810">
+                <a:hBox labelWidth="100">
+                    <a:textField name="cash_plan_number" bindTarget="csh2530_detail_hds_ds"/>
+                    <a:textField name="cash_plan_description" bindTarget="csh2530_detail_hds_ds" width="408"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="cash_plan_structure_desc" bindTarget="csh2530_detail_hds_ds"/>
+                    <a:textField name="cash_plan_type_desc" bindTarget="csh2530_detail_hds_ds"/>
+                    <a:textField name="status" bindTarget="csh2530_detail_hds_ds"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="year" bindTarget="csh2530_detail_hds_ds"/>
+                    <a:textField name="period_name" bindTarget="csh2530_detail_hds_ds"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="notes" bindTarget="csh2530_detail_hds_ds" width="666"/>
+                </a:hBox>
+                <!-- 管理精细度 -->
+                <a:fieldSet id="test_fs" column="3" style="margin-left: 20px; margin-right: 30px" title="CSH_CASH_PLAN_READONLY.MANAGE_MIDU">
+                    <!-- <a:placeHolder id="head_holder"/> -->
+                    <a:lov name="company_short_name" bindTarget="csh2530_detail_hds_ds"/>
+                    <a:lov name="partner_category" bindTarget="csh2530_detail_hds_ds"/>
+                    <a:lov name="partner_name" bindTarget="csh2530_detail_hds_ds"/>
+                </a:fieldSet>
+                <!-- 维度设置 -->
+                <a:fieldSet style="margin-left: 20px; margin-top: 3px; margin-bottom: 5px; margin-right: 30px" title="CSH_CASH_PLAN_READONLY.WEIDU_SET">
+                    <!-- <a:textField prompt="CSH_CASH_PLAN_READONLY.WEIDU_SET"/> --><![CDATA[
+                    
+                ]]></a:fieldSet>
+            </a:form>
+            <a:hBox>
+                <a:button click="csh2530_detail_save" text="HAP_SAVE"/>
+                <!-- <a:button id="csh2530_view" click="csh2530_detail_view" text="VIEW_SOURCE"/> -->
+                <a:button click="csh2530_detail_back" text="HAP_BACK"/>
+            </a:hBox>
+            <a:grid bindTarget="csh2530_detail_lns_ds" height="260" navBar="true" width="1100">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="clear"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column align="center" prompt="HAP_OPERATION" renderer="csh2530_detail_adjustRenderer" width="60"/>
+                    <a:column name="line_number" align="center" editorFunction="csh2530_editorFun" width="60"/>
+                    <a:column name="cash_plan_item_desc" align="center" editorFunction="csh2530_editorFun"/>
+                    <a:column name="date_from" align="center" editorFunction="csh2530_editorFun" renderer="Aurora.formatDate"/>
+                    <a:column name="date_to" align="center" editorFunction="csh2530_editorFun" renderer="Aurora.formatDate"/>
+                    <a:column name="currency_desc" align="center" editorFunction="csh2530_editorFun"/>
+                    <a:column name="exchange_rate_type_desc" align="center" editorFunction="csh2530_editorFun"/>
+                    <a:column name="exchange_rate_quotation_desc" align="center" editorFunction="csh2530_editorFun"/>
+                    <a:column name="exchange_rate" align="center" editorFunction="csh2530_editorFun"/>
+                    <a:column name="orientation_desc" align="center" editorFunction="csh2530_editorFun"/>
+                    <a:column name="increment_amount" align="center" editorFunction="csh2530_editorFun" footerRenderer="csh2530_footerRenderer" renderer="Aurora.formatMoney"/>
+                    <a:column name="increment_functional_amount" align="center" footerRenderer="csh2530_footerRenderer" renderer="csh2530_amountRenderer"/>
+                    <a:column name="assign_amount" align="center" editorFunction="csh2530_editorFun" footerRenderer="csh2530_footerRenderer" renderer="Aurora.formatMoney"/>
+                    <a:column name="assign_functional_amount" align="center" footerRenderer="csh2530_footerRenderer" renderer="csh2530_amountRenderer"/>
+                    <a:column name="line_notes" align="center" editorFunction="csh2530_editorFun" width="200"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="csh2530_txtField"/>
+                    <a:lov id="csh2530_lov"/>
+                    <a:datePicker id="csh2530_datePicker"/>
+                    <a:comboBox id="csh2530_comboBox"/>
+                    <a:numberField id="csh2530_rate" allowDecimals="true" allowNegative="false"/>
+                    <a:numberField id="csh2530_numField" allowDecimals="false" allowNegative="false"/>
+                    <a:numberField id="csh2530_money" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="2"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+            // 初始化
+        	function csh2530_init() {
+        	    var csh2530_source_flag = '${/model/source_flag/record/@source_flag}';
+        	    if(csh2530_source_flag == 'N') {
+        	        Ext.get('csh2530_view').setDisplayed(false);
+        	    } else {
+        	        
+        	    }
+        	}
+        	// csh2530_init();
+        ]]></script>
+    </a:view>
+    <!-- 动态构造DS -->
+    <!-- <a:view-config>
+        <c:create-config targetId="csh2530_head_holder">
+            <p:loop source="/model/mgt_items">
+                <c:process-config>
+                    <a:field name="${@cash_plan_mgt_item_code_lov}"/>
+                    <a:field name="${@cash_plan_mgt_item_code_id}"/>
+                    <a:field name="${@cash_plan_mgt_item_code}" required="${@required_flag}" title="${@cash_plan_mgt_item_desc}">
+                        <a:mapping>
+                            <a:map from="cash_plan_mgt_item_code_id" to="${@cash_plan_mgt_item_code_id}"/>
+                            <a:map from="cash_plan_mgt_item_code" to="${@cash_plan_mgt_item_code}"/>
+                            <a:map from="cash_plan_mgt_item_code_lov" to="${@cash_plan_mgt_item_code_lov}"/>
+                        </a:mapping>
+                    </a:field>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="head_holder">
+            <p:loop source="/model/mgt_items">
+                <p:switch test="@cash_plan_mgt_item_code_id">
+                    <p:case value="COMPANY_ID">
+                        <c:process-config>
+                            <a:lov name="${@cash_plan_mgt_item_code}" bindTarget="csh2530_head_holder_ds" lovGridHeight="320" lovHeight="450" lovService="csh.CSH2530.csh_cash_plan_maintain_company_lov" lovWidth="500" prompt="${@cash_plan_mgt_item_desc}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="OPERATION_UNIT_ID">
+                        <c:process-config>
+                            <a:lov name="${@cash_plan_mgt_item_code}" bindTarget="csh2530_head_holder_ds" lovGridHeight="320" lovHeight="450" lovService="csh.CSH2530.csh_cash_plan_operation_unit_lov" lovWidth="500" prompt="${@cash_plan_mgt_item_desc}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="RESPONSIBILITY_CENTER_ID">
+                        <c:process-config>
+                            <a:lov name="${@cash_plan_mgt_item_code}" bindTarget="csh2530_head_holder_ds" lovGridHeight="320" lovHeight="450" lovService="csh.CSH2530.csh_cash_plan_responsibility_center_lov" lovWidth="500" prompt="${@cash_plan_mgt_item_desc}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="UNIT_ID">
+                        <c:process-config>
+                            <a:lov name="${@cash_plan_mgt_item_code}" bindTarget="csh2530_head_holder_ds" lovGridHeight="320" lovHeight="450" lovService="csh.CSH2530.csh_cash_plan_unit_lov" lovWidth="500" prompt="${@cash_plan_mgt_item_desc}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="PARTNER_CATEGORY_ID">
+                        <c:process-config>
+                            <a:lov name="${@cash_plan_mgt_item_code}" bindTarget="csh2530_head_holder_ds" lovGridHeight="320" lovHeight="450" lovService="csh.CSH2530.csh_cash_plan_partner_category_lov" lovWidth="500" prompt="${@cash_plan_mgt_item_desc}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="PARTNER_ID">
+                        <c:process-config>
+                            <a:lov name="${@cash_plan_mgt_item_code}" bindTarget="csh2530_head_holder_ds" lovGridHeight="320" lovHeight="450" lovService="csh.CSH2530.csh_cash_plan_partner_lov" lovWidth="500" prompt="${@cash_plan_mgt_item_desc}"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+    </a:view-config> -->
+</a:screen>

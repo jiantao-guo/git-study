@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Zealot  
+    $Date: 2015-4-28 下午2:29:34  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" defaultWhereClause=" enabled_flag = &apos;Y&apos; " fetchAll="false" model="gld.gld_currency_vl" rootPath="currency_list"/>
+        <a:model-query autoCount="false" defaultWhereClause=" exists(select 1  from exp_req_ref_user_groups egs where egs.expense_requisition_type_id =t1.expense_requisition_type_id and exists (select 1  from exp_user_group_lines el where el.expense_user_group_id = egs.expense_user_group_id  and el.employee_id = (select employee_id from sys_user where user_id = ${/session/@user_id}))) and t1.enabled_flag = &apos;Y&apos; and t1.company_id = ${/session/@company_id} order by t1.expense_requisition_type_code" fetchAll="true" model="expm.exp_expense_req_types_vl" rootPath="type_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_employeelist" rootPath="employee_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="ptl_announcement_update_link" url="${/request/@context_path}/modules/ptl/PTL2050/ptl_announcement_update_for_admin.screen"/>
+        <a:link id="ptl_org_res_privilege_assign_link1" url="${/request/@context_path}/modules/ptl/ptl_org_res_prv_new.screen"/>
+        <a:link id="ptl_org_res_privilege_assign_link2" url="${/request/@context_path}/modules/ptl/ptl_org_res_prv_new_view.screen"/>
+        <a:link id="ptl_org_res_prv_new_link" url="${/request/@context_path}/ptl_portal/system001_news.screen"/>
+        <a:link id="ptl_announcement_delete_batch_link" model="ptl.PTL2010.ptl_announcement_delete" modelaction="batch_update"/>
+        <script><![CDATA[
+            function queryFunction() {
+                $('ptl_announcement_update_result_ds').query();
+            }
+            
+            function resetFunction() {
+                $('ptl_announcement_update_query_ds').reset();
+            }
+            
+            function docRenderer(value, record, name) {
+                return '<a href="javascript:docUpdateWindow(' + record.get('announcement_id') + ',' + record.get('doc_id') + ');">' + value + '</a>';
+            }
+            
+            function docUpdateWindow(announcement_id, doc_id) {
+                new Aurora.Window({
+                    id: 'ptl_announcement_update_window',
+                    url: $('ptl_announcement_update_link').getUrl() + '?announcement_id=' + announcement_id + '&doc_id=' + doc_id,
+                    fullScreen: true
+                });
+            }
+            
+            function privilegeRenderer(value, record, name) {
+                return '<a href="javascript:privilegeWindow(' + record.get('announcement_id') + ',\'' + record.get('status') + '\');">${l:PTL_ANNOUNCEMENTS.PRIVILEGE_LINK}</a>';
+            }
+            
+            function privilegeWindow(announcement_id, status) {
+                var url;
+                if (status != 'PUBLISH' && status != 'SUBMITTED') {
+                    url = $('ptl_org_res_privilege_assign_link1').getUrl();
+                } else {
+                    url = $('ptl_org_res_privilege_assign_link2').getUrl();
+                }
+            
+                new Aurora.Window({
+                    url: url + '?resource_category=ANNOUNCEMENT&resource_id=' + announcement_id,
+                    fullScreen: true
+                });
+            }
+            
+            function previewFunction() {
+                var records = $('ptl_announcement_update_result_ds').getSelected();
+                if (records.length != 1) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT_ONE}', null, 250, 100);
+                    return;
+                }
+                window.open($('ptl_announcement_preview_link').getUrl() + '?news_id=' + records[0].get('announcement_id'));
+            }
+            
+            function batchDeleteFun() {
+                var param = $('ptl_announcement_update_result_ds').getJsonData(true);
+                for (var i = 0;i < param.length;i++) {
+                    if (param[i]['status'] == 'SUBMITTED' || param[i]['status'] == 'PUBLISH') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PTL_DELETE_ERROR}');
+                        return;
+                    }
+                }
+                var okCan = Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_DELETE}', function() {
+                    Aurora.request({
+                        url: $('ptl_announcement_delete_batch_link').getUrl(),
+                        para: param,
+                        success: function() {
+                            $('ptl_announcement_update_result_ds').query();
+                        },
+                        scope: this
+                    });
+                    okCan.close();
+                }, null, 250, 100);
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="ptl_doc_category_ds" lookupcode="PTL_DOC_CATEGORY"/>
+            <a:dataSet id="ptl_announcement_importance_level_ds" lookupcode="PTL_ANNOUNCEMENT_IMPORTANCE_LEVEL"/>
+            <a:dataSet id="ptl_announcement_status_ds" lookupcode="PTL_ANNOUNCEMENT_STATUS"/>
+            <a:dataSet id="ptl_announcement_update_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="announcement_type_desc" autoComplete="true" autoCompleteField="name_code" lovHeight="570" lovUrl="${/request/@context_path}/modules/ptl/PTL2010/ptl_announcement_types_tree_select.screen" lovWidth="820" prompt="PTL_ANNOUNCEMENTS.ANNOUNCEMENT_TYPE_ID" title="PTL_ANNOUNCEMENTS.ANNOUNCEMENT_TYPE_ID">
+                        <a:mapping>
+                            <a:map from="type_name" to="announcement_type_desc"/>
+                            <a:map from="type_code" to="announcement_type"/>
+                            <a:map from="announcement_type_id" to="announcement_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="announcement_type"/>
+                    <a:field name="announcement_type_id"/>
+                    <!-- <a:field name="sticky_flag" checkedValue="Y" defaultValue="N" prompt="PTL_ANNOUNCEMENTS.STICKY_FLAG" uncheckedValue="N"/> -->
+                    <a:field name="doc_category_desc" displayfield="code_value_name" options="ptl_doc_category_ds" prompt="PTL_DOCUMENTS.DOC_CATEGORY" returnfield="doc_category" valuefield="code_value"/>
+                    <a:field name="doc_category"/>
+                    <a:field name="doc_title" prompt="PTL_DOCUMENTS.DOC_TITLE"/>
+                    <a:field name="doc_subtitle" prompt="PTL_DOCUMENTS.DOC_SUBTITLE"/>
+                    <a:field name="doc_summarize" prompt="PTL_DOCUMENTS.DOC_SUMMARIZE"/>
+                    <a:field name="portal_title" autoComplete="true" autoCompleteField="name_code" lovGridHeight="320" lovHeight="450" lovService="ptl.PTL1030.ptl_portals" lovWidth="500" prompt="PTL_PORTALS.PORTAL_TITLE" title="PTL_PORTALS.PORTAL_TITLE">
+                        <a:mapping>
+                            <a:map from="portal_title" to="portal_title"/>
+                            <a:map from="portal_id" to="portal_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="portal_id"/>
+                    <a:field name="status"/>
+                    <a:field name="status_desc" displayfield="code_value_name" options="ptl_announcement_status_ds" prompt="PTL_ANNOUNCEMENTS.STATUS" returnfield="status" valuefield="code_value"/>
+                    <a:field name="announce_date_from" prompt="PTL_ANNOUNCEMENTS.ANNOUNCE_DATE_FROM"/>
+                    <a:field name="announce_date_to" prompt="PTL_ANNOUNCEMENTS.ANNOUNCE_DATE_TO"/>
+                    <a:field name="announce_employee_name" autoComplete="true" autoCompleteField="name_code" lovGridHeight="320" lovHeight="450" lovService="ptl.PTL2010.ptl_announcement_employee_select_all" lovWidth="500" prompt="PTL_ANNOUNCEMENTS.ANNOUNCE_EMPLOYEE_ID" title="PTL_ANNOUNCEMENTS.ANNOUNCE_EMPLOYEE_ID">
+                        <a:mapping>
+                            <a:map from="employeename" to="announce_employee_name"/>
+                            <a:map from="employee_id" to="announce_employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="announce_employee_id"/>
+                    <a:field name="employee_name" autoComplete="true" autoCompleteField="name_code" lovGridHeight="320" lovHeight="450" lovService="ptl.PTL2010.ptl_announcement_employee_select_all" lovWidth="500" prompt="PTL_ANNOUNCEMENTS.EMPLOYEE_ID" title="PTL_ANNOUNCEMENTS.EMPLOYEE_ID">
+                        <a:mapping>
+                            <a:map from="employeename" to="employee_name"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="employee_id"/>
+                    <a:field name="author_name" prompt="PTL_ANNOUNCEMENTS.AUTHOR_NAME"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="ptl_announcement_update_result_ds" autoQuery="true" model="ptl.PTL2050.ptl_announcement_update_query_all" pageSize="15" queryDataSet="ptl_announcement_update_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="announcement_id"/>
+                    <a:field name="doc_id"/>
+                    <a:field name="announcement_type_id"/>
+                    <a:field name="announcement_type_desc" prompt="PTL_ANNOUNCEMENTS.ANNOUNCEMENT_TYPE_ID"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="employee_name" prompt="PTL_ANNOUNCEMENTS.EMPLOYEE_ID"/>
+                    <a:field name="announce_employee_id"/>
+                    <a:field name="announce_employee_name" prompt="PTL_ANNOUNCEMENTS.ANNOUNCE_EMPLOYEE_ID"/>
+                    <a:field name="announce_date" prompt="PTL_ANNOUNCEMENTS.ANNOUNCE_DATE"/>
+                    <a:field name="importance_level_desc" displayfield="code_value_name" options="ptl_announcement_importance_level_ds" prompt="PTL_ANNOUNCEMENTS.IMPORTANCE_LEVEL" returnfield="importance_level" valuefield="code_value"/>
+                    <a:field name="importance_level" prompt="PTL_ANNOUNCEMENTS.IMPORTANCE_LEVEL"/>
+                    <a:field name="version" prompt="PTL_ANNOUNCEMENTS.VERSION"/>
+                    <a:field name="status"/>
+                    <a:field name="status_desc" prompt="PTL_ANNOUNCEMENTS.STATUS"/>
+                    <a:field name="read_count" prompt="PTL_ANNOUNCEMENTS.READ_COUNT"/>
+                    <a:field name="mark_count" prompt="PTL_ANNOUNCEMENTS.MARK_COUNT"/>
+                    <a:field name="up_count" prompt="PTL_ANNOUNCEMENTS.UP_COUNT"/>
+                    <a:field name="down_count" prompt="PTL_ANNOUNCEMENTS.DOWN_COUNT"/>
+                    <a:field name="reply_count" prompt="PTL_ANNOUNCEMENTS.REPLY_COUNT"/>
+                    <!-- <a:field name="sticky_flag" checkedValue="Y" defaultValue="N" prompt="PTL_ANNOUNCEMENTS.STICKY_FLAG" readOnly="true" uncheckedValue="N"/> -->
+                    <a:field name="doc_category"/>
+                    <a:field name="doc_category_desc" prompt="PTL_DOCUMENTS.DOC_CATEGORY"/>
+                    <a:field name="doc_title" prompt="PTL_DOCUMENTS.DOC_TITLE"/>
+                    <a:field name="doc_subtitle" prompt="PTL_DOCUMENTS.DOC_SUBTITLE"/>
+                    <a:field name="doc_summarize" prompt="PTL_DOCUMENTS.DOC_SUMMARIZE"/>
+                    <a:field name="author_name" prompt="PTL_DOCUMENTS.AUTHOR_NAME"/>
+                    <a:field name="ref_url" prompt="PTL_DOCUMENTS.REF_URL"/>
+                    <a:field name="portal_title" prompt="PTL_PORTALS.PORTAL_TITLE"/>
+                    <a:field name="element_title" prompt="PTL_ELEMENTS.ELEMENT_TITLE"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="ptl_announcement_update_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="resetFunction" text="PROMPT.RESET" width="80"/>
+                <a:toolbarButton click="previewFunction" text="PTL.PREVIEW" width="80"/>
+                <a:toolbarButton click="batchDeleteFun" text="PROMPT.DELETE" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="ptl_announcement_update_query_ds" resultTarget="ptl_announcement_update_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:lov name="portal_title" bindTarget="ptl_announcement_update_query_ds"/>
+                    <a:lov name="announcement_type_desc" bindTarget="ptl_announcement_update_query_ds"/>
+                    <a:textField name="doc_title" bindTarget="ptl_announcement_update_query_ds"/>
+                    <a:textField name="doc_subtitle" bindTarget="ptl_announcement_update_query_ds"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:comboBox name="doc_category_desc" bindTarget="ptl_announcement_update_query_ds"/>
+                    <a:lov name="employee_name" bindTarget="ptl_announcement_update_query_ds"/>
+                    <a:lov name="announce_employee_name" bindTarget="ptl_announcement_update_query_ds"/>
+                    <a:textField name="author_name" bindTarget="ptl_announcement_update_query_ds"/>
+                    <a:comboBox name="status_desc" bindTarget="ptl_announcement_update_query_ds"/>
+                    <a:datePicker name="announce_date_from" bindTarget="ptl_announcement_update_query_ds"/>
+                    <a:datePicker name="announce_date_to" bindTarget="ptl_announcement_update_query_ds"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="ptl_announcement_update_grid" bindTarget="ptl_announcement_update_result_ds" marginHeight="123" navBar="true">
+                <a:columns>
+                    <a:column name="portal_title" align="left" sortable="true" width="120"/>
+                    <a:column name="element_title" align="left" sortable="true" width="120"/>
+                    <a:column name="announcement_type_desc" align="left" sortable="true" width="120"/>
+                    <a:column name="doc_title" align="left" renderer="docRenderer" sortable="true" width="120"/>
+                    <a:column name="doc_subtitle" align="left" sortable="true" width="150"/>
+                    <a:column name="doc_summarize" align="left" sortable="true" width="150"/>
+                    <a:column name="doc_category_desc" align="left" sortable="true" width="120"/>
+                    <a:column name="status_desc" align="left" sortable="true" width="80"/>
+                    <a:column name="version" align="right" sortable="true" width="80"/>
+                    <a:column name="announce_employee_name" align="left" sortable="true" width="120"/>
+                    <a:column name="employee_name" align="left" sortable="true" width="120"/>
+                    <a:column name="author_name" align="left" sortable="true" width="120"/>
+                    <a:column name="importance_level_desc" align="left" sortable="true" width="120"/>
+                    <a:column name="announce_date" align="center" sortable="true" width="120"/>
+                    <a:column name="announcement_id" align="center" prompt="PTL_ANNOUNCEMENTS.PRIVILEGE_LINK" renderer="privilegeRenderer" width="120"/>
+                    <a:column name="ref_url" align="left" width="150"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+
+            function ptl2020InitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            	   $('ptl_announcement_update_grid').setWidth(autoWidth);
+            }
+            ptl2020InitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

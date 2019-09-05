@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.exp_report_number desc,v.line_number">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        l.exp_report_header_id,
+                        l.exp_report_line_id,
+                        (SELECT
+                            erh.exp_report_number
+                        FROM
+                            exp_report_headers erh
+                        WHERE
+                            erh.exp_report_header_id = l.exp_report_header_id
+                        ) exp_report_number,
+                        (SELECT
+                            erh.exp_report_type_id
+                        FROM
+                            exp_report_headers erh
+                        WHERE
+                            erh.exp_report_header_id = l.exp_report_header_id
+                        ) exp_report_type_id,
+                        
+                        (SELECT tv.expense_report_type_code
+                  		   FROM exp_expense_report_types_vl tv
+                          WHERE tv.expense_report_type_id = (
+                          	SELECT
+                                	erh.exp_report_type_id
+                           	  FROM
+                                    exp_report_headers erh
+                             WHERE
+                                    erh.exp_report_header_id = l.exp_report_header_id
+                        )) exp_report_type_code,
+                        (SELECT
+                            ert.description
+                        FROM
+                            exp_expense_report_types_vl ert
+                        WHERE
+                            ert.expense_report_type_id =
+                            (SELECT
+                                erh.exp_report_type_id
+                            FROM
+                                exp_report_headers erh
+                            WHERE
+                                erh.exp_report_header_id = l.exp_report_header_id
+                            )
+                        ) exp_report_type_desc,
+                        l.line_number,
+                        l.company_id,
+                        (SELECT
+                            fc.company_short_name
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = l.company_id
+                        ) company_name,
+                        l.report_amount,
+                        l.tax_amount tax_amount,
+                        l.sale_amount no_tax_amount,
+                        l.invoice_number,
+                        l.invoice_type,
+                        TO_CHAR(l.invoice_date,'yyyy-mm-dd') invoice_date,
+                        (SELECT
+                            yit.type_name
+                        FROM
+                            exp_ygz_invoice_types yit
+                        WHERE
+                            yit.type_code = l.invoice_type
+                        ) invoice_type_desc,
+                        (SELECT
+                            yit.special_invoice
+                        FROM
+                            exp_ygz_invoice_types yit
+                        WHERE
+                            yit.type_code = l.invoice_type
+                        ) special_invoice,
+                        l.usage_type,
+                        (SELECT
+                            yut.type_name
+                        FROM
+                            exp_ygz_usage_types yut
+                        WHERE
+                            yut.type_code    = l.usage_type AND
+                            yut.enabled_flag = 'Y'
+                        ) usage_type_desc,
+                        TO_CHAR(l.creation_date,'yyyy-mm-dd') creation_date,
+                        l.invoice_status,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_codes sc,
+                            sys_code_values_vl scv
+                        WHERE
+                            sc.code_id     = scv.code_id AND
+                            sc.code        = 'VMS_INVOICE_STATUS' AND
+                            scv.code_value = l.invoice_status
+                        ) invoice_status_desc,
+                        (SELECT
+                            erh.audit_flag
+                        FROM
+                            exp_report_headers erh
+                        WHERE
+                            erh.exp_report_header_id = l.exp_report_header_id
+                        ) audit_flag,
+                        decode((SELECT
+                            erh.audit_flag
+                        FROM
+                            exp_report_headers erh
+                        WHERE
+                            erh.exp_report_header_id = l.exp_report_header_id
+                        ),'Y','是','N','否',audit_flag) audit_flag_desc,
+                        (l.roll_out_amount / l.tax_amount) roll_out_per,
+                        l.roll_out_amount,
+                        l.invoice_code,
+                        (SELECT
+                            TO_CHAR(REPORT_DATE,'yyyy-mm-dd')
+                        FROM
+                            exp_report_headers erh
+                        WHERE
+                            erh.exp_report_header_id = l.exp_report_header_id
+                        ) report_date,
+                        l.adjusted_full_deductions,
+                        l.adjusted_partial_deductions,
+                        l.adjustable_tax_deductible,
+                        l.invoice_amount,
+                        l.invoice_tax_amount,
+                        l.tax_rate * 100 tax_rate,
+                        l.sale_amount,
+                        l.deductions_remark,
+                        l.input_tax_structure_detail,
+                        (select s.type_name from EXP_YGZ_INPUT_TAX_STRUC_DTL s where s.type_code = l.input_tax_structure_detail) input_tax_struc_detail_desc,
+                        l.report_status,
+                        
+                        (select scv.code_value_name
+  						  from sys_code_values_v scv, sys_codes scs
+ 						 where scv.code_id = scs.code_id
+   						   and scs.code = 'EXP_EXPENSE_REPORT_STATUS'
+   						   and scv.code_value = l.report_status) report_status_desc,
+                        
+                        (SELECT
+                            TO_CHAR(h.audit_date, 'yyyy-mm-dd')
+                        FROM
+                            exp_report_headers h
+                        WHERE
+                            h.exp_report_header_id = l.exp_report_header_id
+                        ) audit_date,
+                        (SELECT
+                            h.company_id
+                        FROM
+                            exp_report_headers h
+                        WHERE
+                            h.exp_report_header_id = l.exp_report_header_id
+                        ) header_company_id
+                    FROM
+                        exp_report_lines l
+                    WHERE
+                        NVL(l.usage_status,'N') = 'N' AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            exp_ygz_invoice_types yit
+                        WHERE
+                            yit.type_code       = l.invoice_type AND
+                            yit.special_invoice = 'Y'
+                        ) AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            exp_report_headers erh
+                        WHERE
+                            erh.exp_report_header_id = l.exp_report_header_id AND
+                            erh.report_status        = 'COMPLETELY_APPROVED' AND
+                            erh.audit_flag           = 'Y'
+                            --AND nvl(erh.write_off_status,'N') = 'N'
+                        ) AND
+                        l.confirm_deductions = 'Y' AND
+                        (
+                            l.usage_type NOT     IN('YT001','YT005') OR
+                            l.invoice_tax_amount IS NOT NULL
+                        )
+                    ) v #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                  begin
+                    EXP_REPORT_PKG.EXP_REPORT_ROLL_OUT_SAVE
+                    (
+                        p_exp_report_line_id=>${@exp_report_line_id},
+                        p_roll_out_per=>${@roll_out_per},
+                        p_user_id=>${/session/@user_id}
+                    );
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+              
+                 begin
+                    EXP_REPORT_PKG.exp_report_roll_out_submit
+                    (
+                        p_exp_report_line_id=>${@exp_report_line_id},
+                        p_user_id=>${/session/@user_id}
+                    );
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="header_company_id" expression="v.header_company_id = ${/session/@company_id}"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="exp_report_number" queryExpression="v.exp_report_number like &apos;%&apos;||trim(${@exp_report_number})||&apos;%&apos;"/>
+        <bm:query-field name="invoice_number" queryExpression="v.invoice_number like &apos;%&apos;||trim(${@invoice_number})||&apos;%&apos;"/>
+        <!--<bm:query-field name="all_company_flag" queryExpression="((${@all_company_flag}=&apos;N&apos; and v.company_id = nvl(${@company_id},v.company_id)) or (${@all_company_flag}=&apos;Y&apos; and v.company_id in (select fc.company_id from fnd_companies fc where fc.start_date_active &lt; sysdate and (fc.end_date_active &gt; sysdate or fc.end_date_active is null) start with fc.company_id = ${@company_id} connect by prior fc.company_id = fc.parent_company_id)))"/>-->
+        <!-- <bm:query-field name="exp_report_type_id" queryExpression="v.exp_report_type_id=${@exp_report_type_id}"/> -->
+        <bm:query-field name="exp_report_type_code" datatype="java.lang.String" queryExpression="exp_report_type_code like ${@exp_report_type_code}"/>
+        <bm:query-field name="invoice_type" queryExpression="v.invoice_type like ${@invoice_type}"/>
+        <bm:query-field name="invoice_status" queryExpression="v.invoice_status like ${@invoice_status}"/>
+        <bm:query-field name="usage_type" queryExpression="v.usage_type like ${@usage_type}"/>
+        <bm:query-field name="audit_flag" queryExpression="v.audit_flag=${@audit_flag}"/>
+        <bm:query-field name="invoice_code" datatype="java.lang.String" queryExpression="v.invoice_code like ${@invoice_code}"/>
+        <bm:query-field name="invoice_date_from" datatype="java.lang.String" queryExpression="v.invoice_date &gt;= ${@invoice_date_from}"/>
+        <bm:query-field name="invoice_date_to" datatype="java.lang.String" queryExpression="v.invoice_date &lt;= ${@invoice_date_to}"/>
+        <bm:query-field name="audit_date_from" datatype="java.lang.String" queryExpression="v.audit_date &gt;= ${@audit_date_from}"/>
+        <bm:query-field name="audit_date_to" datatype="java.lang.String" queryExpression="v.audit_date &lt;= ${@audit_date_to}"/>
+        <bm:query-field name="report_date_from" datatype="java.lang.String" queryExpression="v.report_date &gt;= ${@report_date_from}"/>
+        <bm:query-field name="report_date_to" datatype="java.lang.String" queryExpression="v.report_date &lt;= ${@report_date_to}"/>
+        <bm:query-field name="input_tax_structure_detail" datatype="java.lang.String" queryExpression="v.input_tax_structure_detail like ${@input_tax_structure_detail}"/>
+        <bm:query-field name="invoice_amount" datatype="java.lang.Double" queryExpression="v.invoice_amount = ${@invoice_amount}"/>
+        <bm:query-field name="invoice_tax_amount_from" datatype="java.lang.Double" queryExpression="v.invoice_tax_amount &gt;= ${@invoice_tax_amount_from}"/>
+        <bm:query-field name="invoice_tax_amount_to" datatype="java.lang.Double" queryExpression="v.invoice_tax_amount &lt;= ${@invoice_tax_amount_to}"/>
+        <bm:query-field name="report_amount_from" datatype="java.lang.Double" queryExpression="v.report_amount &gt;= ${@report_amount_from}"/>
+        <bm:query-field name="report_amount_to" datatype="java.lang.Double" queryExpression="v.report_amount &lt;= ${@report_amount_to}"/>
+        <bm:query-field name="tax_rate" datatype="java.lang.Double" queryExpression="v.tax_rate = ${@tax_rate}"/>
+        <bm:query-field name="tax_amount_from" datatype="java.lang.Double" queryExpression="v.tax_amount &gt;= ${@tax_amount_from}"/>
+        <bm:query-field name="tax_amount_to" datatype="java.lang.Double" queryExpression="v.tax_amount &lt;= ${@tax_amount_to}"/>
+        <bm:query-field name="sale_amount_from" datatype="java.lang.Double" queryExpression="v.sale_amount &gt;= ${@sale_amount_from}"/>
+        <bm:query-field name="sale_amount_to" datatype="java.lang.Double" queryExpression="v.sale_amount &lt;= ${@sale_amount_to}"/>
+        <bm:query-field name="adjusted_full_deductions_from" datatype="java.lang.Double" queryExpression="v.adjusted_full_deductions &gt;= ${@adjusted_full_deductions_from}"/>
+        <bm:query-field name="adjusted_full_deductions_to" datatype="java.lang.Double" queryExpression="v.adjusted_full_deductions &lt;= ${@adjusted_full_deductions_to}"/>
+        <bm:query-field name="adjusted_partial_deductions_from" datatype="java.lang.Double" queryExpression="v.adjusted_partial_deductions &gt;= ${@adjusted_partial_deductions_from}"/>
+        <bm:query-field name="adjusted_partial_deductions_to" datatype="java.lang.Double" queryExpression="v.adjusted_partial_deductions &lt;= ${@adjusted_partial_deductions_to}"/>
+        <bm:query-field name="adjustable_tax_deductible_from" datatype="java.lang.Double" queryExpression="v.adjustable_tax_deductible &gt;= ${@adjustable_tax_deductible_from}"/>
+        <bm:query-field name="adjustable_tax_deductible_to" datatype="java.lang.Double" queryExpression="v.adjustable_tax_deductible &lt;= ${@adjustable_tax_deductible_to}"/>
+        <bm:query-field name="report_status" datatype="java.lang.String" queryExpression="v.report_status like ${@report_status}"/>
+    </bm:query-fields>
+</bm:model>

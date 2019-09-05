@@ -1,0 +1,285 @@
+2018-10-17 09:36:59.800 [aurora.application.session_check] [CONFIG] Session data copied to context
+2018-10-17 09:36:59.800 [aurora.application.session_check] [CONFIG] Checking BM access csh.csh_pay_req_line_query for operation query
+2018-10-17 09:36:59.801 [aurora.application.session_check] [CONFIG] Result from aurora.bm.DefaultAccessChecker@4d0eacdf is true
+2018-10-17 09:36:59.801 [uncertain.proc] [CONFIG] [action] AccessCheck
+2018-10-17 09:36:59.803 [uncertain.proc] [CONFIG] [action] CheckServiceLock
+2018-10-17 09:36:59.803 [uncertain.proc] [CONFIG] [action] ParseParameter
+2018-10-17 09:36:59.803 [uncertain.proc] [CONFIG] [action] ValidateInput
+2018-10-17 09:36:59.803 [uncertain.proc] [CONFIG] [action] InvokeService
+2018-10-17 09:36:59.803 [aurora.database] [CONFIG] ===================================== prepare to run model-query csh.csh_pay_req_line_query==============================
+2018-10-17 09:36:59.807 [uncertain.proc] [CONFIG] [action] DecideSqlGenerationMode
+2018-10-17 09:36:59.807 [uncertain.proc] [FINE] aurora.database.service.BusinessModelService.onDecideSqlGenerationMode
+2018-10-17 09:36:59.807 [uncertain.proc] [CONFIG] [action] CreateOperationSql
+2018-10-17 09:36:59.807 [uncertain.proc] [CONFIG] [action] PopulateOperationSql
+2018-10-17 09:36:59.807 [uncertain.proc] [FINE] aurora.database.features.OrderByClauseCreator.onPopulateOperationSql
+2018-10-17 09:36:59.807 [uncertain.proc] [FINE] aurora.database.features.WhereClauseCreator.onPopulateOperationSql
+2018-10-17 09:36:59.807 [uncertain.proc] [CONFIG] [action] ExecuteQuery
+2018-10-17 09:36:59.807 [uncertain.proc] [FINE] aurora.bm.QuerySqlCreator.onExecuteQuery
+2018-10-17 09:36:59.816 [uncertain.proc] [CONFIG] [action] QueryFinish
+2018-10-17 09:36:59.816 [uncertain.proc] [FINE] aurora.database.features.AutoQueryCounter.onQueryFinish
+2018-10-17 09:36:59.841 [uncertain.proc] [CONFIG] [action] FetchResultSet
+2018-10-17 09:36:59.842 [uncertain.proc] [FINE] aurora.database.features.CacheBasedLookUpField.postFetchResultSet
+2018-10-17 09:36:59.842 [aurora.database] [CONFIG] 
+============= BEGIN [query] SQL Statement execution dump ============
+
+                SELECT
+                    v.*,
+                    DECODE(payment_requisition_line_type, 'EXP_REQUISITION', requisition_need_pay_amount - requisited_amount, NULL) need_payment_amount,
+                    DECODE(payment_requisition_line_type, 'EXP_REQUISITION', requisited_amount - requisited_payment_amount, NULL) requisited_unpayment_amount,
+                    (SELECT
+                        cch.contract_number
+                    FROM
+                        con_contract_headers cch
+                    WHERE
+                        cch.contract_header_id = v.contract_header_id
+                    ) contract_number,
+                    (SELECT
+                        conl.payment_schedule_line_id
+                    FROM
+                        con_payment_schedules conl
+                    WHERE
+                        conl.payment_schedule_line_id = v.contract_l_id
+                    ) payment_schedule_line_id,
+                    (SELECT
+                        conl.payment_schedule_line_number
+                    FROM
+                        con_payment_schedules conl
+                    WHERE
+                        conl.payment_schedule_line_id = v.contract_l_id
+                    ) payment_schedule_line_number
+                FROM
+                    (SELECT
+                        cprl.payment_requisition_header_id,
+                        cprl.payment_requisition_line_id,
+                        cprl.payment_requisition_line_type,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'PAYMENT_REQ_DOC_CATEGORY' AND
+                            b.code_value = cprl.payment_requisition_line_type
+                        ) p_payment_req_line_type,
+                        (SELECT
+                            e.description
+                        FROM
+                            csh_payment_methods_vl e
+                        WHERE
+                            e.payment_method_id=cprl.payment_method
+                        ) payment_method_id_display,
+                        (SELECT
+                            e.payment_method_code
+                        FROM
+                            csh_payment_methods_vl e
+                        WHERE
+                            e.payment_method_id=cprl.payment_method
+                        )payment_method_code,
+                        cprl.payment_method payment_method_id,
+                        cprl.amount,
+                        cprl.description,
+                        cprl.ref_document_id,
+                        cprl.account_number,
+                        DECODE( cprl.partner_category, 'EMPLOYEE', DECODE(cprl.account_number, NULL, '', SUBSTR(cprl.account_number, 0, 4)
+                            || '***'
+                            || SUBSTR(cprl.account_number, -4, 4)), cprl.account_number ) account_number_ext,
+                        cprl.account_name,
+                        cprl.bank_code,
+                        cprl.bank_name,
+                        cprl.bank_location_code,
+                        cprl.bank_location_name,
+                        cprl.province_code,
+                        cprl.province_name,
+                        cprl.city_code,
+                        cprl.city_name,
+                        (SELECT
+                            erh.exp_requisition_number
+                        FROM
+                            exp_requisition_headers erh
+                        WHERE
+                            erh.exp_requisition_header_id =cprl.ref_document_id
+                        ) ref_document_id_display,
+                        DECODE(payment_requisition_line_type, 'EXP_REQUISITION',
+                        (SELECT
+                            NVL(SUM(erl.requisition_amount), 0)
+                        FROM
+                            exp_requisition_lines erl
+                        WHERE
+                            erl.exp_requisition_header_id = cprl.ref_document_id AND
+                            erl.payment_flag              = 'Y'
+                        ), NULL) requisition_need_pay_amount,
+                        DECODE(cprl.payment_requisition_line_type, 'EXP_REQUISITION',
+                        (SELECT
+                            NVL(SUM(cprl1.amount), 0)
+                        FROM
+                            csh_payment_requisition_lns cprl1,
+                            csh_payment_requisition_hds cprh
+                        WHERE
+                            cprl1.ref_document_id              = cprl.ref_document_id AND
+                            cprh.payment_requisition_header_id = cprl1.payment_requisition_header_id AND
+                            cprh.status NOT                   IN ('GENERATE' ,'REJECTED' ,'TAKEN_BACK' )
+                        ), NULL) requisited_amount,
+                        DECODE(cprl.payment_requisition_line_type, 'EXP_REQUISITION',
+                        (SELECT
+                            NVL(SUM(cprr.amount), 0)
+                        FROM
+                            csh_payment_requisition_lns cprl2,
+                            csh_payment_requisition_refs cprr,
+                            csh_transaction_lines ctl,
+                            csh_transaction_headers cth
+                        WHERE
+                            cprl2.ref_document_id             = cprl.ref_document_id AND
+                            cprl2.payment_requisition_line_id = cprr.payment_requisition_line_id AND
+                            cprr.csh_transaction_line_id      = ctl.transaction_line_id AND
+                            ctl.transaction_header_id         = cth.transaction_header_id AND
+                            cth.posted_flag                   = 'Y'
+                        ), NULL) requisited_payment_amount,
+                        (SELECT
+                            cdf.document_id
+                        FROM
+                            con_document_flows cdf
+                        WHERE
+                            cdf.document_type           = 'CON_CONTRACT' AND
+                            cdf.source_document_type    = 'CSH_PAYMENT_REQUISITION_LNS' AND
+                            cdf.source_document_id      = cprl.payment_requisition_header_id AND
+                            cdf.source_document_line_id = cprl.payment_requisition_line_id
+                        ) contract_header_id ,
+                        (SELECT
+                            cdf.document_line_id
+                        FROM
+                            con_document_flows cdf
+                        WHERE
+                            cdf.document_type           = 'CON_CONTRACT' AND
+                            cdf.source_document_type    = 'CSH_PAYMENT_REQUISITION_LNS' AND
+                            cdf.source_document_id      = cprl.payment_requisition_header_id AND
+                            cdf.source_document_line_id = cprl.payment_requisition_line_id
+                        ) contract_l_id,
+                        (SELECT
+                            name
+                        FROM
+                            (SELECT
+                                cev.employee_id id,
+                                cev.company_id,
+                                cev.name
+                                || '-'
+                                || cev.employee_code name,
+                                cev.employee_code,
+                                'EMPLOYEE' partner_category
+                            FROM
+                                exp_company_employees_v cev
+                            WHERE
+                                cev.employee_enabled_flag = 'Y'
+                            UNION
+                            SELECT
+                                svv.vender_id,
+                                cv.company_id ,
+                                svv.description
+                                || '-'
+                                || svv.vender_code,
+                                svv.vender_code,
+                                'VENDER' partner_category
+                            FROM
+                                pur_company_venders cv,
+                                pur_system_venders_vl svv
+                            WHERE
+                                cv.vender_id    = svv.vender_id AND
+                                cv.enabled_flag = 'Y'
+                            UNION
+                            SELECT
+                                cv.customer_id,
+                                cc.company_id,
+                                cv.description
+                                || '-'
+                                || cv.customer_code,
+                                cv.customer_code,
+                                'CUSTOMER' partner_category
+                            FROM
+                                ord_company_customers cc,
+                                ord_system_customers_vl cv
+                            WHERE
+                                cc.customer_id  = cv.customer_id AND
+                                cc.enabled_flag = 'Y'
+                            ) cat
+                        WHERE
+                            partner_category = cprl.partner_category AND
+                            id               = cprl.partner_id AND
+                            cprl.company_id  = company_id
+                        ) p_partner_name,
+                        cprl.company_id,
+                        cprl.gather_flag,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'GATHER_FLAG' AND
+                            b.code_value = cprl.gather_flag
+                        )gather_flag_desc,
+                        cprl.partner_category,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_codes s ,
+                            sys_code_values_vl v
+                        WHERE
+                            s.code       = 'PAYMENT_OBJECT' AND
+                            s.code_id    = v.code_id AND
+                            v.code_value = cprl.partner_category
+                        ) AS partner_category_name,
+                        cprl.partner_id,
+                        cprl.csh_transaction_class_code,
+                        (SELECT
+                            ccf.description
+                        FROM
+                            csh_cash_flow_items_vl ccf
+                        WHERE
+                            ccf.cash_flow_item_id = cprl.cash_flow_code
+                        ) cash_flow_item_description,
+                        cprl.cash_flow_code,
+                        (SELECT
+                            a.description
+                        FROM
+                            csh_transaction_classes_vl a
+                        WHERE
+                            a.csh_transaction_type_code  = 'PREPAYMENT' AND
+                            a.enabled_flag               = 'Y' AND
+                            a.csh_transaction_class_code = cprl.csh_transaction_class_code
+                        ) cls_des,
+                        (SELECT
+                            a.repay_flag
+                        FROM
+                            csh_transaction_classes a
+                        WHERE
+                            a.csh_transaction_type_code  = 'PREPAYMENT' AND
+                            a.enabled_flag               = 'Y' AND
+                            a.csh_transaction_class_code = cprl.csh_transaction_class_code
+                        ) repay_flag,
+                        cprl.repay_code,
+                        DECODE(cprl.repay_code,'Y','收据已上缴','N','收据未上缴',NULL) repay_desc,
+                        cprl.repay_status,
+                        (SELECT
+                            sc.code_value_name
+                        FROM
+                            sys_codes s,
+                            sys_code_values_vl sc
+                        WHERE
+                            s.code_id     = sc.code_id AND
+                            sc.code_value = cprl.repay_status AND
+                            s.code        =  'RECEIPT_STATUS'
+                        ) repay_status_desc,
+                    TO_CHAR(cprl.plan_repayment_date,'yyyy-mm-dd') plan_repayment_date
+                    FROM
+                        csh_payment_requisition_lns cprl
+                    ) v  WHERE PAYMENT_REQUISITION_HEADER_ID = ?
+                ORDER BY
+                    payment_requisition_line_id
+            
+---------------------Binding info---------------------
+No.1	Access path:@payment_requisition_header_id	Data type of passed value :java.lang.Double	Value:99.0	Output:false	Database Type:null	
+
+=============== END [query] SQL Statement execution dump ============
+
+2018-10-17 09:36:59.842 [uncertain.proc] [CONFIG] [action] CreateSuccessResponse

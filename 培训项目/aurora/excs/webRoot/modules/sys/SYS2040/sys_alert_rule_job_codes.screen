@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="sys_alert_rule_param_link" model="sys.SYS2040.sys_alert_rule_param" modelaction="query"/>
+        <a:link id="sys_alert_rule_jobs_run_link" model="db.sys_alert_rules_pkg.job_run" modelaction="batch_update"/>
+        <a:link id="sys_alert_rule_jobs_remove_link" model="db.sys_alert_rules_pkg.job_remove" modelaction="batch_update"/>
+        <a:link id="sys_alert_rule_jobs_fix_link" model="db.sys_alert_rules_pkg.job_fix" modelaction="batch_update"/>
+        <a:link id="sys_alert_rule_jobs_broken_link" model="db.sys_alert_rules_pkg.job_broken" modelaction="batch_update"/>
+        <a:link id="sys_alert_rule_jobs_submit_link" model="db.sys_alert_rules_pkg.job_submit" modelaction="batch_update"/>
+        <a:link id="sys_alert_rule_jobs_job_schedule_link" url="${/request/@context_path}/modules/sys/SYS2040/sys_alert_rule_jobs_job_schedule.screen"/>
+        <a:link id="sys_alert_rule_jobs_parameter_values_link" url="${/request/@context_path}/modules/sys/SYS2040/sys_alert_rule_jobs_parameter_values.screen"/>
+        <script><![CDATA[
+            function queryJob() {
+                $('sys_alert_rule_job_codes_result_ds').query();
+            }
+            
+            function jobCodeEdit(record, name) {
+                if (record.isNew) {
+                    return 'job_code_grid_tf'
+                }
+                return '';
+            }
+            
+            function alertRuleCodeEdit(record, name) {
+                if (record.isNew) {
+                    return 'alert_rule_code_lov'
+                }
+                return '';
+            }
+            
+            function setParameterValues(value, record, name) {
+            
+                var jobCodeId = record.get('job_code_id');
+                var job_code = record.get('job_code_code');
+                var desc = record.get('description');
+                if (!record.isNew) {
+                    if (record.get('parameter_count') > 0) {
+                        return '<a href="javascript:setParameterValuesInfo(\'' + jobCodeId + '\',\'' + job_code + '\',\'' + desc + '\')">${l:SYS_ALERT_RULE_JOB_CODES.SET_PARAMETER_VALUES}</a>';
+                    }
+                }
+            }
+            
+            function setParameterValuesInfo(id, job_code, desc) {
+                new Aurora.Window({
+                    id: 'sys_alert_rule_jobs_parameter_values_window',
+                    url: /*sys_alert_rule_jobs_parameter_values.screen*/
+                    $('sys_alert_rule_jobs_parameter_values_link').getUrl() + '?job_code_id=' + id + '&job_code_code=' + job_code + '&description=' + encodeURI(desc),
+                    title: '${l:SYS_ALERT_RULE_JOBS_PARAMETER_VALUES.SET_PARAMETER_VALUE}',
+                    height: 300,
+                    width: 700
+                });
+            }
+            
+            function jobSchedule(value, record, name) {
+                var jobCodeId = record.get('job_code_id');
+                if (!record.isNew) {
+                    return '<a href="javascript:jobScheduleInfo(' + jobCodeId + ')">${l:SYS_ALERT_RULE_JOB_CODES.JOB_SCHEDULE}</a>';
+                }
+            }
+            
+            function jobScheduleInfo(jobCodeId) {
+                new Aurora.Window({
+                    id: 'sys_alert_rule_jobs_job_schedule_window',
+                    url: /*sys_alert_rule_jobs_job_schedule.screen*/
+                    $('sys_alert_rule_jobs_job_schedule_link').getUrl() + '?job_code_id=' + jobCodeId,
+                    title: '${l:SYS_ALERT_RULE_JOB_CODES.JOB_SCHEDULE}',
+                    fullScreen:true
+                });
+            }
+            
+            /******************6-27*******/
+            
+            function gridReload() {
+                $('sys_alert_rule_job_codes_result_ds').query();
+            }
+            
+            function submitJOB() {
+                var ds = $("sys_alert_rule_job_codes_result_ds");
+                var records = ds.getSelected();
+                var length = ds.getSelected().length;
+                if (length < 1) {
+                    Aurora.showMessage("${l:PROMPT_MESSAGE}", "${l:SELECT_RECORD}");
+                } else {
+                    var jobData = [];
+                    for (var i = 0;i < records.length;i++) {
+                        //去掉参数判断，修改JOB计划参数的时候无需先删除再提交，直接提交
+                        //if(records[i].get('job_status') == 'INITIAL' || records[i].get('job_status') == 'REMOVED'){
+                        var data = records[i].data;
+                        data['_status'] = 'execute';
+                        jobData.push(data);
+                        //}
+                    }
+                    var queryConfirm = Aurora.showConfirm('${l:CONFIRM}', '${l:CONFIRM_SUBMIT_JOB}', function() {
+                        queryConfirm.close();
+                        Aurora.request({
+                            url: /*${/request/@context_path}/autocrud/sys.sys_alert_rule_jobs_submit/batch_update*/
+                            $('sys_alert_rule_jobs_submit_link').getUrl(),
+                            para: jobData,
+                            success: function(args) {
+                                ds.query();
+                            },
+                            scope: this
+                        });
+                    }, function() {
+                        queryConfirm.close();
+                    }, null, null);
+                }
+            }
+            
+            function brokenJOB() {
+                var ds = $("sys_alert_rule_job_codes_result_ds");
+                var records = ds.getSelected();
+                var length = ds.getSelected().length;
+                if (length < 1) {
+                    Aurora.showMessage("${l:PROMPT_MESSAGE}", "${l:SELECT_RECORD}");
+                } else {
+                    var jobData = [];
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].get('job_status') == 'SUBMITTED') {
+                            var data = records[i].data;
+                            data['_status'] = 'execute';
+                            jobData.push(data);
+                        }
+                    }
+                    var queryConfirm = Aurora.showConfirm('${l:CONFIRM}', '${l:CONFIRM_HUNG_JOB}', function() {
+                        queryConfirm.close();
+                        Aurora.request({
+                            url: /*${/request/@context_path}/autocrud/sys.sys_alert_rule_jobs_broken/batch_update*/
+                            $('sys_alert_rule_jobs_broken_link').getUrl(),
+                            para: jobData,
+                            success: function(args) {
+                                ds.query();
+                            },
+                            scope: this
+                        });
+                    }, function() {
+                        queryConfirm.close();
+                    }, null, null);
+                }
+            }
+            
+            function fixJOB() {
+                var ds = $("sys_alert_rule_job_codes_result_ds");
+                var records = ds.getSelected();
+                var length = ds.getSelected().length;
+                if (length < 1) {
+                    Aurora.showMessage("${l:PROMPT_MESSAGE}", "${l:SELECT_RECORD}");
+                } else {
+                    var jobData = [];
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].get('job_status') == 'BROKEN') {
+                            var data = records[i].data;
+                            data['_status'] = 'execute';
+                            jobData.push(data);
+                        }
+                    }
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/sys.sys_alert_rule_jobs_fix/batch_update*/
+                        $('sys_alert_rule_jobs_fix_link').getUrl(),
+                        para: jobData,
+                        success: function(args) {
+                            ds.query();
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function removeJOB() {
+            
+                var ds = $("sys_alert_rule_job_codes_result_ds");
+                var records = ds.getSelected();
+                var length = ds.getSelected().length;
+                if (length < 1) {
+                    Aurora.showMessage("${l:PROMPT_MESSAGE}", "${l:SELECT_RECORD}");
+                } else {
+                    var jobData = [];
+                    for (var i = 0;i < records.length;i++) {
+                        var job_status = records[i].get('job_status');
+                        if (job_status == 'INITIAL' || job_status == 'SUBMITTED' || job_status == 'BROKEN') {
+                            var data = records[i].data;
+                            data['_status'] = 'execute';
+                            jobData.push(data);
+                        }
+                    }
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/sys.sys_alert_rule_jobs_remove/batch_update*/
+                        $('sys_alert_rule_jobs_remove_link').getUrl(),
+                        para: jobData,
+                        success: function(args) {
+                            ds.query();
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function runJOB() {
+                var ds = $("sys_alert_rule_job_codes_result_ds");
+                var records = ds.getSelected();
+                var length = ds.getSelected().length;
+                if (length < 1) {
+                    Aurora.showMessage("${l:PROMPT_MESSAGE}", "${l:SELECT_RECORD}");
+                } else {
+                    var jobData = [];
+                    for (var i = 0;i < records.length;i++) {
+                        var data = records[i].data;
+                        data['_status'] = 'execute';
+                        jobData.push(data);
+                    }
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/sys.sys_alert_rule_jobs_run/batch_update*/
+                        $('sys_alert_rule_jobs_run_link').getUrl(),
+                        para: jobData,
+                        success: function(args) {
+                            ds.query();
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function submitSuccess(ds, res) {
+                $('res_grid').onLoad();
+            }
+            
+            function updateFunction(dataSet, record, name, value, oldValue) {
+                if (name == 'alert_rule_id') {
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/sys.sys_alert_rule_param/query*/
+                        $('sys_alert_rule_param_link').getUrl(),
+                        para: {
+                            alert_rule_id: value
+                        },
+                        success: function(res) {
+            
+                            if (res.result && res.result.record) {
+                                record.set('parameter_count', res.result.record['parameter_count']);
+                            }
+                            $('res_grid').onLoad();
+                        },
+                        scope: this
+                    });
+                }
+            }
+            function resetJob(){
+           		$('sys_alert_rule_job_codes_query_ds').reset();
+           	}
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="job_status" lookupCode="SYS_ALERT_RULE_JOB_STATUS"/>
+            <a:dataSet id="sys_alert_rule_job_codes_query_ds" model="sys.SYS2040.sys_alert_rule_job_codes_query"/>
+            <a:dataSet id="sys_alert_rule_job_codes_result_ds" autoQuery="true" fetchAll="false" model="sys.SYS2040.sys_alert_rule_job_codes_query" queryDataSet="sys_alert_rule_job_codes_query_ds" selectable="true" submitUrl="${/request/@context_path}/autocrud/sys.SYS2040.sys_alert_rule_job_codes/batch_update">
+                <a:fields>
+                    <a:field name="job_code_code" required="true"/>
+                    <a:field name="description" required="true"/>
+                    <a:field name="alert_rule_code" lovGridHeight="300" lovHeight="460" lovService="sys.SYS2040.sys_alert_rule_job_codes_lov" lovWidth="640" required="true" title="SYS_ALERT_RULES.ALERT_RULE_CODE">
+                        <a:mapping>
+                            <a:map from="alert_rule_id" to="alert_rule_id"/>
+                            <a:map from="alert_rule_code" to="alert_rule_code"/>
+                            <a:map from="alert_rule_desc" to="alert_rule_desc"/>
+                            <a:map from="enabled_flag" to="alert_rule_enabled_flag"/>
+                            <a:map from="event_name" to="event_name"/>
+                            <a:map from="event_desc" to="event_desc"/>
+                            <a:map from="job_status_desc" to="job_status_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="alert_rule_enabled_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="role_id" defaultValue="${/session/@role_id}"/>
+                    <a:field name="job_status" defaultValue="INITIAL"/>
+                    <a:field name="enabled_flag" defaultValue="Y"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="submitSuccess"/>
+                    <a:event name="update" handler="updateFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="resetJob" text="HAP_RESET" width="80"/>
+                <a:toolbarButton click="submitJOB" text="SUBMIT_JOB" width="80"/>
+                <a:toolbarButton click="brokenJOB" text="JOB_TEMPORARILY_HUNG" width="80"/>
+                <a:toolbarButton click="fixJOB" text="JOB_RECOVERY" width="80"/>
+                <a:toolbarButton click="removeJOB" text="JOB_DELETE" width="80"/>
+                <a:toolbarButton click="runJOB" text="IMMEDIATELY_RUN" width="80"/>
+                <a:gridButton bind="res_grid" type="add" width="80"/>
+                <a:gridButton bind="res_grid" type="save" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="sys_alert_rule_job_codes_query_ds" resultTarget="sys_alert_rule_job_codes_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="job_code_code" bindTarget="sys_alert_rule_job_codes_query_ds" typeCase="upper">
+                        <a:events>
+                            <a:event name="enterdown" handler="queryJob"/>
+                        </a:events>
+                    </a:textField>
+                    <a:textField name="description" bindTarget="sys_alert_rule_job_codes_query_ds" prompt="SYS_ALERT_RULE_JOB_CODES.DESCRIPTION">
+                        <a:events>
+                            <a:event name="enterdown" handler="queryJob"/>
+                        </a:events>
+                    </a:textField>
+                </a:formToolBar>
+            </a:queryForm>
+            <a:grid id="res_grid" bindTarget="sys_alert_rule_job_codes_result_ds" marginHeight="122" navBar="true">
+                <a:columns>
+                    <a:column name="job_code_code" align="center" editorFunction="jobCodeEdit" sortable="true"/>
+                    <a:column name="description" align="left" editor="description_grid_tf" prompt="SYS_ALERT_RULE_JOB_CODES.DESCRIPTION" width="120"/>
+                    <a:column name="alert_rule_code" align="center" editorFunction="alertRuleCodeEdit" width="150"/>
+                    <a:column name="alert_rule_desc" align="left" width="120"/>
+                    <a:column name="alert_rule_enabled_flag" editor="enabled_flag_cb" sortable="true" width="50"/>
+                    <a:column name="event_name" align="center" prompt="EVT_EVENT.EVENT_CODE" width="120"/>
+                    <a:column name="event_desc" align="left" prompt="EVT_EVENT.EVENT_DESC" width="120"/>
+                    <a:column name="job_status_desc" align="center" prompt="SYS_ALERT_RULE_JOB_CODES.STATUS_DESCRIPTION" width="80"/>
+                    <a:column name="set_parameter_values" align="center" prompt="SYS_ALERT_RULE_JOB_CODES.SET_PARAMETER_VALUES" renderer="setParameterValues" width="80"/>
+                    <a:column name="job_schedule" align="center" prompt="SYS_ALERT_RULE_JOB_CODES.JOB_SCHEDULE" renderer="jobSchedule" width="80"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="job_code_grid_tf" typeCase="upper"/>
+                    <a:textField id="description_grid_tf"/>
+                    <a:lov id="alert_rule_code_lov"/>
+                    <a:checkBox id="enabled_flag_cb"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[ 
+           
+        ]]></script>
+        <script purpose="auto_resize"><![CDATA[
+
+            function jobInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            	   $('res_grid').setWidth(autoWidth);
+            }
+            //Ext.fly(window).on('resize', jobInitSize);
+            jobInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

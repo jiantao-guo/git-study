@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: xielj
+    $Date: 2018-6-07 下午03:19:34  
+    $Revision: 1.0  
+    $Purpose: 资产调拨批量导入页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="bgt.BGT6100.bgt_journal_import_batch_id" rootPath="batch_id"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="eam_batch_tra_import_commit_link" model="db.eam_transcation_pkg.load_eam_tra_data_import" modelaction="update"/>
+        <a:link id="eam_batch_tra_import_check_link" model="db.eam_transcation_pkg.check_eam_tra_interface" modelaction="update"/>
+        <a:link id="eam_batch_tra_import_upload_link" url="${/request/@context_path}/modules/eam/EAM0510/eam_batch_tra_import_upload.screen"/>
+        <a:link id="eam_tra_batch_import_error_link" url="${/request/@context_path}/modules/eam/EAM0510/eam_batch_tra_import_error.screen"/>
+        <script><![CDATA[
+
+            function loadComplete() {
+                $('result_ds').setQueryParameter('batch_id', '${/model/batch_id/record/@batch_id}');
+                $('result_ds').query();
+            }
+            
+            function loadData() {
+                //window.open('bgt_budget_journal_import_upload.screen?batch_id=${/model/batch_id/record/@batch_id}');
+                new Aurora.Window({
+                    id: 'upload_window',
+                    url: /*bgt_budget_journal_import_upload.screen*/
+                    $('eam_batch_tra_import_upload_link').getUrl() + '?batch_id=${/model/batch_id/record/@batch_id}',
+                    title: '${l:BUDGET_JOURNAL_IMPORT}',
+                    width: 420,
+                    height: 275
+                });
+            }
+            
+            function checkData() {
+                var allData = $('result_ds').getAll();
+                if (allData.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BGT_BUDGET_ITEMS_INTERFACE.CHECK1}');
+                } else {
+                    var param = {};
+                    param['batch_id'] = '${/model/batch_id/record/@batch_id}';
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/bgt.bgt_budget_journal_import_check/update*/
+                        $('eam_batch_tra_import_check_link').getUrl(),
+                        para: param,
+                        success: function(data) {
+                            if (data.result.return_status) {
+                                if (data.result.return_status == 'SUCCESS') {
+                                    Aurora.showMessage('提示', '核对完成，导入数据没有错误');
+                                } else {
+                                    errorData();
+                                }
+                            } else {
+                                Aurora.showErrorMessage('错误', '校验程序执行错误');
+                            }
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function errorData() {
+                new Aurora.Window({
+                    id: "error_window",
+                    url: $("eam_tra_batch_import_error_link").getUrl() + "?batch_id=${/model/batch_id/record/@batch_id}",
+                    title: "错误信息",
+                    width: 720,
+                    height: 351
+                });
+            }
+            
+            function submitData() {
+                var allData = $('result_ds').getAll();
+                if (allData.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '没有数据需要提交');
+                } else {
+                    var param = {};
+                    param['batch_id'] = '${/model/batch_id/record/@batch_id}';
+                    param['eam_requisition_header_id'] = '${/parameter/@requisition_header_id}';                                       
+                    param['transaction_type_id'] = '${/parameter/@transaction_type_id}';                                       
+                    Aurora.request({
+                        url: $('eam_batch_tra_import_commit_link').getUrl(),
+                        para: param,
+                        success: function(data) {
+                            if (data.result.load_status) {
+                                if (data.result.load_status == 'DATA_ERROR') {
+                                    errorData();
+                                } else if (data.result.load_status == 'SUCCESS') {
+                                    Aurora.showMessage('提示', '数据导入成功');
+                                    $('result_ds').query();
+                                    back();
+                                } else {
+                                    Aurora.showErrorMessage('错误', '数据导入失败');
+                                }
+                            } else {
+                                Aurora.showErrorMessage('错误', '提交程序执行出错');
+                            }
+                        },
+                        scope: this
+                    });                    
+                }
+            }
+            
+            
+            function backPage() {
+                var d_url = '${/request/@context_path}/modules/eam/EAM0511/eam_transfer_req_create_details.screen?requisition_header_id=' + '${/parameter/@requisition_header_id}' + '&asset_book_id=' + '${/parameter/@asset_book_id}' + '&base_trx_category=' + '${/parameter/@base_trx_category}';
+                Aurora.go(d_url);
+                //history.go(-1);
+                //$('eam0511_batch_tra_import_screen').close();
+            }
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="result_ds" autoPageSize="true" fetchAll="false" model="eam.eam0510.eam_transaction_interface_query">
+                <a:fields>
+                    <a:field name="batch_line_id" prompt="行号"/>
+                    <a:field name="tag_number" prompt="卡片号"/>
+                    <a:field name="company_code" prompt="折旧承担机构"/>
+                    <a:field name="unit_code" prompt="折旧承担部门"/>
+                    <a:field name="using_company_code" prompt="目标使用机构"/>
+                    <a:field name="using_unit_code" prompt="目标使用部门"/>
+                    <a:field name="using_employee_code" prompt="接收人"/>
+                    <a:field name="location_desc" prompt="目标位置"/>
+                    <a:field name="notes" prompt="备注"/>
+                    <a:field name="batch_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="import_label_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="label1" defaultValue="备注："/>
+                    <a:field name="label2" defaultValue="1、  所有机构、部门、员工均为对应代码（机构代码，部门代码、员工代码）"/>
+                    <a:field name="label3" defaultValue="2、  卡片号、目标折旧承担机构、目标折旧承担部门必填"/>
+                    <a:field name="label4" defaultValue="3、  本导入程序只支持Office Excel"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="loadData" text="PROMPT.LOADDATA" width="80"/>
+                <a:toolbarButton click="checkData" text="PROMPT.CHECK" width="80"/>
+                <a:toolbarButton click="submitData" text="PROMPT.SUBMIT" width="80"/>
+                <a:toolbarButton click="errorData" text="PROMPT.ERROR" width="80"/>
+                <a:toolbarButton click="backPage" text="HAP_BACK" width="80"/>
+                <a:gridButton bind="grid" text="HAP_EXPORT" type="excel" width="80"/>
+            </a:screenTopToolbar>
+            <a:fieldSet marginWidth="80" style="margin-left:10px;margin-top:5px;">
+                <a:label name="label1" bindTarget="import_label_ds" marginWidth="70" style="color:red;margin-left:10px;"/>
+                <a:label name="label2" bindTarget="import_label_ds" marginWidth="70" style="color:red;margin-left:10px;"/>
+                <a:label name="label3" bindTarget="import_label_ds" marginWidth="70" style="color:red;margin-left:10px;"/>
+                <a:label name="label4" bindTarget="import_label_ds" marginWidth="70" style="color:red;margin-left:10px;"/>
+            </a:fieldSet>
+            <!-- <a:form style="margin-left:5px;margin-top:5px;width:99%" title="BUDGET_JOURNAL_IMPORT"> -->
+            <a:grid id="grid" bindTarget="result_ds" marginHeight="60" marginWidth="45" navBar="true">
+                <!-- <a:toolBar>
+					<a:button type="excel"/>
+				</a:toolBar> -->
+                <a:columns>
+                    <a:column name="batch_line_id"/>
+                    <a:column name="tag_number"/>
+                    <a:column name="company_code"/>
+                    <a:column name="unit_code"/>
+                    <a:column name="using_company_code"/>
+                    <a:column name="using_unit_code"/>
+                    <a:column name="using_employee_code"/>
+                    <a:column name="location_desc"/>
+                    <a:column name="notes"/>
+                </a:columns>
+            </a:grid>
+            <!-- </a:form> -->
+        </a:screenBody>
+        <script><![CDATA[
+            	loadComplete();
+            ]]></script>
+    </a:view>
+</a:screen>

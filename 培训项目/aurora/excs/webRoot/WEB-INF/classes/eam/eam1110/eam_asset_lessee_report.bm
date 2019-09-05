@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Administrator  
+    $Date: 2013-11-1 下午04:46:22  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+select tt.asset_book_id,
+       tt.asset_id,
+       tt.asset_code,
+       tt.asset_name,
+       tt.use_unit,
+       tt.let_content,
+       tt.let_side,
+       tt.location,
+       tt.responsibility_company_id,
+       tt.responsibility_center_id,
+       tt.let_aera,
+       tt.let_aera_use,
+       tt.payment_method,
+       tt.contract_date,
+       tt.contract_start_date,
+       tt.contract_end_date,
+       tt.contract_amount,
+       tt.month_count,
+       tt.month_rent,
+       nvl(tt.year_to_pay, 0) year_to_pay,
+       nvl(tt.before_to_pay, 0) before_to_pay,
+       nvl(tt.year_pay_sum, 0) year_pay_sum,
+       nvl(tt.one_year, 0) one_year,
+       nvl(tt.two_year, 0) two_year,
+       nvl(tt.three_year, 0) three_year,
+       nvl(tt.four_year, 0) four_year,
+       nvl(tt.five_year, 0) five_year,
+       nvl(tt.after_five_year, 0) after_five_year,
+       (nvl(tt.one_year, 0) + nvl(tt.two_year, 0) + nvl(tt.three_year, 0) +
+       nvl(tt.four_year, 0) + nvl(tt.five_year, 0)) sum,
+       nvl(tt.year_to_pay, 0) - nvl(tt.year_pay_sum, 0) year_to_pay_2,
+       tt.description,
+       tt.backup_description
+  from ((select ab.asset_book_id,
+                eh.asset_id,
+                eh.asset_code,
+                (select fd.description_text
+                   from fnd_descriptions fd
+                  where fd.description_id = eh.description_id
+                    and fd.language = 'ZHS') asset_name,
+                (select fc.COMPANY_SHORT_NAME
+                   from eam_locations_vl el, fnd_companies_vl fc
+                  where el.location_id = eh.location_id
+                    and fc.COMPANY_ID = el.RESPONSIBILITY_COMPANY_ID) use_unit,
+                l.description let_content,
+                eh.supplier let_side,
+                eh.address location,
+                (select el.responsibility_company_id
+                   from eam_locations el
+                  where el.location_id = eh.location_id and el.asset_book_id =
+                        eh.asset_book_id) responsibility_company_id,
+                (select el.responsibility_center_id
+                   from eam_locations el
+                  where el.location_id = eh.location_id and el.asset_book_id =
+                        eh.asset_book_id) responsibility_center_id,
+                (select cv.value_num
+                   from eam_asset_character_values_v  cv,
+                        eam_asset_entity_class_cht_vl vl
+                  where vl.CHARACTER_ID = cv.character_id
+                    and cv.language = 'ZHS'
+                    and cv.ASSET_ID = eh.asset_id
+                    and vl.CHARACTER_CODE = 'ZR10') let_aera,
+                (select cv.value_num
+                   from eam_asset_character_values_v  cv,
+                        eam_asset_entity_class_cht_vl vl
+                  where vl.CHARACTER_ID = cv.character_id
+                    and cv.language = 'ZHS'
+                    and cv.ASSET_ID = eh.asset_id
+                    and vl.CHARACTER_CODE = 'ZR20') let_aera_use,
+                ch.payment_method payment_method,
+                to_char(ch.document_date, 'YYYY-MM-DD') contract_date,
+                to_char(ch.start_date, 'YYYY-MM-DD') contract_start_date,
+                to_char(ch.end_date, 'YYYY-MM-DD') contract_end_date,
+                ch.amount contract_amount,
+                (select count(1)
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id) month_count,
+                (select nvl(rp.amount, 0)
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id
+                    and rownum = 1) month_rent,
+                (select sum(nvl(rp.amount, 0))
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id
+                    and rp.period_year = to_number(to_char(sysdate, 'YYYY'))) year_to_pay, -- 当年应付
+                (select sum(nvl(rp.amount, 0))
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id
+                    and rp.period_year < to_number(to_char(sysdate, 'YYYY'))) before_to_pay,
+                (select sum(nvl(v.transaction_amount, 0))
+                   from CSH_TRANSACTION_V       V,
+                        csh_transaction_headers h,
+                        csh_transaction_lines   tl
+                  where h.transaction_header_id = v.transaction_header_id
+                    and to_char(v.transaction_date, 'YYYY') =
+                        to_char(sysdate, 'YYYY')
+                    and h.transaction_type in ('PAYMENT', 'PREPAYMENT')
+                    AND (h.transaction_header_id = tl.transaction_header_id or
+                        h.source_header_id = tl.transaction_header_id)
+                    AND exists
+                  (select 1
+                           from con_cash_trx_pmt_schedule_lns a
+                          where a.contract_header_id = ch.contract_header_id
+                            and tl.transaction_line_id =
+                                a.csh_transaction_line_id)) year_pay_sum,
+                (select sum(nvl(rp.amount, 0))
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id
+                    and rp.period_year =
+                        to_number(to_char(sysdate, 'YYYY')) + 1) one_year,
+                (select sum(nvl(rp.amount, 0))
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id
+                    and rp.period_year =
+                        to_number(to_char(sysdate, 'YYYY')) + 2) two_year,
+                (select sum(nvl(rp.amount, 0))
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id
+                    and rp.period_year =
+                        to_number(to_char(sysdate, 'YYYY')) + 3) three_year,
+                (select sum(nvl(rp.amount, 0))
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id
+                    and rp.period_year =
+                        to_number(to_char(sysdate, 'YYYY')) + 4) four_year,
+                (select sum(nvl(rp.amount, 0))
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id
+                    and rp.period_year =
+                        to_number(to_char(sysdate, 'YYYY')) + 5) five_year,
+                (select sum(nvl(rp.amount, 0))
+                   from con_contract_return_periods rp
+                  where rp.contract_header_id = ch.contract_header_id
+                    and rp.period_year >
+                        to_number(to_char(sysdate, 'YYYY')) + 5) after_five_year,
+                (select null from dual) description,
+                (select null from dual) backup_description
+           from eam_requisition_lines l,
+                eam_asset_headers     eh,
+                con_contract_headers  ch,
+                eam_asset_categories  eac,
+                eam_asset_books       ab
+          where l.asset_id = eh.asset_id
+            and ab.asset_book_id = eac.asset_book_id
+            and l.contract_id = ch.contract_header_id
+            and eh.status not in ('INVALID', 'NEW')
+            and ch.status in ('CONFIRM', 'FINISH')
+            and eac.category_id = eh.category_id
+            and eac.asset_type = 'RND') union
+        (select ab.asset_book_id,
+                eh.asset_id,
+                eh.asset_code,
+                (select fd.description_text
+                   from fnd_descriptions fd
+                  where fd.description_id = eh.description_id
+                    and fd.language = 'ZHS') asset_name,
+                (select fc.COMPANY_SHORT_NAME
+                   from eam_locations_vl el, fnd_companies_vl fc
+                  where el.location_id = eh.location_id
+                    and fc.COMPANY_ID = el.RESPONSIBILITY_COMPANY_ID) use_unit,
+                null let_content,
+                eh.supplier let_side,
+                eh.address location,
+                (select el.responsibility_company_id
+                   from eam_locations el
+                  where el.location_id = eh.location_id and el.asset_book_id =
+                        eh.asset_book_id) responsibility_company_id,
+                (select el.responsibility_center_id
+                   from eam_locations el
+                  where el.location_id = eh.location_id and el.asset_book_id =
+                        eh.asset_book_id) responsibility_center_id,
+                (select cv.value_num
+                   from eam_asset_character_values_v  cv,
+                        eam_asset_entity_class_cht_vl vl
+                  where vl.CHARACTER_ID = cv.character_id
+                    and cv.language = 'ZHS'
+                    and cv.ASSET_ID = eh.asset_id
+                    and vl.CHARACTER_CODE = 'ZR10') let_aera,
+                (select cv.value_num
+                   from eam_asset_character_values_v  cv,
+                        eam_asset_entity_class_cht_vl vl
+                  where vl.CHARACTER_ID = cv.character_id
+                    and cv.language = 'ZHS'
+                    and cv.ASSET_ID = eh.asset_id
+                    and vl.CHARACTER_CODE = 'ZR20') let_aera_use,
+                (select null from dual) payment_method,
+                null contract_date,
+                null contract_start_date,
+                null contract_end_date,
+                null contract_amount,
+                null month_count,
+                null month_rent,
+                null year_to_pay, -- 当年应付
+                null before_to_pay,
+                null year_pay_sum,
+                null one_year,
+                null two_year,
+                null three_year,
+                null four_year,
+                null five_year,
+                null after_five_year,
+                (select null from dual) description,
+                (select null from dual) backup_description
+           from eam_asset_headers    eh,
+                eam_asset_categories eac,
+                eam_asset_books      ab
+          where eh.category_id = eac.category_id
+            and ab.asset_book_id = eac.asset_book_id
+            and eac.asset_type = 'RND'
+            and eh.status not in ('INVALID', 'NEW')
+            and not exists
+          (select 1
+                   from eam_requisition_lines rl, con_contract_headers ch
+                  where rl.asset_id = eh.asset_id
+                    and rl.contract_id = ch.contract_header_id))) tt
+                    #WHERE_CLAUSE#
+ 					order by tt.asset_code 
+]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="contract_start_date" queryExpression="tt.contract_start_date = ${@contract_start_date}"/>
+        <bm:query-field name="contract_end_date" queryExpression="tt.contract_end_date = ${@contract_endsss_date}"/>
+        <bm:query-field name="asset_code" queryExpression="tt.asset_code like ${@asset_code}"/>
+        <bm:query-field name="location" queryExpression="tt.location like &apos;%&apos; || ${@location} || &apos;%&apos;"/>
+        <bm:query-field name="responsibility_company_id" queryExpression="tt.responsibility_company_id = ${@responsibility_company_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="(tt.asset_book_id = (select ab.asset_book_id from fnd_companies fc, eam_asset_books ab where fc.set_of_books_id = ab.set_of_book_id and fc.company_id = ${/session/@company_id}))"/>
+    </bm:data-filters>
+</bm:model>

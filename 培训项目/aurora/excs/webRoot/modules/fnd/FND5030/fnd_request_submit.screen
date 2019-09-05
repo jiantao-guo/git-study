@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: likun  
+    $Date: 2012-7-5 下午4:26:37  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc">
+    <a:init-procedure>
+        <p:set field="/model/request_object" setToNull="true"/>
+        <a:model-query defaultWhereClause="request_info_id=${/parameter/@request_info_id}" model="fnd.FND5030.fnd_request_submit" rootPath="request_object"/>
+        <p:loop source="/model/request_object">
+            <p:switch test="@edit_type">
+                <p:case value="COMBOBOX">
+                    <a:model-query model="${@bm}" rootPath="/model/${@parameter_name}_list"/>
+                </p:case>
+            </p:switch>
+        </p:loop>
+        <p:echo/>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+
+            function submitFunction() {
+                var request_object_ds = $('fnd_request_object');
+                var submit_result_ds = $('fnd_request_submit_result_ds');
+                Aurora.Masker.mask($('fnd_concurrent_request_submit_window').wrap, '正在提交..');
+                if (request_object_ds.validate()) {
+                    
+                    var record = request_object_ds.getCurrentRecord();
+                    var parameter_records = submit_result_ds.getAll();
+                    
+                    var data = [];
+                    data = {
+                        request_info_id: ${/parameter/@request_info_id}
+                    };
+                    var parameter = [];
+                    
+                    for (var t = 0;t < parameter_records.length;t++) {
+                        var parameter_value = record.get(parameter_records[t].get('parameter_id'));
+                        parameter_records[t].set('parameter_value', parameter_value);
+                        parameter.push(parameter_records[t].data);
+            
+                    }
+            
+                    data['parameter'] = parameter;
+                    
+                    Aurora.request({
+                        url: 'fnd_request_submit_parameter.svc',
+                        para: data,
+                        success: parametersubmitSuccess,
+                        failure: Aurora.Masker.unmask($('fnd_concurrent_request_submit_window').wrap),
+                        scope: this
+                    });
+                    
+                }
+            }
+            
+            
+            function parametersubmitSuccess(res) {
+                Aurora.Masker.unmask($('fnd_concurrent_request_submit_window').wrap);
+                Aurora.showMessage('提示', '请求提交成功!');
+                closesubmitWindow();
+                closeWindow();
+                query();
+            }
+            
+            
+            function closesubmitWindow() {
+                $('fnd_concurrent_request_submit_window').close();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="fnd_request_submit_result_ds">
+                <a:datas dataSource="/model/request_object"/>
+            </a:dataSet>
+            <a:placeHolder id="combox_ds"/>
+            <a:dataSet id="fnd_request_object" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="object_ds"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form id="request_obj_ds" title="请求参数" width="580">
+                <a:box column="2">
+                    <a:placeHolder id="object_cmp"/>
+                </a:box>
+            </a:form>
+            <a:hBox>
+                <a:button click="submitFunction" text="提交"/>
+                <a:button click="closesubmitWindow" text="HAP_CLOSE"/>
+            </a:hBox>
+        </a:screenBody>
+    </a:view>
+    <a:view-config>
+        <c:create-config targetId="object_cmp">
+            <p:loop source="/model/request_object">
+                <p:switch test="@edit_type">
+                    <p:case value="LOV">
+                        <c:process-config>
+                            <a:lov name="${@displayfiled_to}" bindTarget="fnd_request_object" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="TEXTFIELD">
+                        <c:process-config>
+                            <a:textField name="${@parameter_id}" bindTarget="fnd_request_object" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="COMBOBOX">
+                        <c:process-config>
+                            <a:comboBox name="${@displayfiled_to}" bindTarget="fnd_request_object" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="DATAPICKER">
+                        <c:process-config>
+                            <a:datePicker name="${@parameter_id}" bindTarget="fnd_request_object" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="CHECKBOX">
+                        <c:process-config>
+                            <a:checkBox name="${@parameter_id}" bindTarget="fnd_request_object" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="NUMBERFIELD">
+                        <c:process-config>
+                            <a:numberField name="${@parameter_id}" bindTarget="fnd_request_object" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="combox_ds">
+            <p:loop source="/model/request_object">
+                <p:switch test="@edit_type">
+                    <p:case value="COMBOBOX">
+                        <c:process-config>
+                            <a:dataSet id="${@parameter_name}_ds">
+                                <a:datas dataSource="/model/${@parameter_name}_list"/>
+                            </a:dataSet>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="object_ds">
+            <a:field name="request_info_id" defaultValue="${/parameter/@request_info_id}"/>
+            <p:loop source="/model/request_object">
+                <p:switch test="@edit_type">
+                    <p:case value="LOV">
+                        <c:process-config>
+                            <a:field name="${@displayfiled_to}" lovHeight="500" lovService="${@bm}" lovWidth="550" required="${@required_flag}">
+                                <a:mapping>
+                                    <a:map from="${@valuefiled_from}" to="${@parameter_id}"/>
+                                    <a:map from="${@displayfiled_from}" to="${@displayfiled_to}"/>
+                                </a:mapping>
+                            </a:field>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="COMBOBOX">
+                        <c:process-config>
+                            <a:field name="${@displayfiled_to}" displayField="${@displayfiled_from}" options="${@parameter_name}_ds" required="${@required_flag}" returnField="${@parameter_id}" valueField="${@valuefiled_from}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="CHECKBOX">
+                        <c:process-config>
+                            <a:field name="${@parameter_id}" checkedValue="Y" defaultValue="N" required="${@required_flag}" uncheckedValue="N"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="NUMBERFIELD">
+                        <c:process-config>
+                            <a:field name="${@parameter_id}" required="${@required_flag}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="TEXTFIELD">
+                        <c:process-config>
+                            <a:field name="${@parameter_id}" required="${@required_flag}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="DATAPICKER">
+                        <c:process-config>
+                            <a:field name="${@parameter_id}" required="${@required_flag}"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

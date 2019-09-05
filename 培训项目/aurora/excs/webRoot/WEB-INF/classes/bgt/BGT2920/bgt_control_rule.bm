@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+select t.control_rule_id,
+       t.control_rule_code,
+       t.description_text,
+       t.priority,
+       t.budget_group_id,
+       t.budget_group_id_display,
+       t.start_date,
+       t.end_date,
+       t.bgt_org_id
+  from (select t.control_rule_id,
+               t.control_rule_code,
+               t.description                 description_text,
+               t.priority,
+               t.budget_strategy_group_id    budget_group_id,
+               b.control_strategy_group_desc budget_group_id_display,
+               t.start_date,
+               t.end_date,
+               t.bgt_org_id
+          from bgt_control_rules_vl t,
+               bgt_control_strategy_groups b,
+               (select t.bgt_org_id,
+                       t.bgt_org_code,
+                       t.description bgt_org_dec,
+                       t.set_of_books_id,
+                       v.set_of_books_code,
+                       v.set_of_books_name,
+                       t.enabled_flag
+                  from bgt_organizations_vl t, gld_set_of_books_vl v
+                 where t.set_of_books_id = v.set_of_books_id) k
+         where b.control_strategy_group_id = t.budget_strategy_group_id
+           and t.bgt_org_id = k.bgt_org_id
+           and exists (select com.set_of_books_id
+                  from fnd_companies_vl com
+                 where com.set_of_books_id = k.set_of_books_id
+                   and com.company_id = ${/session/@company_id})
+         order by t.priority) t 
+         #WHERE_CLAUSE#
+		
+	]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+            	declare
+            		v_bgt_org_id number;
+        		begin
+        		select t.bgt_org_id 
+				       into v_bgt_org_id 
+				  from bgt_organizations_vl t
+				 where exists (select com.set_of_books_id
+				          from fnd_companies_vl com
+				         where com.set_of_books_id = t.set_of_books_id
+				           and com.company_id = ${/session/@company_id});
+				           
+	 			bgt_control_rules_pkg.insert_bgt_control_rules( ${@control_rule_id},
+													 ${@control_rule_code},
+													 ${@description_text},
+													 ${@priority},
+													 ${@budget_group_id},
+													 to_date(${@start_date},'yyyy-mm-dd'),
+													 to_date(${@end_date},'yyyy-mm-dd'),
+													 ${/session/@user_id},
+													 v_bgt_org_id);  
+				end;
+        	]]></bm:update-sql>
+            <bm:parameters>
+                <bm:parameter name="control_rule_id" input="false" output="true" outputPath="@control_rule_id"/>
+            </bm:parameters>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+        	
+        
+ begin
+	 bgt_control_rules_pkg.update_bgt_control_rules( ${@control_rule_id},
+													 ${@description_text},
+													 ${@priority},
+													 ${@budget_group_id},
+													 to_date(${@start_date},'yyyy-mm-dd'),
+													 to_date(${@end_date},'yyyy-mm-dd'),
+													 ${/session/@user_id});  
+end;
+	
+        ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+        	delete from bgt_control_rules b where b.control_rule_id = ${@control_rule_id}
+        ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="priority" queryExpression="priority=${@priority}"/>
+        <bm:query-field name="control_rule_code_from" queryExpression="control_rule_code &gt;= ${@control_rule_code_from}"/>
+        <bm:query-field name="control_rule_code_to" queryExpression="control_rule_code &lt;= ${@control_rule_code_to}"/>
+        <bm:query-field name="control_rule_id" queryExpression="control_rule_id = ${/parameter/@control_rule_id}"/>
+    </bm:query-fields>
+</bm:model>

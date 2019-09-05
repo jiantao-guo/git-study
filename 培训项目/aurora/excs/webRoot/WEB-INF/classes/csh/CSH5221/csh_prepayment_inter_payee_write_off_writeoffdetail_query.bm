@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[			SELECT *
+			  FROM (SELECT V.*, NVL(DUE_AMOUNT - WRITE_OFF_AMOUNT, 0) UNWRITE_OFF_AMOUNT
+					  FROM (SELECT 'PREPAYMENT_EXPENSE_REPORT' WRITE_OFF_TYPE,
+								   (SELECT B.CODE_VALUE_NAME
+									  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+									 WHERE A.CODE_ID = B.CODE_ID
+									   AND A.CODE = 'CSH_WRITE_OFF_TYPE'
+									   AND B.CODE_VALUE = 'PREPAYMENT_EXPENSE_REPORT') WRITE_OFF_TYPE_DISPLAY,
+								   ERH.EXP_REPORT_HEADER_ID,
+								   ERPS.PAYMENT_SCHEDULE_LINE_ID,
+								   ERH.EXP_REPORT_NUMBER,
+								   ERPS.DUE_AMOUNT,
+								   TO_CHAR(ERH.AUDIT_DATE, 'YYYY-MM-DD') AUDIT_DATE,
+								   ERPS.PAYEE_CATEGORY,
+								   (SELECT B.CODE_VALUE_NAME
+									  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+									 WHERE A.CODE_ID = B.CODE_ID
+									   AND A.CODE = 'PAYMENT_OBJECT'
+									   AND B.CODE_VALUE = ERPS.PAYEE_CATEGORY) PAYEE_CATEGORY_DESC,
+								   ERPS.PAYEE_ID,
+								   (DECODE(ERPS.PAYEE_CATEGORY,
+										   'EMPLOYEE',
+										   (SELECT EE.EMPLOYEE_CODE || '-' || EE.NAME
+											  FROM EXP_EMPLOYEES EE
+											 WHERE EE.EMPLOYEE_ID = ERPS.PAYEE_ID),
+										   'VENDER',
+										   (SELECT SVV.VENDER_CODE || '-' || SVV.DESCRIPTION
+											  FROM PUR_SYSTEM_VENDERS_VL SVV
+											 WHERE SVV.VENDER_ID = ERPS.PAYEE_ID),
+										   'CUSTOMER',
+										   (SELECT SCV.CUSTOMER_CODE || '-' || SCV.DESCRIPTION
+											  FROM ORD_SYSTEM_CUSTOMERS_VL SCV
+											 WHERE SCV.CUSTOMER_ID = ERPS.PAYEE_ID))) PAYEE_DESC,
+								   (SELECT NVL(SUM(W.DOCUMENT_WRITE_OFF_AMOUNT), 0)
+									  FROM CSH_WRITE_OFF W
+									 WHERE W.DOCUMENT_SOURCE = 'EXPENSE_REPORT'
+									   AND W.DOCUMENT_HEADER_ID =
+										   ERPS.EXP_REPORT_HEADER_ID
+									   AND W.DOCUMENT_LINE_ID =
+										   ERPS.PAYMENT_SCHEDULE_LINE_ID) WRITE_OFF_AMOUNT
+							  FROM EXP_REPORT_PMT_SCHEDULES ERPS,
+								   EXP_REPORT_HEADERS       ERH
+							 WHERE (ERH.REVERSED_FLAG IS NULL OR ERH.REVERSED_FLAG = 'N')
+							   AND ERH.EXP_REPORT_HEADER_ID = ERPS.EXP_REPORT_HEADER_ID
+							   AND ERH.AUDIT_FLAG = 'Y'
+							   AND ERH.WRITE_OFF_STATUS != 'C'
+							   and exists(select 1 
+										    from CSH_TRANSACTION_LINES CTL
+										   where ERPS.CURRENCY = CTL.CURRENCY_CODE
+										     and CTL.TRANSACTION_HEADER_ID = ${/parameter/@transaction_header_id})
+							   AND ERPS.COMPANY_ID = ${/session/@company_id}
+							 ORDER BY ERH.EXP_REPORT_NUMBER) V
+					 WHERE DUE_AMOUNT - WRITE_OFF_AMOUNT > 0)
+		#WHERE_CLAUSE#]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="payee_category" dataType="java.lang.String" queryExpression="PAYEE_CATEGORY = ${@payee_category}"/>
+        <bm:query-field name="payee_id" dataType="java.lang.String" queryExpression="PAYEE_ID = ${@payee_id}"/>
+    </bm:query-fields>
+</bm:model>

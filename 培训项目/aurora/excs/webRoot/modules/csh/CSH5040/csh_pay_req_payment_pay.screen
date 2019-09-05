@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="enabled_flag = &apos;Y&apos; order by type_code" model="gld.gld_exchangerate_types_vl" rootpath="exchange_rate_type_list"/>
+        <a:model-query defaultWhereClause="company_id = ${/session/@company_id} and enabled_flag = &apos;Y&apos; and account_type = &apos;COMPANY&apos;" model="csh.csh_bank_accounts_vl" rootpath="bank_accounts_list"/>
+        <a:model-query model="gld.csh_pay_req_payment_pay_init_fun_cur" rootpath="functional_currency"/>
+        <a:model-query model="csh.csh_pay_req_payment_pay_init_exchange_rate_quotation" rootpath="default_exchange_rate_type"/>
+        <a:model-query defaultWhereClause="enabled_flag = &apos;Y&apos;" model="csh.csh_payment_methods_vl_ext" rootpath="payment_methods_list"/>
+        <a:model-query defaultWhereClause="enabled_flag = &apos;Y&apos; and payment_method_id = ${/parameter/@payment_method_id1}" model="csh.csh_payment_methods_vl_all" rootpath="default_payment_methods"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="csh_pay_req_payment_pay_delete_link" model="db.csh_payment_req_payment_pkg.delete_payment_req_payment_tmp" modelaction="batch_update"/>
+        <a:link id="csh_pay_req_payment_pay_link_1" model="csh.CSH5040.csh_pay_req_payment_pay" modelaction="batch_update"/>
+        <a:link id="get_payment_pay_link_22" model="exp.exp_report_payment_bank_account_lov" modelaction="execute"/>
+        <a:link id="get_exchange_rate_link_3" model="csh.get_exchange_rate" modelaction="query"/>
+        <a:link id="exchangerate_methodcode_query_link" model="csh.exchangerate_methodcode_query" modelaction="query"/>
+        <a:link id="currency_percision_query_link" model="csh.currency_percision_query" modelaction="query"/>
+        <a:link id="sys_fun_get_period_name_link_1" model="csh.sys_fun_get_period_name" modelaction="query"/>
+        <script><![CDATA[
+            var MethodCodeValue;
+            var ExchangeRateQuotationValue;
+            var ExchangeRateValue;
+            var exchange_rate_type_code;
+            
+            function loadComplete() {
+                var dataSet = $('payment_pay_ds');
+                var record = $('payment_pay_ds').create();
+                var p_date = new Date();
+                var p_date_str = Aurora.formatDate(p_date);
+                record.set('payment_date', p_date_str);
+                record.set('functional_currency_code', '${/model/functional_currency/record/@functional_currency_code}');
+                record.set('default_exchange_rate_type_code', '${/model/default_exchange_rate_type/record/@value_code}');
+                getPeriod(null, p_date);
+                record.getMeta().getField('bank_account_num').setLovPara('payment_method_id', '${/parameter/@payment_method_id1}');
+            }
+            
+            function getPeriod(datePicker, date) {
+                var p_date = date || new Date();
+                var p_date_str = Aurora.formatDate(p_date);
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/csh.sys_fun_get_period_name/query*/
+                    $('sys_fun_get_period_name_link_1').getUrl(),
+                    para: {
+                        p_date: p_date_str
+                    },
+                    success: periodName,
+                    scope: this
+                });
+            }
+            
+            function periodName(args) {
+            
+                var period_name = args.result.record.period_name;
+                var record = $('payment_pay_ds').getAt(0);
+                if (args) {
+                    //根据选择的日期自动带出期间名称
+                    if (period_name) {
+                        record.set('period_name', period_name);
+                    } else {
+                        Aurora.showErrorMessage('${l:PROMPT}', '${l:CSH_PAYMENT_REQUISITION_PAYMENT_PAY.CHECK1}', null, 250, 100);
+                        recrod.set('payment_date', '');
+                        recrod.set('period_name', '');
+                    }
+                }
+                if (record.get('bank_account_id') && record.get('bank_account_id') != '') {
+                    changeBankAccount();
+                }
+            }
+            
+            function changeBankAccount() {
+            
+                var record = $('payment_pay_ds').getAt(0);
+                var bankAccountId = record.get('bank_account_id');
+                if (bankAccountId && bankAccountId != '') {
+                    //根据付款账户自动带出币种以及汇率信息
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/csh.currency_percision_query/query*/
+                        $('currency_percision_query_link').getUrl(),
+                        para: {
+                            bank_account_id: bankAccountId
+                        },
+                        success: setCurrencyCode,
+                        scope: this
+                    });
+                }
+            }
+            
+            function setCurrencyCode(args) {
+                var currencyCode = args.result.record.currency_code;
+                var record = $('payment_pay_ds').getAt(0);
+                record.set('currency_code', currencyCode);
+            
+                exchangeRate();
+            }
+            
+            function exchangeRate() {
+            
+                var record = $('payment_pay_ds').getAt(0);
+                var functionCurrencyCode = record.get('functional_currency_code');
+                var currencyCode = record.get('currency_code');
+            
+                if (functionCurrencyCode == currencyCode) {
+                    record.getMeta().getField('exchange_rate_type_display').setRequired(false);
+                    record.getMeta().getField('exchange_rate_type').setRequired(false);
+                    record.set('exchange_rate_type', '');
+                    record.set('exchange_rate_type_display', '');
+                    record.getMeta().getField('exchange_rate_type_display').setReadOnly(true);
+            
+                    record.getMeta().getField('exchange_rate_quotation_display').setRequired(false);
+                    record.set('exchange_rate_quotation', '');
+                    record.set('exchange_rate_quotation_display', '');
+                    record.getMeta().getField('exchange_rate_quotation_display').setReadOnly(true);
+            
+                    record.set('exchange_rate', '1');
+                    record.getMeta().getField('exchange_rate').setReadOnly(true);
+                } else {
+                    record.getMeta().getField('exchange_rate_type_display').setRequired(true);
+                    var default_exchange_rate_type_code = record.get('default_exchange_rate_type_code');
+            
+                    if (default_exchange_rate_type_code && default_exchange_rate_type_code != '') {
+                        exchange_rate_type_code = default_exchange_rate_type_code;
+            
+                        record.set('exchange_rate_type_display', getValueByKey('type_code', default_exchange_rate_type_code, $('exchange_rate_type_list_ds'), 'type_name'));
+                        // added by majianjian at 2015-03-17
+                        //增加默认汇率类型
+                        record.set('exchange_rate_type', default_exchange_rate_type_code);
+                        // end add.
+                        record.getMeta().getField('exchange_rate_type_display').setReadOnly(false);
+            
+                        getExchangeRateMethodCode(default_exchange_rate_type_code);
+                    } else {
+                        Aurora.showErrorMessage('${l:PROMPT}', '${l:CSH_PAYMENT_REQUISITION_PAYMENT_PAY.CHECK2}', null, 250, 100);
+                    }
+                }
+            }
+            
+            function getExchangeRateMethodCode(exchange_rate_type) {
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/csh.exchangerate_methodcode_query/query*/
+                    $('exchangerate_methodcode_query_link').getUrl(),
+                    para: {
+                        type_code: exchange_rate_type
+                    },
+                    success: getMethodCode,
+                    scope: this
+                });
+            }
+            
+            function getMethodCode(args) {
+            
+                var MethodCodeValue = args.result.record.rate_method_code;
+                var record = $('payment_pay_ds').getAt(0);
+                var quotation = record.get('exchange_rate_quotation');
+                var exchangeRateV = record.get("exchange_rate");
+            
+                if (MethodCodeValue == 'MANUAL') {
+                    record.getMeta().getField('exchange_rate_quotation_display').setRequired(true);
+                    record.set('exchange_rate_quotation', '');
+                    record.set('exchange_rate_quotation_display', '');
+                    record.getMeta().getField('exchange_rate_quotation_display').setReadOnly(false);
+            
+                    record.set('exchange_rate', '');
+                    record.getMeta().getField('exchange_rate').setReadOnly(false);
+                    record.getMeta().getField('exchange_rate').setRequired(true);
+                } else {
+                    var functionCurrencyCode = record.get('functional_currency_code');
+                    var currencyCode = record.get('currency_code');
+                    var exchange_date = record.get('payment_date');
+                    var exchange_period_name = record.get('period_name');
+                    var exchangeRateTypeCode;
+            
+                    if (record.get('exchange_rate_type') == exchange_rate_type_code) {
+                        exchangeRateTypeCode = exchange_rate_type_code;
+                    } else {
+                        exchangeRateTypeCode = record.get('exchange_rate_type');
+                    }
+                    record.getMeta().getField('exchange_rate_quotation_display').setReadOnly(true);
+                    record.getMeta().getField('exchange_rate').setReadOnly(true);
+                    getQuotationExchangerate(functionCurrencyCode, currencyCode, exchangeRateTypeCode, exchange_date, exchange_period_name);
+                }
+            }
+            
+            function getQuotationExchangerate(from_currency, to_currency, exchange_rate_type, exchange_date, exchange_period_name) {
+            
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/csh.get_exchange_rate/query*/
+                    $('get_exchange_rate_link_3').getUrl(),
+                    para: {
+                        from_currency: from_currency,
+                        to_currency: to_currency,
+                        exchange_rate_type: exchange_rate_type,
+                        exchange_date: exchange_date,
+                        exchange_period_name: exchange_period_name
+                    },
+                    success: getQE,
+                    scope: this
+                });
+            }
+            
+            function getQE(args) {
+                var methodCode = args.result.record;
+                var record = $('payment_pay_ds').getAt(0);
+                if (methodCode.exchange_rate) {
+                    var ExchangeRateQuotationValue = methodCode.exchange_rate_quotation;
+                    var ExchangeRateValue = methodCode.exchange_rate;
+                    record.set('exchange_rate_quotation_display', getValueByKey('code_value', ExchangeRateQuotationValue, $('exchange_rate_quotation_ds'), 'code_value_name'));
+                    record.set('exchange_rate', ExchangeRateValue);
+                } else {
+                    Aurora.showErrorMessage('${l:PROMPT}', '${l:CSH_PAYMENT_REQUISITION_PAYMENT_PAY.CHECK3}', null, 250, 100);
+                    record.set('exchange_rate_quotation', '');
+                    record.set('exchange_rate_quotation_display', '');
+                    record.set('exchange_rate', '');
+                    record.getMeta().getField('exchange_rate_quotation_display').setReadOnly(true);
+                    record.getMeta().getField('exchange_rate').setRequired(false);
+                    record.getMeta().getField('exchange_rate').setReadOnly(true);
+                }
+            }
+            
+            function changeExchangeRate() {
+                getExchangeRateMethodCode($('payment_pay_ds').getAt(0).get('exchange_rate_type'));
+            }
+            
+            function payment() {
+                var dataSet = $('payment_pay_ds');
+                if (!dataSet.validate()) {
+                    return;
+                }
+                var param = dataSet.getJsonData(false);
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/csh.csh_pay_req_payment_pay/batch_update*/
+                    $('csh_pay_req_payment_pay_link_1').getUrl(),
+                    para: param,
+                    success: forward_pay,
+                    scope: this
+                });
+            }
+            
+            function forward_pay() {
+                $('csh_pay_req_payment_pay_screen').close();
+            }
+            
+            function back_pay() {
+                var dataSet = $('payment_pay_ds');
+                var param = dataSet.getJsonData(false);
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/csh.csh_pay_req_payment_pay_delete/batch_update*/
+                    $('csh_pay_req_payment_pay_delete_link').getUrl() + '?_ban_remind=Y',
+                    para: param,
+                    success: function() {
+                        $('csh_pay_req_payment_pay_screen').close();
+                    },
+                    scope: this
+                });
+            }
+            
+            function getValueByKey(propName, key, dataSet, valueName) {
+                var records = dataSet.getAll();
+            
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    if (record.get(propName) == key) {
+                        return record.get(valueName);
+                    }
+                }
+                return null;
+            }
+            
+            function payUpdateFunction(dataSet, record, name, value, oldValue) {
+                if (name == 'payment_date') {
+                    var p_date = value;
+                    record.getMeta().getField('bank_account_num').setLovPara('payment_date', p_date);
+                } else if (name == 'bank_account_code') {
+                    Aurora.request({
+                        url: $('get_payment_pay_link_22').getUrl() + '?bank_account_code=' + value,
+                        success: function(args) {
+                            var pay_method_name = args.result.pay_method_name;
+                            var pay_method_id = args.result.pay_method_id;
+                            // console.log(pay_method_name);
+                            // console.log(pay_method_code);
+                            record.set('payment_methods', pay_method_id);
+                            record.set('payment_methods_display', pay_method_name);
+                        }
+                    });
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="exchange_rate_quotation_ds" lookupCode="EXCHANGE_RATE_QUOTATION"/>
+            <a:dataSet id="exchange_rate_type_list_ds">
+                <a:datas dataSource="/model/exchange_rate_type_list"/>
+            </a:dataSet>
+            <a:dataSet id="payment_methods_list_ds">
+                <a:datas dataSource="/model/payment_methods_list"/>
+            </a:dataSet>
+            <a:dataSet id="payment_pay_ds">
+                <a:fields>
+                    <a:field name="functional_currency_code"/>
+                    <a:field name="default_exchange_rate_type_code"/>
+                    <a:field name="bank_account_id"/>
+                    <a:field name="bank_account_code"/>
+                    <a:field name="payment_methods"/>
+                    <a:field name="payment_date" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_PAYMENT_DATE" required="true"/>
+                    <a:field name="period_name" prompt="CSH_PAYMENT_REQUISITION_PAYMENT_PAY.PERIOD_NAME" readOnly="true"/>
+                    <a:field name="currency_code" defaultValue="CNY" prompt="CSH_PAYMENT_REQUISITION_HDS.CURRENCY_CODE" readOnly="true"/>
+                    <a:field name="exchange_rate_type_display" displayField="type_name" options="exchange_rate_type_list_ds" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_TYPE" returnField="exchange_rate_type" valueField="type_code"/>
+                    <a:field name="exchange_rate_type"/>
+                    <a:field name="exchange_rate_quotation_display" displayField="code_value_name" options="exchange_rate_quotation_ds" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_QUOTATION" returnField="exchange_rate_quotation" valueField="code_value"/>
+                    <a:field name="exchange_rate_quotation"/>
+                    <a:field name="exchange_rate" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE"/>
+                    <a:field name="bank_account_num" autoComplete="true" autoCompleteField="bank_account_display" lovGridHeight="320" lovHeight="450" lovLabelWidth="120" lovService="exp.exp_report_payment_bank_account_lov" lovWidth="650" prompt="CSH_PAYMENT_REQUISITION_PAYMENT_PAY.BANK_ACCOUNT_NUM" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="bank_account_num" to="bank_account_num"/>
+                            <a:map from="bank_account_id" to="bank_account_id"/>
+                            <a:map from="bank_account_code" to="bank_account_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate" defaultValue="1"/>
+                    <a:field name="description" prompt="CSH_TRANSACTION_LINES.DESCRIPTION"/>
+                    <a:field name="payment_methods" defaultValue="${/parameter/@payment_method_id1}"/>
+                    <a:field name="payment_methods_display" defaultValue="${/model/default_payment_methods/record/@description}" displayField="description" options="payment_methods_list_ds" prompt="CSH_TRANSACTION_HEADERS.PAYMENT_METHOD_ID" readOnly="true" required="true" returnField="payment_methods" valueField="payment_method_id"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="payUpdateFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="payment" text="确认支付" width="80"/>
+                <a:toolbarButton click="back_pay" text="HAP_BACK" width="80"/>
+            </a:screenTopToolbar>
+            <a:form column="2" style="margin-left:10px;margin-top:10px" width="550">
+                <a:datePicker name="payment_date" bindTarget="payment_pay_ds">
+                    <a:events>
+                        <a:event name="select" handler="getPeriod"/>
+                    </a:events>
+                </a:datePicker>
+                <a:textField name="period_name" bindTarget="payment_pay_ds"/>
+                <a:lov name="bank_account_num" bindTarget="payment_pay_ds">
+                    <a:events>
+                        <a:event name="commit" handler="changeBankAccount"/>
+                    </a:events>
+                </a:lov>
+                <a:comboBox name="payment_methods_display" bindTarget="payment_pay_ds"/>
+                <a:textField name="description" bindTarget="payment_pay_ds"/>
+                <!-- <a:textField name="currency_code" bindTarget="payment_pay_ds"/> -->
+                <!-- <a:comboBox name="exchange_rate_type_display" bindTarget="payment_pay_ds">
+                    <a:events>
+                        <a:event name="select" handler="changeExchangeRate"/>
+                    </a:events>
+                </a:comboBox>
+                <a:comboBox name="exchange_rate_quotation_display" bindTarget="payment_pay_ds"/>
+                <a:textField name="exchange_rate" bindTarget="payment_pay_ds"/> -->
+            </a:form>
+            <script><![CDATA[
+
+                loadComplete();
+            ]]></script>
+        </a:screenBody>
+    </a:view>
+</a:screen>

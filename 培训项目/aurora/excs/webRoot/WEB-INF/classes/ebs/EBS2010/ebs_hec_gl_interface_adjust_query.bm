@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (WITH
+                    comp_temp AS
+                    (SELECT
+                        fc.company_id
+                    FROM
+                        fnd_companies fc
+                    WHERE
+                        fc.company_id = ${/session/@company_id}
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id  = ${/session/@company_id} AND
+                        ${@include_child_flag} = 'Y'
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id IN
+                        (SELECT
+                            fc3.company_id
+                        FROM
+                            fnd_companies fc3
+                        WHERE
+                            fc3.parent_company_id = ${/session/@company_id}
+                        ) AND
+                        ${@include_child_flag} = 'Y'
+                    )
+                SELECT
+                    g.batch_id,
+                    g.reference4,
+                    g.hec_company_id company_id,
+                    (SELECT
+                        f.company_code
+                        ||'-'
+                        ||f.company_short_name
+                    FROM
+                        fnd_companies_vl f
+                    WHERE
+                        f.company_id = g.hec_company_id
+                    )company_name
+                FROM
+                    ebs_hec_gl_interface g
+                WHERE
+                    g.imported_flag   ='E' AND
+                    g.hec_company_id IN
+                    (SELECT * FROM comp_temp
+                    )
+                GROUP BY
+                    g.batch_id,
+                    g.reference4,
+                    g.hec_company_id
+                    )g #WHERE_CLAUSE#
+                ORDER BY
+                    g.batch_id,
+                    g.reference4
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+            begin
+                cux_gl_interface_pkg.post_update_to_ebs(p_batch_id  =>${@batch_id},
+                               p_reference4 =>${@reference4},
+                               p_company_id => ${@company_id},
+                               p_user_id => ${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="batch_id" queryExpression="g.batch_id =${@batch_id}"/>
+        <bm:query-field name="reference4" queryExpression="g.reference4 = ${@reference4}"/>
+        <bm:query-field name="company_id" queryExpression="g.company_id = ${@company_id}"/>
+    </bm:query-fields>
+</bm:model>

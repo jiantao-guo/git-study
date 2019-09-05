@@ -1,0 +1,548 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="eam.eam1010.eam1010_asset_books_query" rootPath="asset_books"/>
+        <!-- <a:model-query fetchAll="true" model="eam.common.eam_asset_book_all" rootPath="asset_books"/> -->
+        <a:model-query fetchAll="true" model="eam.eam0610.eam0610_requisition_types_query" rootPath="req_types"/>
+        <!-- <a:model-query fetchAll="true" model="fnd.fnd_companies_lov" rootPath="com_info"/> -->
+        <a:model-query fetchAll="true" model="eam.get_company_code" rootPath="com_code"/>
+        <a:model-query fetchAll="true" model="eam.EAM1180.eam_sob_period_lv" rootPath="sob_period"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="asset_headers_link" url="${/request/@context_path}/modules/eam/public/eam_asset_headers_readonly_for_requisition.screen"/>
+        <!-- <script src="${/request/@context_path}/modules/print/zplprint.js" type="text/javascript"/> -->
+        <script><![CDATA[
+            // 查询
+            var current_cost_sum = 0;
+            var accumulated_dep_amt_sum = 0;
+            
+            function query() {
+                $('req_result_ds').query();
+                $('eam_sum_result_ds').query();
+            }
+            
+            function eam_sum_result_load(ds) {
+                var record = ds.getAt(0);
+                current_cost_sum = record.get('current_cost_sum');
+                accumulated_dep_amt_sum = record.get('accumulated_dep_amt_sum');
+            }
+            
+            // 重置
+            
+            function reset() {
+                $('req_form_ds').reset();
+            }
+            
+            // 申请号编辑器
+            
+            function reqNumRenderer(value, record, name) {
+                var requisition_header_id = record.get("requisition_header_id");
+                var base_trx_category = record.get('base_trx_category');
+                return '<a href="javascript:reqDetail(' + requisition_header_id + ',\'' + base_trx_category + '\');">' + value + '</a>';
+            }
+            
+            // 打开申请详情页面
+            
+            function reqDetail(requisition_header_id, base_trx_category) {
+                var d_url;
+            
+                switch (base_trx_category) {
+                case 'RET':
+                    d_url = '${/request/@context_path}/modules/eam/EAM0622/eam_disposal_req_query_details_ret.screen?requisition_header_id=' + requisition_header_id;
+                    break;
+                case 'DPL':
+                    d_url = '${/request/@context_path}/modules/eam/EAM0622/eam_disposal_req_query_details_dpl.screen?requisition_header_id=' + requisition_header_id;
+                    break;
+                }
+            
+                new Aurora.Window({
+                    id: 'disposal_details_window',
+                    url: d_url,
+                    title: '${l:EAM_REQUISITION_DPL_DETAIL}',
+                    fullScreen: true
+                });
+            
+            }
+            
+            // 提交到cvs
+            
+            function reqSubmit() {
+                var selectedData = $('req_result_ds').getSelected();
+            
+                if (!selectedData.length) {
+                    alert("${l:EAM_ASSET_HEADERS.CHOICE_REQ_FIRST}");
+                    return false;
+                }
+            
+                var confirm = window.confirm('${l:EAM_SUBMIT_REQUISITION_CONFIRM}');
+                if (!confirm) {
+                    return false;
+                }
+            
+                var data = [];
+                for (var i = 0;i < selectedData.length;i++) {
+                    var para = {};
+                    para.requisition_header_id = selectedData[i].data.requisition_header_id;
+                    data.push(para);
+                }
+            
+                Aurora.request({
+                    url: '${/request/@context_path}/modules/eam/EAM0421/eam_cststl_req_submit.svc',
+                    para: data,
+                    success: function(args) {
+                        $('req_result_ds').query();
+                    }
+                });
+            }
+            
+            
+            function dateValidate(record, name, value) {
+                if (name == 'use_date_from' || name == 'use_date_to') {
+                    var use_date_from = record.get('use_date_from');
+                    var use_date_to = record.get('use_date_to');
+            
+                    if (typeof(use_date_to) != 'undefined' && !Ext.isEmpty(use_date_to)) {
+                        if (!compareDate(use_date_from, use_date_to)) {
+                            return '${l:EXP_REPORT_MAINTAIN.DATE_VALIDATE}';
+                        }
+                    }
+            
+                    return true;
+                }
+                if(name == 'period_name_from' || name == 'period_name_to' ){
+                    var period_name_from = record.get('period_name_from');
+                    var period_name_to = record.get('period_name_to');
+                    if (typeof(period_name_to) != 'undefined' && !Ext.isEmpty(period_name_to)) {
+                        if (!compareDate(period_name_from, period_name_to)) {
+                            return '${l:EXP_REPORT_MAINTAIN.DATE_VALIDATE}';
+                        }
+                    }
+            
+                    return true;
+                }
+            }
+            
+            function compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            //
+            
+            function assetRenderer(value, record, name) {
+                if (record.isNew) {
+                    return value;
+                } else {
+                    var asset_id = record.get("asset_id");
+                    return '<a href="javascript:viewAsset(' + asset_id + ')">' + value + '</a>';
+                }
+            }
+            
+            function viewAsset(asset_id) {
+                new Aurora.Window({
+                    id: 'eam_asset_cost_vadj_window',
+                    url: $('asset_headers_link').getUrl() + '?asset_id=' + asset_id,
+                    title: '${l:EAM_ASSET_HEADERS.SEARCH}',
+                    height: 520,
+                    width: 1050
+                });
+            }
+            
+            function onFormUpdate(dataSet, record, name, value) {
+            
+                switch (name) {
+                case 'asset_book_id':
+                    var responsibility_company_id = record.get("responsibility_company_id");
+                    var entity_company_id = record.get("entity_company_id");
+                    record.getField("useing_unit_desc").setLovPara("company_id", responsibility_company_id);
+                    record.getField("entity_unit_desc").setLovPara("company_id", entity_company_id);
+                    // record.getField("category_desc").setLovPara("company_id", company_id);
+                    record.set("useing_unit_id", null);
+                    record.set("useing_unit_desc", null);
+                    record.set("responsibility_company_id", null);
+                    record.set("responsibility_company_name", null);
+                    record.set("entity_unit_id", null);
+                    record.set("entity_unit_desc", null);
+                    record.set("category_id", null);
+                    record.set("category_desc", null);
+                    record.set("category_sec_id", null);
+                    record.set("category_sec_desc", null);
+                    record.set("entity_class_id", null);
+                    record.set("entity_class_desc", null);
+                    record.set("fin_class_id", null);
+                    record.set("fin_class_name", null);
+            
+                    break;
+                case 'category_id':
+                    record.getField("category_sec_desc").setLovPara("category_id", value);
+                    record.set("category_sec_id", null);
+                    record.set("category_sec_desc", null);
+                    record.set("entity_class_id", null);
+                    record.set("entity_class_desc", null);
+                    record.set("fin_class_id", null);
+                    record.set("fin_class_name", null);
+                    break;
+                case 'category_sec_id':
+                    var category_id = record.get("category_id");
+                    record.getField("fin_class_name").setLovPara("category_id", category_id);
+                    record.getField("fin_class_name").setLovPara("category_sec_id", value);
+                    record.set("fin_class_id", null);
+                    record.set("fin_class_name", null);
+                    record.set("entity_class_id", null);
+                    record.set("entity_class_desc", null);
+                    break;
+                case 'fin_class_id':
+                    var category_id = record.get("category_id");
+                    record.getField("entity_class_desc").setLovPara("category_id", category_id);
+                    record.getField("entity_class_desc").setLovPara("finance_class_id", value);
+                    record.set("entity_class_id", null);
+                    record.set("entity_class_desc", null);
+                    break;
+                case 'use_date_from':
+                    record.validate('use_date_to');
+                    break;
+                case 'use_date_to':
+                    record.validate('use_date_from');
+                    break;
+                case 'responsibility_company_id':
+                    var company_id = record.get("responsibility_company_id");
+                    record.getMeta().getField('useing_unit_desc').setLovPara('company_id', company_id);
+                    if (!Ext.isEmpty(company_id)) {
+                        record.getMeta().getField('entity_company_desc').setRequired(false);
+                        record.getMeta().getField('responsibility_center_name').setLovPara('company_id', company_id);
+                        record.getMeta().getField('responsibility_center_name').setReadOnly(false);
+                        record.set('responsibility_center_name', '');
+                        record.set('responsibility_center_id', '');
+                        record.set('responsibility_center_code', '');
+                    } else {
+                        record.getMeta().getField('entity_company_desc').setRequired(true);
+                        record.set('responsibility_center_name', '');
+                        record.set('responsibility_center_id', '');
+                        record.set('responsibility_center_code', '');
+                        record.getMeta().getField('responsibility_center_name').setReadOnly(true);
+                    }
+                    break;
+                case 'entity_company_id':
+                    var company_id = record.get("entity_company_id");
+                    if (!Ext.isEmpty(company_id)) {
+                        record.getMeta().getField('entity_unit_desc').setLovPara('company_id', company_id);
+                        record.getMeta().getField('responsibility_company_name').setRequired(false);
+                    } else {
+                        record.getMeta().getField('responsibility_company_name').setRequired(true);
+                    }
+                    break;
+                }
+            }
+            //@Spencer 3893 20130524
+            
+            function print_asset() {
+                var ds = $('req_result_ds');
+                var rs = ds.getSelected();
+                if (rs.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT_PERIOD.PLEASE_CHOOSE_LINE}', null, 250, 100);
+                    return;
+                }
+                // var data = [];
+                // for (var i = 0;i < records.length;i++) {
+                // var para = {};
+                // para.asset_id = records[i].data.asset_id;
+                // data.push(para);
+                // }
+            
+                // Aurora.request({
+                // url: '${/request/@context_path}/modules/eam/EAM1010/eam_asset_tag_batch_print.svc',
+                // para: data,
+                // success: function(args) {
+                // window.open('${/request/@context_path}/reports?__report=reports/eam_tag_number_batch.rptdesign&__format=pdf&LANGUAGE=ZHS&session_id=' + '${/session/@session_id}');
+                // //window.open('http://172.18.23.88:8180/reportapp/frameset?__report=reports/eam_tag_number_batch.rptdesign&session_id=${/session/@session_id}');
+                // }
+                // });
+            
+                var records = new Array();
+                for (var i = 0;i < rs.length;i++) {
+                    records.push(rs[i].data);
+                }
+            
+                var barcodeParam = new Array();
+            
+                for (var i = 0;i < records.length;i++) {
+                    //alert(records[i].barcode.replace(',',''));
+                    barcodeParam.push(records[i].tag_number.replace(',', '') + ";;;" + 1 + ";;;" + '资产名称：' + records[i].asset_name + " ;;;" + '资产类别：' + records[i].entity_class_code + records[i].entity_class_desc + " ;;;" + '启用日期：' + records[i].start_use_date + " ;;;" + records[i].company_full_name + " ");
+                    //alert($$.toJSON(barcodeParam));
+                }
+                //alert(barcodeParam);
+                zplPrint(barcodeParam);
+            }
+            
+            function zplPrint(data) {
+                if (data.length != 0) {
+                    //alert(data);
+                    callprintZpl(data, 'ASSET', '${/request/@context_path}/modules/print/');
+                } else {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT_PERIOD.PLEASE_CHOOSE_LINE}', null, 250, 100);
+                    return;
+                }
+            }
+            
+            function sumRenderer(records, name) {
+                if (name == 'current_cost') {
+                    return '<font><label style="color:red">' + Aurora.formatMoney(current_cost_sum) + '</label></font>';
+                } else if (name == "accumulated_dep_amt") {
+                    return '<font><label style="color:red">' + Aurora.formatMoney(accumulated_dep_amt_sum) + '</label></font>';
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="asset_books_ds">
+                <a:datas dataSource="/model/asset_books"/>
+            </a:dataSet>
+            <!-- 期间 -->
+            <a:dataSet id="sob_period_ds_from">
+                <a:datas dataSource="/model/sob_period"/>
+            </a:dataSet>
+            <a:dataSet id="sob_period_ds_to">
+                <a:datas dataSource="/model/sob_period"/>
+            </a:dataSet>
+            <a:dataSet id="asset_status_ds" lookupCode="EAM_ASSET_STATUS"/>
+            <a:dataSet id="asset_source_type_ds" lookupCode="EAM_AST_SOURCE_TYPE"/>
+            <a:dataSet id="asset_finance_ds" model="eam.eam1010.eam1010_asset_finance_class_query"/>
+            <a:dataSet id="req_form_ds" model="eam.eam1010.eam1010_asset_query">
+                <a:fields>
+                    <a:field name="responsibility_company_id"/>
+                    <a:field name="asset_book_id"/>
+                    <a:field name="asset_book_desc" displayField="asset_book_desc" options="asset_books_ds" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" returnField="asset_book_id" valueField="asset_book_id">
+                        <a:mapping>
+                            <a:map from="company_id" to="responsibility_company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="asset_code" prompt="资产编号"/>
+                    <a:field name="asset_name"/>
+                    <a:field name="category_id"/>
+                    <a:field name="category_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam1010.eam1010_asset_categories_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.CATEGORY_ID" title="EAM_ASSET_HEADERS.CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_id" to="category_id"/>
+                            <a:map from="description" to="category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="category_sec_id"/>
+                    <a:field name="category_sec_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam1010.eam1010_asset_category_sec_query" lovWidth="550" prompt="资产小类" title="资产小类">
+                        <a:mapping>
+                            <a:map from="category_sec_id" to="category_sec_id"/>
+                            <a:map from="category_sec_name" to="category_sec_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="status"/>
+                    <a:field name="status_desc" displayField="code_value_name" options="asset_status_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="tag_number"/>
+                    <a:field name="serial_number"/>
+                    <a:field name="fin_class_id"/>
+                    <a:field name="fin_class_name" lovGridHeight="300" lovHeight="450" lovService="eam.eam1010.eam1010_asset_finance_class_query" lovWidth="550" prompt="财务分类" title="财务分类">
+                        <a:mapping>
+                            <a:map from="class_id" to="fin_class_id"/>
+                            <a:map from="class_name" to="fin_class_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_class_id"/>
+                    <a:field name="entity_class_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam1010.eam1010_asset_entity_class_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_CLASS_ID" title="EAM_ASSET_HEADERS.ENTITY_CLASS_ID">
+                        <a:mapping>
+                            <a:map from="class_id" to="entity_class_id"/>
+                            <a:map from="description" to="entity_class_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="asset_source_type"/>
+                    <a:field name="asset_source_type_desc" displayField="code_value_name" options="asset_source_type_ds" returnField="asset_source_type" valueField="code_value"/>
+                    <a:field name="install_position"/>
+                    <a:field name="using_unit_id"/>
+                    <a:field name="useing_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_unit_lov" lovWidth="550" prompt="折旧承担部门" title="折旧承担部门">
+                        <a:mapping>
+                            <a:map from="unit_id" to="using_unit_id"/>
+                            <a:map from="unit_code_name" to="useing_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_company_id"/>
+                    <a:field name="entity_company_desc" lovGridHeight="350" lovHeight="500" lovService="eam.cux_fnd_company_others_lov" lovWidth="500" prompt="AST_ASSET.ASSET_TRANSFER_ORGANIZATION" required="true" title="AST_ASSET.ASSET_TRANSFER_ORGANIZATION">
+                        <a:mapping>
+                            <a:map from="company_id" to="entity_company_id"/>
+                            <a:map from="company_short_name" to="entity_company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_unit_id"/>
+                    <a:field name="entity_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_unit_lov" lovWidth="550" prompt="管理部门" title="管理部门">
+                        <a:mapping>
+                            <a:map from="unit_id" to="entity_unit_id"/>
+                            <a:map from="unit_code_name" to="entity_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="use_date_from" prompt="启用日期从" validator="dateValidate"/>
+                    <a:field name="use_date_to" prompt="启用日期到" validator="dateValidate"/>
+                    <a:field name="responsibility_company_name" lovGridHeight="350" lovHeight="500" lovService="eam.cux_fnd_company_others_lov" lovWidth="500" prompt="AST_ASSET.ASSET_TRANSFER_ORGANIZATION" required="true" title="AST_ASSET.ASSET_TRANSFER_ORGANIZATION">
+                        <a:mapping>
+                            <a:map from="company_id" to="responsibility_company_id"/>
+                            <a:map from="company_short_name" to="responsibility_company_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_name" lovAutoQuery="true" lovGridHeight="320" lovHeight="440" lovService="eam.cux_fnd_resp_center_lov" lovWidth="500" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME" title="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_code" to="responsibility_center_code"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="all_resp_company_flag" checkedValue="Y" defaultValue="N" prompt="折旧子机构" uncheckedValue="N"/>
+                    <a:field name="all_entity_company_flag" checkedValue="Y" defaultValue="N" prompt="使用子机构" uncheckedValue="N"/>
+                    <a:field name="period_name_from" displayField="period_name" options="sob_period_ds_from" prompt="期间从" required="true" returnField="period_name_from" validator="dateValidate" valueField="period_name">
+                        <a:mapping>
+                            <a:map from="asset_books_id" to="asset_books_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="period_name_to" displayField="period_name" options="sob_period_ds_to" prompt="期间到" required="true" returnField="period_name_to" validator="dateValidate" valueField="period_name">
+                        <a:mapping>
+                            <a:map from="asset_books_id" to="asset_books_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="functional_unit_id"/>
+                    <a:field name="functional_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_functional_unit_lov" lovWidth="550" prompt="职能管理部门" title="职能管理部门">
+                        <a:mapping>
+                            <a:map from="unit_id" to="functional_unit_id"/>
+                            <a:map from="unit_code_name" to="functional_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onFormUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="req_result_ds" fetchAll="false" model="eam.eam1010.eam1010_asset_query" pageSize="10" queryDataSet="req_form_ds">
+                <a:fields>
+                    <a:field name="depreciate_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="lock_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="eam_sum_result_ds" fetchAll="true" model="eam.eam1010.eam1010_asset_sum_query" queryDataSet="req_form_ds">
+                <a:fields><![CDATA[
+                ]]></a:fields>
+                <a:events>
+                    <a:event name="load" handler="eam_sum_result_load"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="4" labelWidth="100" title="资产全辖查询" width="1200">
+                <a:comboBox name="asset_book_desc" bindTarget="req_form_ds"/>
+                <a:textField name="tag_number" bindTarget="req_form_ds" typeCase="upper">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:textField name="asset_name" bindTarget="req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:comboBox name="status_desc" bindTarget="req_form_ds"/>
+                <a:lov name="category_desc" bindTarget="req_form_ds"/>
+                <a:lov name="category_sec_desc" bindTarget="req_form_ds" prompt="资产小类"/>
+                <a:lov name="fin_class_name" bindTarget="req_form_ds"/>
+                <a:lov name="entity_class_desc" bindTarget="req_form_ds"/>
+                <a:lov name="responsibility_company_name" bindTarget="req_form_ds" prompt="折旧承担机构"/>
+                <a:lov name="useing_unit_desc" bindTarget="req_form_ds" prompt="折旧承担部门"/>
+                <a:datePicker name="use_date_from" bindTarget="req_form_ds"/>
+                <a:datePicker name="use_date_to" bindTarget="req_form_ds"/>
+                <!--     <a:textField name="serial_number" bindTarget="req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:textField name="asset_code" bindTarget="req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:comboBox name="asset_source_type_desc" bindTarget="req_form_ds" prompt="取得来源"/>
+                <a:textField name="install_position" bindTarget="req_form_ds" prompt="安装位置"/> -->
+                <a:lov name="entity_company_desc" bindTarget="req_form_ds" prompt="使用机构"/>
+                <a:lov name="entity_unit_desc" bindTarget="req_form_ds" prompt="使用部门"/>
+                <!-- <a:lov name="responsibility_center_name" bindTarget="req_form_ds"/> -->
+                <a:checkBox name="all_resp_company_flag" Width="120" bindTarget="req_form_ds"/>
+                <a:checkBox name="all_entity_company_flag" Width="120" bindTarget="req_form_ds"/>
+                <a:comboBox name="period_name_from" bindTarget="req_form_ds"/>
+                <a:comboBox name="period_name_to" bindTarget="req_form_ds"/>
+                <a:lov name="functional_unit_desc" bindTarget="req_form_ds" prompt="职能管理部门"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="query" text="HAP_QUERY"/>
+                <a:button click="reset" text="HAP_RESET"/>
+                <!-- <a:button click="print_asset" text="PROMPT.PRINT_ASSET"/> -->
+            </a:hBox>
+            <a:grid bindTarget="req_result_ds" height="350" navBar="true" width="1200">
+                <a:toolBar>
+                    <a:button type="excel"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="tag_number" align="center" lock="true" prompt="卡片号" renderer="assetRenderer" width="130"/>
+                    <a:column name="asset_name" align="center" lock="true" prompt="资产名称" width="120"/>
+                    <a:column name="current_cost" align="right" footerRenderer="sumRenderer" prompt="当前成本" renderer="Aurora.formatMoney"/>
+                    <a:column name="category_desc" align="center" prompt="资产大类" width="100"/>
+                    <a:column name="category_sec_desc" align="center" prompt="资产小类" width="120"/>
+                    <a:column name="fin_class_name" align="center" prompt="财务分类" width="120"/>
+                    <a:column name="entity_class_desc" align="center" prompt="实物分类" width="120"/>
+                    <!--  <a:column name="asset_code" align="center" prompt="资产编号" width="120"/> -->
+                    <a:column name="status_desc" align="center" prompt="资产状态" width="80"/>
+                    <!-- <a:column name="responsibility_center_name" align="center" prompt="责任中心" width="130"/> -->
+                    <a:column name="responsibility_company_name" id="100" align="center" prompt="折旧承担机构"/>
+                    <a:column name="using_unit_name" align="center" prompt="折旧承担部门" width="100"/>
+                    <a:column name="entity_company_name" align="center" prompt="使用机构" width="100"/>
+                    <a:column name="entity_unit_name" align="center" prompt="使用部门" width="100"/>
+                    <a:column name="start_use_date" align="center" prompt="启用日期" width="80"/>
+                    <a:column name="accumulated_dep_amt" align="right" footerRenderer="sumRenderer" prompt="累计折旧" renderer="Aurora.formatMoney"/>
+                    <!-- <a:column name="annual_dep_amt" align="right" prompt="本年折旧" renderer="Aurora.formatMoney"/> -->
+                    <a:column name="period_dep_amt" align="right" prompt="期间折旧" renderer="Aurora.formatMoney"/>
+                    <a:column name="impairment_loss_amt" align="right" prompt="减值准备" renderer="Aurora.formatMoney"/>
+                    <a:column name="used_month" align="right" prompt="使用月数"/>
+                    <a:column name="remaining_life_in_month" align="right" prompt="剩余月数"/>
+                    <a:column name="user_people_name" align="center" prompt="使用人" width="80"/>
+                    <a:column name="asset_source_type_desc" align="center" prompt="取得来源" width="80"/>
+                    <a:column name="serial_number" align="center" prompt="序列号" width="60"/>
+                    <a:column name="install_position" align="center" prompt="资产位置" width="100"/>
+                    <a:column name="functional_unit_desc" align="center" prompt="职能管理部门" width="100"/>
+                    <a:column name="lock_flag" align="center" editor="chkBox" prompt="锁定标志"/>
+                    <a:column name="depreciate_flag" align="center" editor="chkBox" prompt="折旧标志" width="60"/>
+                    <!--  <a:column name="currency_desc" align="center" prompt="币种" width="80"/>
+                    <a:column name="reference_number" align="center" prompt="批准文号" width="60"/> 
+                    <a:column name="asset_unit_desc" align="center" prompt="计量单位" width="80"/>
+                    <a:column name="quantity" align="right" prompt="数量"/>
+                    <a:column name="price" align="right" prompt="单价" renderer="Aurora.formatMoney"/>
+                    <a:column name="cost" align="right" prompt="总成本" renderer="Aurora.formatMoney"/>
+                    <a:column name="entity_class_code" align="left" prompt="实物code" width="120"/>
+                    <a:column name="company_full_name" align="left" prompt="机构全称" width="120"/>
+                    <a:column name="original_cost" align="right" prompt="原始成本" renderer="Aurora.formatMoney"/> -->
+                </a:columns>
+                <a:editors>
+                    <a:checkBox id="chkBox"/>
+                </a:editors>
+            </a:grid>
+            <script><![CDATA[
+
+                (function() {
+                    var query_ds = $('req_form_ds').getAt(0);
+                    if (Ext.isEmpty(query_ds)) {
+                        $('req_form_ds').create();
+                        query_ds = $('req_form_ds').getAt(0);
+                    }
+                
+                	//var company_id = '${/model/com_info/record/@company_id}'; 
+                	//query_ds.set('company_id', company_id);
+                   // query_ds.set('responsibility_company_name', '${/model/com_info/record/@company_short_name}');
+                    
+                    //责任中心
+                	//query_ds.getMeta().getField('responsibility_center_name').setLovPara('company_id', company_id);
+                	query_ds.set('responsibility_company_id', '${/session/@company_id}');
+                    query_ds.set('responsibility_company_name','${/model/com_code/record/@company_code}');
+                	query_ds.getMeta().getField('responsibility_center_name').setLovPara('company_id', '${/session/@company_id}');
+                })();
+            ]]></script>
+        </a:screenBody>
+    </a:view>
+</a:screen>

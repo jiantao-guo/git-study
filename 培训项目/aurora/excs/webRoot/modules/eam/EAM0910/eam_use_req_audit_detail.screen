@@ -1,0 +1,592 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lenovo  
+    $Date: 2014-4-17 下午5:31:22  
+    $Revision: 1.0  
+    $Purpose: 资产领用申请查看
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="eam.eam0910.eam0910_requisition_headers_tra" rootPath="eam910_req_header"/>
+        <a:model-query fetchAll="true" model="eam.eam1312.eam1312_requisition_headers_query" rootPath="eam0330_req_header"/>
+        <a:model-query defaultWhereClause="t1.base_trx_category = &apos;USE&apos;" fetchAll="true" model="eam.eam0120.eam_transaction_types_lv" rootPath="eam0330_transaction_types"/>
+        <a:model-query fetchAll="true" model="eam.eam0310.eam0310_sysdate_query" rootPath="eam0310_sysdate"/>
+        <a:model-query autoCount="false" model="expm.get_sys_image_url" rootPath="image_url"/>
+        <a:model-query autoCount="false" defaultWhereClause=" user_id=${/session/@user_id}" fetchAll="true" model="sys.sys_user" rootPath="employee"/>
+        <a:model-query autoCount="false" defaultWhereClause="e.employee_id = ${/model/employee/record/@employee_id}" model="expm.cux_exp_get_unit_info" rootPath="unit"/>
+        <a:model-query fetchAll="true" model="eam.eam0310.eam0310_employee_primary_position" rootPath="eam0330_employee_pmsg"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="eam0310_asset_management" url="${/request/@context_path}/modules/eam/EAM0311/eam_asset_management.screen"/>
+        <a:link id="eam0311_asset_update" url="${/request/@context_path}/modules/eam/EAM0311/eam_asset_management_update.screen"/>
+        <a:link id="eam0311_asset_batch_ref_req_tmp_record_link" url="${/request/@context_path}/modules/eam/EAM0310/eam_asset_rec_batch_ref_req.svc"/>
+        <a:link id="cux_create_image_url_id_link" model="sys.cux_sys_create_image_url" modelaction="batch_update"/>
+        <a:link id="eam1310_reject_reason" url="${/request/@context_path}/modules/eam/EAM0312/eam_reject_reason.screen"/>
+        <a:link id="get_exchange_rate" model="eam.eam0910.eam0910_get_exchange_rate" modelaction="query"/>
+        <a:link id="eam_requisition_history_query_link" url="${/request/@context_path}/modules/eam/public/eam_asset_requisition_query_history.screen"/>
+        <script><![CDATA[
+            // 初始化加载
+            Aurora.onReady(eam0330_query);
+            
+            // 查询
+            function eam0330_query() {
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+                $('eam0330_req_lines_ds').setQueryParameter('requisition_header_id', requisition_header_id);
+                $('eam0330_req_lines_ds').setQueryParameter('asset_book_id', '${/model/eam0330_req_header/record/@asset_book_id}');
+                $('eam0330_req_lines_ds').query();
+            }
+            
+            function eam0330_back() {
+                $('lease_query_detail').close();
+            }
+            
+            function req_history() {
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+            
+                new Aurora.Window({
+                    id: 'eam_requisiton_history_window',
+                    url: $('eam_requisition_history_query_link').getUrl() + '?header_id=' + requisition_header_id,
+                    title: '${l:REC_REQUISITION_HISTORY}',
+                    height: 500,
+                    width: 700
+                });
+            }
+            function req_back()
+            {
+                history.go(-1);
+            }
+            // 审批拒绝
+            
+            function eam1310_audit_reject() {
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+                new Aurora.Window({
+                    id: 'eam0312_reject_screen',
+                    url: $('eam1310_reject_reason').getUrl() + '?requisition_header_id=' + requisition_header_id,
+                    title: '${l:PROMPT.AUDIT_REJECT}',
+                    width: 350,
+                    height: 200
+                });
+            
+            }
+            
+            // 审批通过
+            
+            function eam1310_audit_approve() {
+                var confirm = window.confirm('${l:EAM_ASSET_REQUISITION.AUDIT_FLAG}');
+                if (!confirm) {
+                    return false;
+                }
+                var bgt_ctrl_flag = '${/model/eam0330_req_header/record/@bgt_ctrl_flag}';
+                if( bgt_ctrl_flag == 'Y' ){
+                	bgtProc();
+                }else{
+                    finalApprove();
+                }
+            }
+            
+            //预算处理
+            
+            function bgtProc() {
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.exp_report_bgt_check/execute*/
+                    $('eam_bgt_proc_link').getUrl(),
+            
+                    para: {
+                        requisition_header_id: '${/parameter/@requisition_header_id}',
+                        flag: 'N'
+                    },
+                    success: nextProcess,
+                    scope: this
+                });
+            }
+            
+            function finalApprove() {
+                var data = {};
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+                data.description = '';
+                data.requisition_header_id = requisition_header_id;
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/eam.eam0310.eam0310_requisition_audit_edit/insert',
+                    para: data,
+                    success: function(args) {
+                        $('eam_use_req_audit_detail').close(); /*Aurora.go("${/request/@context_path}/modules/eam/EAM0312/eam_rec_requisition_audit.screen");*/
+                        $('eam0312_req_result_ds').query();
+                    }
+                });
+            }
+            
+            function reqLoadHandler() {
+                var accounting_flag = '${/model/eam910_req_header/record/@account_flag}';
+                alert(accounting_flag);
+                if (accounting_flag == 'Y') {
+                    var tabs = document.getElementById('eam0910_tran_accounts_tab');
+                    tabs.style.display = "inline";
+                }
+            }
+            
+            function gridCellClick(grid, row, name, record) {
+                if (name == 'company_desc') {
+                    var asset_book_id = $('eam0330_req_update_form_ds').getCurrentRecord().get('asset_book_id');
+                    if (asset_book_id != undefined && asset_book_id != '' && asset_book_id != null) {
+                        record.getField("company_desc").setLovPara('asset_book_id', asset_book_id);
+                    }
+                }
+                if (name == 'responsibility_center_desc') {
+                    if (record.get('company_id') != undefined && record.get('company_id') != '' && record.get('company_id') != null) {
+                        record.getMeta().getField('responsibility_center_desc').setReadOnly(false);
+                        record.getField("responsibility_center_desc").setLovPara('company_id', record.get('company_id'));
+                    }
+                }
+            }
+            
+            function onChangeHandler(dataSet, record, name, value, oldvalue) {
+                if (name == "journal_date") {
+                    var from_currency = record.get("currency_code");
+                    journal_date = Aurora.formatDate(record.get("journal_date"));
+            
+                    Aurora.request({
+                        url: $('get_exchange_rate').getUrl() + '?exchange_date=' + journal_date + '&from_currency=' + from_currency,
+                        success: function(args) {
+                            var exchange_rate = args.result.record.exchange_rate;
+                            var period_name = args.result.record.period_name;
+                            if (!period_name) {
+                                alert("${l:PERIOD_NOT_OPEN_ERR}");
+                                record.set('period_name', null);
+                                return false;
+                            }
+                            record.set('exchange_rate', exchange_rate);
+                            record.set('period_name', period_name);
+                        }
+                    });
+                }
+            }
+            
+            function onAddFun(dataSet, record, index) {
+            
+                var form_record = $('tran_acc_default_val_ds').getCurrentRecord();
+                var journal_date = Aurora.formatDate(form_record.get('journal_date'));
+                var currency_code = form_record.get('currency_code');
+            
+                if (!journal_date) {
+                    alert("${l:EXP_REPORT_ACCOUNTS.CHECK2}");
+                    return false;
+                }
+            
+            
+                Aurora.request({
+                    url: $('get_exchange_rate').getUrl() + '?exchange_date=' + journal_date + '&from_currency=' + currency_code,
+                    success: function(args) {
+                        var exchange_rate = args.result.record.exchange_rate;
+                        var period_name = args.result.record.period_name;
+            
+                        var base_record = $('eam0330_req_lines_ds').getCurrentRecord();
+            
+                        if (!period_name) {
+                            alert('${l:PERIOD_NOT_OPEN_ERR}');
+                            return false;
+                        }
+            
+                        record.set('requisition_line_id', base_record.get('requisition_line_id'));
+                        record.set('source_code', 'MANUNAL');
+                        record.set('journal_date', journal_date);
+                        record.set('period_name', period_name);
+                        record.set('currency_code', currency_code);
+                        record.set('exchange_rate', exchange_rate);
+                        record.set('responsibility_center_desc', base_record.get('location_resp_center_name'));
+                        record.set('company_desc', base_record.get('location_company_name'));
+                        record.set('responsibility_center_id', base_record.get('location_resp_center_id'));
+                        record.set('company_id', base_record.get('location_company_id'));
+                    }
+                });
+            }
+            function onLinesUpdateHandler(dataset, record, name, value) {
+                switch (name) {
+                case 'account_code':
+                    var center_name_code_display = '';
+                    var responsibility_center_id = '';
+                    if (value.substring(0, 1) != '6') {
+                        Aurora.request({
+                            url: '${/request/@context_path}/autocrud/expm.get_responsibility_center_info/query',
+                            success: function(args) {
+                                responsibility_center_desc = args.result.record.responsibility_center_desc;
+                                responsibility_center_id = args.result.record.responsibility_center_id;
+                                record.set('responsibility_center_desc', responsibility_center_desc);
+                                record.set('responsibility_center_id', responsibility_center_id);
+                            }
+                        });
+                    } else {
+                        var base_record = $('req_lines_ds').getCurrentRecord();
+                        var unit_id = base_record.get('to_unit_id');
+                        Aurora.request({
+                            url: '${/request/@context_path}/autocrud/eam.eam_responsibility_center_lov/query?asset_book_id=${/model/eam910_req_header/record/@asset_book_id}&unit_id=' + unit_id,
+                            success: function(args) {
+                                center_name_code_display = args.result.record.center_name_code_display;
+                                responsibility_center_id = args.result.record.responsibility_center_id;
+                                record.set('responsibility_center_desc', center_name_code_display);
+                                record.set('responsibility_center_id', responsibility_center_id);
+                            }
+                        });
+                    }
+                    break;
+                }
+            }
+            
+            //创建凭证
+            
+            function create_account() {
+                if (!$('tran_acc_default_val_ds').validate()) {
+                    return false;
+                }
+            
+                var record = $('tran_acc_default_val_ds').getCurrentRecord();
+            
+                var period_name = record.get("period_name");
+                if (!period_name) {
+                    alert("${l:PERIOD_NOT_OPEN_ERR}");
+                    return false;
+                }
+            
+                var data = {};
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+                var journal_date = record.get('journal_date');
+                var exchange_rate = record.get("exchange_rate");
+                var requisition_line_id = record.get('requisition_line_id');
+            
+                data.requisition_header_id = requisition_header_id;
+                data.journal_date = Aurora.formatDate(journal_date);
+                //data.requisition_line_id = requisition_line_id;
+                data.exchange_rate = exchange_rate;
+                data.currency_code = record.get('currency_code');
+            
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/eam.eam0910.eam0910_trans_accounts_with_header_edit/execute',
+                    para: data,
+                    success: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('eam0910_req_tra_acc_ds').setQueryParameter('requisition_header_id', '${/parameter/@requisition_header_id}');
+                        // $('eam0910_req_tra_acc_ds').setQueryParameter('requisition_line_id', requisition_line_id);
+                        $('eam0910_req_tra_acc_ds').query();
+                    },
+                    failure: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    }
+                });
+            }
+            
+            function eam0910accountflag(record, name) {
+                var dr_manual_flag = '${/model/eam910_req_header/record/@dr_manual_flag}';
+                var cr_manual_flag = '${/model/eam910_req_header/record/@cr_manual_flag}';
+                if (name == 'account_desc') {
+                    //if ((dr_manual_flag == 'Y' && !Ext.isEmpty(record.get('entered_amount_dr'))) || (cr_manual_flag == 'Y' && !Ext.isEmpty(record.get('entered_amount_cr')))) {
+                        return 'eam0910_account_lv';
+                    //}
+                }
+            
+                var account_manual_flag = '${/model/eam910_req_header/record/@account_manual_flag}';
+                if (account_manual_flag != 'Y') {
+                    return '';
+                } else {
+                    if (name == 'company_desc') {
+                        return 'eam0910_company_lv';
+                    } else if (name == 'responsibility_center_desc') {
+                        return 'eam0910_resp_lv';
+                    } else if (name == 'entered_amount_dr') {
+                        return 'eam0910_amount_nf';
+                    } else if (name == 'entered_amount_cr') {
+                        return 'eam0910_amount_nf';
+                    }
+            
+                }
+            
+            }
+        ]]></script>
+        <!-- 声明dataSets -->
+        <a:dataSets>
+            <a:dataSet id="eam0330_trans_type_ds">
+                <a:datas dataSource="/model/eam0330_transaction_types"/>
+            </a:dataSet>
+            <!-- 岗位DS -->
+            <a:dataSet id="eam0330_org_position_ds" model="eam.eam0310.eam0310_exp_org_position_query">
+                <a:fields>
+                    <a:field name="position_id"/>
+                    <a:field name="unit_id"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 申请人DS -->
+            <a:dataSet id="eam0330_employee_ds">
+                <a:datas dataSource="/model/eam0310_employee"/>
+            </a:dataSet>
+            <a:dataSet id="tran_acc_default_val_ds" autoCreate="true" autoQuery="true" model="eam.eam0910.eam0910_tran_acc_default_val">
+                <a:fields>
+                    <a:field name="currency_code" prompt="EAM_TRANSACTION_ACCOUNTS.CURRENCY_CODE" readOnly="true"/>
+                    <a:field name="functional_currency_code"/>
+                    <a:field name="requisition_line_id"/>
+                    <a:field name="period_name"/>
+                    <a:field name="journal_date" prompt="EAM_TRANSACTION_ACCOUNTS.JOURNAL_DATE" readOnly="true"/>
+                    <a:field name="exchange_rate" prompt="EAM_TRANSACTION_ACCOUNTS.EXCHANGE_RATE"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onChangeHandler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="eam0910_req_tra_acc_ds" autoQuery="true" model="eam.eam0910.eam0910_transaction_accounts_query" queryUrl="${/request/@context_path}/autocrud/eam.eam0910.eam0910_transaction_accounts_query/query?requisition_header_id=${/parameter/@requisition_header_id}&amp;requisition_line_id=${/parameter/@requisition_line_id}" selectable="true" submitUrl="${/request/@context_path}/autocrud/eam.eam0910.eam0910_transaction_accounts_edit/batch_update">
+                <a:fields>
+                    <a:field name="transaction_je_line_id"/>
+                    <a:field name="transaction_line_id"/>
+                    <a:field name="source_code"/>
+                    <a:field name="description" required="true"/>
+                    <a:field name="period_name"/>
+                    <a:field name="company_id"/>
+                    <a:field name="company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov" lovWidth="550" prompt="EAM_TRANSACTION_ACCOUNTS.COMPANY_ID" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_id" to="responsibility_company_id"/>
+                            <a:map from="company_short_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="responsibility_center_desc" lovGridHeight="300" lovHeight="450" lovService="expm.exp_responsibility_center_lov" lovWidth="550" prompt="EAM_TRANSACTION_ACCOUNTS.RESPONSIBILITY_CENTER_ID" readOnly="true" title="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_id"/>
+                    <a:field name="account_code" prompt="EAM_TRANSACTION_ACCOUNTS.ACCOUNT_CODE" readOnly="true"/>
+                    <a:field name="account_desc" lovGridHeight="300" lovHeight="450" lovService="gld.CSH1015.gld_accounts_lov_query" lovWidth="550" prompt="EAM_TRANSACTION_ACCOUNTS.ACCOUNT_ID" required="true" title="GLD_COMPANY_ACCOUNTS.ACCOUNT_ID">
+                        <a:mapping>
+                            <a:map from="account_id" to="account_id"/>
+                            <a:map from="account_code" to="account_code"/>
+                            <a:map from="description" to="account_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entered_amount_dr" prompt="EAM_TRANSACTION_ACCOUNTS.AMOUNT_DR"/>
+                    <a:field name="entered_amount_cr" prompt="EAM_TRANSACTION_ACCOUNTS.AMOUNT_CR"/>
+                    <a:field name="functional_amount_dr" prompt="EAM_TRANSACTION_ACCOUNTS.AMOUNT_DR" readOnly="true"/>
+                    <a:field name="functional_amount_cr" prompt="EAM_TRANSACTION_ACCOUNTS.AMOUNT_CR" readOnly="true"/>
+                    <a:field name="exchange_rate" readOnly="true"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="journal_date"/>
+                    <a:field name="gld_interface_flag"/>
+                    <a:field name="usage_code"/>
+                    <a:field name="je_category_code"/>
+                    <a:field name="company_segment"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="onAddFun"/>
+                    <a:event name="update" handler="onLinesUpdateHandler"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 资产租入归还申请头DS -->
+            <a:dataSet id="eam0330_req_update_form_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="requisition_header_id" defaultValue="${/parameter/@requisition_header_id}"/>
+                    <a:field name="requisition_number" defaultValue="${/model/eam0330_req_header/record/@requisition_number}" prompt="ACP_REQUISITION.REQUEST_NO" readOnly="true"/>
+                    <a:field name="asset_book_id" defaultValue="${/model/eam0330_req_header/record/@asset_book_id}"/>
+                    <a:field name="period_name" defaultValue="${/model/eam0330_req_header/record/@period_name}"/>
+                    <a:field name="asset_book_desc" defaultValue="${/model/eam0330_req_header/record/@asset_book_desc}" displayField="asset_book_desc" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" readOnly="true"/>
+                    <a:field name="ast_requisition_type_id"/>
+                    <a:field name="ast_requisition_type_desc" defaultValue="${/model/eam0330_req_header/record/@ast_requisition_type_desc}" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_TYPE_CODE" readOnly="true"/>
+                    <a:field name="requisition_date" defaultValue="${/model/eam0330_req_header/record/@requisition_date}" prompt="AST_REQUISITION_DATE" readOnly="true"/>
+                    <a:field name="position_name" defaultValue="${/model/eam0330_req_header/record/@position_name}" displayField="description" options="eam0330_org_position_ds" prompt="AST_REQUISITION_POSITION" readOnly="true"/>
+                    <a:field name="req_employee_name" defaultValue="${/model/eam0330_req_header/record/@employee_name}" displayField="employee_name" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_PROPOSER" readOnly="true"/>
+                    <a:field name="employee_name" defaultValue="${/model/eam0330_req_header/record/@employee_name}" prompt="AST_REQUISITION_ORIGINATOR" readOnly="true"/>
+                    <a:field name="description" defaultValue="${/model/eam0330_req_header/record/@description}" prompt="AST_REQUISITION_DESC" readOnly="true"/>
+                    <a:field name="req_status_desc" defaultValue="${/model/eam0330_req_header/record/@req_status_desc}" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUSII" readOnly="true"/>
+                    <a:field name="ast_management_lines_desc" defaultValue="${/model/eam0330_req_header/record/@ast_management_lines_desc}" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="reqLoadHandler"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 申请行DS -->
+            <a:dataSet id="eam0330_req_lines_ds" autoQuery="true" fetchAll="false" model="eam.eam1311.eam1311_requisition_lines_edit" pageSize="10" queryUrl="${/request/@context_path}/autocrud/eam.eam1311.eam1331_requisition_lines_query/query?asset_book_id=${/model/eam0330_req_header/record/@asset_book_id}&amp;requisition_header_id=${/parameter/@requisition_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="employee_id" defaultValue="${/model/eam0330_employee_pmsg/record/@employee_id}"/>
+                    <a:field name="position_id" defaultValue="${/model/eam0330_employee_pmsg/record/@position_id}"/>
+                    <a:field name="unit_id" defaultValue="${/model/eam0330_employee_pmsg/record/@unit_id}"/>
+                    <a:field name="line_number" prompt="行号"/>
+                    <a:field name="asset_id"/>
+                    <a:field name="tag_number" lovGridHeight="300" lovHeight="450" lovService="eam.eam1310.eam1310_asset_headers_lov" lovWidth="550" prompt="卡片号" readOnly="true" required="false" title="卡片号">
+                        <a:mapping>
+                            <a:map from="asset_id" to="asset_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="requisition_header_id" defaultValue="${/parameter/@requisition_header_id}"/>
+                    <a:field name="asset_name" prompt="资产名称" readOnly="true"/>
+                    <a:field name="description_id"/>
+                    <a:field name="tag_number_old"/>
+                    <a:field name="cash_pledge" prompt="押金" readOnly="true"/>
+                    <a:field name="house_rent_num" prompt="租赁合同编号" readOnly="true"/>
+                    <a:field name="rent_date_from" prompt="租入日期从" readOnly="true" validator="dateValidate"/>
+                    <a:field name="rent_date_to" prompt="租入日期到" readOnly="true"/>
+                    <a:field name="return_address" prompt="归还位置" required="false"/>
+                    <a:field name="return_date" prompt="归还日期" required="false" validator="dateValidate"/>
+                    <a:field name="transaction_type_id" defaultValue="${/model/eam0330_transaction_types/record/@transaction_type_id}"/>
+                    <a:field name="from_catogory_id" prompt="资产大类从"/>
+                    <a:field name="to_catogory_id" prompt="资产大类到"/>
+                    <a:field name="from_catogory_sec_id" prompt="资产小类从"/>
+                    <a:field name="to_catogory_sec_id" prompt="资产小类到"/>
+                    <a:field name="from_res_center_id" prompt="责任中心从"/>
+                    <a:field name="from_company_id" prompt="机构ID从"/>
+                    <a:field name="from_unit_id" prompt="使用部门ID从"/>
+                    <a:field name="to_unit_id" prompt="使用部门ID到"/>
+                    <a:field name="from_management_id" prompt="管理部门ID从"/>
+                    <a:field name="to_management_id" prompt="管理部门ID到"/>
+                    <a:field name="dispose_date" prompt="处置日期"/>
+                    <a:field name="rebuild_date"/>
+                    <a:field name="to_employee_id"/>
+                    <a:field name="objective" prompt="目标方"/>
+                    <a:field name="lease_date_from" prompt="租出日期从"/>
+                    <a:field name="lease_date_to" prompt="实际租出日期到"/>
+                    <a:field name="pre_lease_date_to" prompt="预计租出日期到"/>
+                    <a:field name="lease_account" prompt="租金"/>
+                    <a:field name="current_location_address" prompt="当前位置"/>
+                    <a:field name="to_location_address" prompt="目标物理位置"/>
+                    <a:field name="to_catogory_id"/>
+                    <a:field name="to_fin_class_id"/>
+                    <a:field name="fin_class_code"/>
+                    <a:field name="to_entity_class_id"/>
+                    <a:field name="entity_class_code"/>
+                    <!-- <a:field name="using_unit_id" defaultValue="0"/> -->
+                    <a:field name="using_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_unit_lov" lovWidth="550" prompt="使用部门" required="false" title="使用部门">
+                        <a:mapping>
+                            <a:map from="unit_id" to="to_unit_id"/>
+                            <a:map from="unit_code" to="using_unit_code"/>
+                            <a:map from="unit_code_name" to="using_unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="req_employee_name" autoComplete="true" autoCompleteField="name" lovGridHeight="300" lovHeight="425" lovService="eam.eam1311.eam1311_employee_assigns_lov" lovWidth="380" readonly="true" title="员工选择">
+                        <a:mapping>
+                            <a:map from="name" to="req_employee_name"/>
+                            <a:map from="employee_id" to="to_employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="zyb_user_people"/>
+                    <a:field name="zyb_user_number"/>
+                    <a:field name="location_id_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_eam_asset_location_lov?asset_book_id=${/parameter/@asset_book_id}&amp;company_id=${/session/@company_id}" lovWidth="550" required="true" title="资产位置查询">
+                        <a:mapping>
+                            <a:map from="location_id" to="to_location_id"/>
+                            <a:map from="location_id" to="location_id"/>
+                            <a:map from="location_desc" to="location_desc"/>
+                            <a:map from="location_code_desc" to="location_id_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <!-- <a:field name="channel_desc" autoComplete="true" autoCompleteField="dimension_value_code" lovService="expm.cux_exp_report_line_dimension_channel_lov?enabled_flag=Y" prompt="渠道" required="false" title="渠道">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="dimension_value_code"/>
+                            <a:map from="dimension_value_id" to="channel_id"/>
+                            <a:map from="description" to="channel_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="channel_id"/>
+                    <a:field name="product_desc" autoComplete="true" autoCompleteField="dimension_value_code" lovService="expm.cux_exp_report_line_dimension_product_lov?enabled_flag=Y" prompt="产品" required="false" title="产品">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="dimension_value_code"/>
+                            <a:map from="dimension_value_id" to="product_id"/>
+                            <a:map from="description" to="product_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="product_id"/> -->
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <!-- 资产租入归还申请头 -->
+            <a:form column="1" title="资产领用申请审核" width="1024">
+                <a:box column="3" width="1000">
+                    <a:textField name="requisition_number" bindTarget="eam0330_req_update_form_ds" prompt="申请单号"/>
+                    <a:textField name="employee_name" bindTarget="eam0330_req_update_form_ds"/>
+                    <a:comboBox name="position_name" bindTarget="eam0330_req_update_form_ds"/>
+                    <a:textField name="asset_book_desc" bindTarget="eam0330_req_update_form_ds"/>
+                    <a:textField name="ast_requisition_type_desc" bindTarget="eam0330_req_update_form_ds" prompt="申请类型"/>
+                    <a:datePicker name="requisition_date" bindTarget="eam0330_req_update_form_ds"/>
+                    <a:comboBox name="ast_management_lines_desc" bindTarget="eam0330_req_update_form_ds" prompt="管理条线"/>
+                    <a:textField name="req_status_desc" bindTarget="eam0330_req_update_form_ds"/>
+                </a:box>
+                <a:hBox>
+                    <a:textArea name="description" bindTarget="eam0330_req_update_form_ds" prompt="摘要" width="813"/>
+                </a:hBox>
+            </a:form>
+            <a:hBox>
+                <a:button click="eam1310_audit_approve" text="AUDIT_FLAG"/>
+                <a:button click="eam1310_audit_reject" text="PROMPT.AUDIT_REJECT"/>
+                <!-- <a:button click="eam0330_back" text="HAP_BACK"/> -->
+                <a:button click="req_history" text="跟踪单据"/>
+                <!-- <a:button click="req_back" text="HAP_BACK"/> -->
+            </a:hBox>
+            <a:grid bindTarget="eam0330_req_lines_ds" height="220" navBar="true" width="1024">
+                <a:toolBar><![CDATA[
+                ]]></a:toolBar>
+                <a:columns>
+                    <a:column name="line_number" align="center" width="50"/>
+                    <a:column name="tag_number" align="center" prompt="卡片号" width="140"/>
+                    <a:column name="category_desc" align="center" prompt="资产大类" width="140"/>
+                    <a:column name="fin_class_desc" align="center" prompt="资产小类" width="140"/>
+                    <a:column name="entity_class_desc" align="center" prompt="实物分类" width="140"/>
+                    <a:column name="using_unit_desc" align="center" prompt="使用部门" width="140"/>
+                    <a:column name="req_employee_name" align="center" prompt="使用人" width="120"/>
+                    <a:column name="partner_name" align="center" prompt="使用人备注" width="140"/>
+                    <a:column name="use_type_desc" align="center" prompt="领用类型" width="100"/>
+                    <a:column name="location_id_desc" align="center" prompt="领用位置" width="140"/>
+                    <a:column name="to_address" align="center" prompt="物理地址" width="120"/>
+                    <!-- <a:column name="product_desc" align="center" prompt="产品" width="140"/>
+                    <a:column name="channel_desc" align="center" prompt="渠道" width="140"/> -->
+                    <a:column name="description" align="center" prompt="备注" width="120"/>
+                </a:columns>
+            </a:grid>
+            <a:tabPanel id="eam0910_tran_accounts_tab" height="260" style="display :inline;" width="1024">
+                <a:tabs>
+                    <a:tab id="eam0910_imp_loss_req_tra_acc_tab" prompt="EAM_ASSET_REQUISITION.WRITE_OFF_ACCOUNT" width="80">
+                        <a:form column="1" height="20" labelWidth="100">
+                            <a:box column="4">
+                                <a:datePicker name="journal_date" bindTarget="tran_acc_default_val_ds" renderer="Aurora.formatDate"/>
+                                <!-- <a:textField name="currency_code" bindTarget="tran_acc_default_val_ds"/> -->
+                                <!-- <a:textField name="exchange_rate" bindTarget="tran_acc_default_val_ds"/> -->
+                                <a:button click="create_account" text="PROMPT.CREATE_JE"/>
+                            </a:box>
+                        </a:form>
+                        <a:grid bindTarget="eam0910_req_tra_acc_ds" height="185" navBar="true" width="1014">
+                            <a:toolBar>
+                                <a:button id="account_add" type="add"/>
+                                <a:button id="account_save" type="save"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="description" align="center" editor="eam0910_desc_tf" width="158"/>
+                                <a:column name="journal_date" align="center" renderer="Aurora.formatDate" width="80"/>
+                                <a:column name="period_name" align="center" width="80"/>
+                                <a:column name="company_desc" align="center" editor="eam0910_company_lv" editorFunction="eam0910accountflag" width="120"/>
+                                <a:column name="responsibility_center_desc" align="center" editor="eam0910_resp_lv" editorFunction="eam0910accountflag" width="150"/>
+                                <a:column name="account_code" align="center" width="100"/>
+                                <a:column name="account_desc" align="center" editorFunction="eam0910accountflag" width="100"/>
+                                <a:column name="entered_amount_dr" align="right" editor="eam0910_amount_nf" editorFunction="eam0910accountflag" renderer="Aurora.formatMoney" width="100"/>
+                                <a:column name="entered_amount_cr" align="right" editor="eam0910_amount_nf" editorFunction="eam0910accountflag" renderer="Aurora.formatMoney" width="100"/>
+                                <!-- <a:column prompt="EAM_TRANSACTION_ACCOUNTS.ENTERED_AMOUNT">
+                                    <a:column name="entered_amount_dr" editor="eam0910_amount_nf" editorFunction="eam0910accountflag" renderer="Aurora.formatMoney" width="75"/>
+                                    <a:column name="entered_amount_cr" editor="eam0910_amount_nf" editorFunction="eam0910accountflag" renderer="Aurora.formatMoney" width="75"/>
+                                </a:column>
+                                <a:column prompt="EAM_TRANSACTION_ACCOUNTS.FUNCTIONAL_AMOUNT">
+                                    <a:column name="functional_amount_dr" renderer="onRendererFun" width="75"/>
+                                    <a:column name="functional_amount_cr" renderer="onRendererFun" width="75"/>
+                                </a:column> -->
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="eam0910_desc_tf"/>
+                                <a:lov id="eam0910_account_lv"/>
+                                <a:lov id="eam0910_company_lv"/>
+                                <a:lov id="eam0910_resp_lv"/>
+                                <a:numberField id="eam0910_amount_nf" allowDecimals="true" allowFormat="true" allowNegative="true" decimalPrecision="3"/>
+                            </a:editors>
+                            <a:events>
+                                <a:event name="cellclick" handler="gridCellClick"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

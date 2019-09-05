@@ -1,0 +1,227 @@
+2018-10-19 08:42:02.267 [aurora.application.session_check] [CONFIG] Session data copied to context
+2018-10-19 08:42:02.267 [aurora.application.session_check] [CONFIG] Checking BM access expm.EXP5205.exp_report_payment_query_1 for operation query
+2018-10-19 08:42:02.268 [aurora.application.session_check] [CONFIG] Result from aurora.bm.DefaultAccessChecker@3b657be8 is true
+2018-10-19 08:42:02.268 [uncertain.proc] [CONFIG] [action] AccessCheck
+2018-10-19 08:42:02.270 [uncertain.proc] [CONFIG] [action] CheckServiceLock
+2018-10-19 08:42:02.270 [uncertain.proc] [CONFIG] [action] ParseParameter
+2018-10-19 08:42:02.270 [uncertain.proc] [CONFIG] [action] ValidateInput
+2018-10-19 08:42:02.270 [uncertain.proc] [CONFIG] [action] InvokeService
+2018-10-19 08:42:02.270 [aurora.database] [CONFIG] ===================================== prepare to run model-query expm.EXP5205.exp_report_payment_query_1==============================
+2018-10-19 08:42:02.275 [uncertain.proc] [CONFIG] [action] DecideSqlGenerationMode
+2018-10-19 08:42:02.275 [uncertain.proc] [FINE] aurora.database.service.BusinessModelService.onDecideSqlGenerationMode
+2018-10-19 08:42:02.275 [uncertain.proc] [CONFIG] [action] CreateOperationSql
+2018-10-19 08:42:02.275 [uncertain.proc] [CONFIG] [action] PopulateOperationSql
+2018-10-19 08:42:02.275 [uncertain.proc] [FINE] aurora.database.features.OrderByClauseCreator.onPopulateOperationSql
+2018-10-19 08:42:02.275 [uncertain.proc] [FINE] aurora.database.features.WhereClauseCreator.onPopulateOperationSql
+2018-10-19 08:42:02.275 [uncertain.proc] [CONFIG] [action] ExecuteQuery
+2018-10-19 08:42:02.275 [uncertain.proc] [FINE] aurora.bm.QuerySqlCreator.onExecuteQuery
+2018-10-19 08:42:02.292 [uncertain.proc] [CONFIG] [action] QueryFinish
+2018-10-19 08:42:02.292 [uncertain.proc] [FINE] aurora.database.features.AutoQueryCounter.onQueryFinish
+2018-10-19 08:42:02.302 [uncertain.proc] [CONFIG] [action] FetchResultSet
+2018-10-19 08:42:02.302 [uncertain.proc] [FINE] aurora.database.features.CacheBasedLookUpField.postFetchResultSet
+2018-10-19 08:42:02.303 [aurora.database] [CONFIG] 
+============= BEGIN [query] SQL Statement execution dump ============
+
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        v.need_payment_amount - document_payed_amount unpayment_amount,
+                        v.need_payment_amount - document_payed_amount payment_amount,
+                        v.*
+                    FROM
+                        (SELECT
+                            erh.exp_report_header_id,
+                            erps.payee_category payee_category_id,
+                            (SELECT
+                                b.code_value_name
+                            FROM
+                                sys_codes_vl a,
+                                sys_code_values_vl b
+                            WHERE
+                                a.code_id    = b.code_id AND
+                                a.code       = 'PAYMENT_OBJECT' AND
+                                b.code_value = erps.payee_category
+                            ) document_payee_category, --payee_category
+                            erps.payee_category,
+                            DECODE(erps.payee_category, 'EMPLOYEE',
+                            (SELECT
+                                ee.employee_code
+                                || '-'
+                                || ee.name
+                            FROM
+                                exp_employees ee
+                            WHERE
+                                ee.employee_id = erps.payee_id
+                            ), 'VENDER',
+                            (SELECT
+                                svv.vender_code
+                                || '-'
+                                || svv.description
+                            FROM
+                                pur_system_venders_vl svv
+                            WHERE
+                                svv.vender_id = erps.payee_id
+                            ), 'CUSTOMER',
+                            (SELECT
+                                scv.customer_code
+                                || '-'
+                                || scv.description
+                            FROM
+                                ord_system_customers_vl scv
+                            WHERE
+                                scv.customer_id = erps.payee_id
+                            )) document_payee_id, --payee_name
+                            erps.payee_id,
+                            erh.exp_report_type_id,
+                            erh.report_date,
+                            TO_CHAR(erps.schedule_due_date,'yyyy-mm-dd') schedule_due_date,
+                            erh.currency_code,
+                            erh.company_id,
+                            erh.employee_id,
+                            erps.payment_type_id payment_method_id,
+                            (SELECT
+                                description_text
+                            FROM
+                                csh_payment_methods cpm,
+                                fnd_descriptions fd
+                            WHERE
+                                cpm.payment_method_id = erps.payment_type_id AND
+                                fd.description_id     = cpm.description_id AND
+                                fd.language           = ?
+                            ) payment_method,
+                            (SELECT
+                                SUM(erl.report_amount)
+                            FROM
+                                exp_report_lines erl
+                            WHERE
+                                erl.exp_report_header_id = erh.exp_report_header_id
+                            ) report_amount,
+                            erps.due_amount need_payment_amount,
+                            (SELECT
+                                NVL(SUM(w.csh_write_off_amount), 0)
+                            FROM
+                                csh_write_off w
+                            WHERE
+                                w.document_source    = 'EXPENSE_REPORT' AND
+                                w.document_header_id = erps.exp_report_header_id AND
+                                w.document_line_id   = erps.payment_schedule_line_id
+                            ) document_payed_amount,            --payed_amount
+                            erh.exp_report_number document_num, --alias
+                            (SELECT
+                                ertv.description
+                            FROM
+                                exp_expense_report_types_vl ertv
+                            WHERE
+                                ertv.expense_report_type_id = erh.exp_report_type_id
+                            ) exp_report_type,
+                            erps.payment_schedule_line_id payment_line_id,
+                            erps.payment_schedule_line_id ,
+                            (SELECT
+                                cchs.contract_number
+                            FROM
+                                con_contract_headers cchs
+                            WHERE
+                                cchs.contract_header_id=s.document_id
+                            ) contract_number,
+                            (SELECT
+                                cpss.payment_schedule_line_number
+                            FROM
+                                con_payment_schedules cpss
+                            WHERE
+                                cpss.payment_schedule_line_id=s.document_line_id
+                            ) line_number,
+                            (SELECT
+                                fv.company_short_name
+                            FROM
+                                fnd_companies_vl fv
+                            WHERE
+                                fv.company_id=erps.company_id
+                            ) document_company, --company_name
+                            erh.company_id report_company_id,
+                            (SELECT
+                                fv.company_code
+                                ||'-'
+                                ||fv.company_short_name
+                            FROM
+                                fnd_companies_vl fv
+                            WHERE
+                                fv.company_id=erh.company_id
+                            ) report_company_desc,
+                            erps.account_number,
+                            'EXP_REPORT' document_type
+                        FROM
+                            exp_report_headers erh,
+                            exp_report_pmt_schedules erps,
+                            fnd_companies_vl vvv,
+                            csh_doc_payment_company cch,
+                            con_document_flows s
+                        WHERE
+                            erh.audit_flag = 'Y' AND
+                            --付款用途为统报的不支付
+                            erps.usedes NOT                                                                             IN ('TB','PTB') AND
+                            sys_user_secure_exit_pkg.exp_report_payment(erh.exp_report_header_id,?)='Y' AND
+                            cch.document_line_id                                                                         =erps.payment_schedule_line_id AND
+                            cch.document_type                                                                            ='EXP_REPORT' AND
+                            cch.payment_company_id                                                                      IN
+                            (SELECT
+                                eea.company_id
+                            FROM
+                                exp_employee_assigns eea
+                            WHERE
+                                eea.employee_id =
+                                (SELECT
+                                    su.employee_id
+                                FROM
+                                    sys_user su
+                                WHERE
+                                    su.user_id = ?
+                                ) AND
+                                eea.enabled_flag = 'Y'
+                            ) AND
+                            (
+                                erh.write_off_status != 'C' OR
+                                erh.write_off_status IS NULL
+                            )
+                            AND
+                            (
+                                erh.reversed_flag  = 'N' OR
+                                erh.reversed_flag IS NULL
+                            )
+                            AND
+                            payment_status     IN ('ALLOWED','PAID') AND
+                            erps.company_id     =vvv.company_id AND
+                            vvv.set_of_books_id =
+                            (SELECT
+                                set_of_books_id
+                            FROM
+                                fnd_companies_vl
+                            WHERE
+                                company_id=?
+                            ) AND
+                            s.document_type(+)          ='CON_CONTRACT' AND
+                            s.source_document_type(+)   ='EXP_REPORT_PMT_SCHEDULES' AND
+                            s.source_document_id(+)     =erps.exp_report_header_id AND
+                            s.source_document_line_id(+)=erps.payment_schedule_line_id AND
+                            erh.report_status           = 'COMPLETELY_APPROVED' AND
+                            erh.exp_report_header_id    = erps.exp_report_header_id
+                        ) v
+                    WHERE
+                        (
+                            v.need_payment_amount - document_payed_amount
+                        )
+                        > 0
+                    ORDER BY
+                        document_num
+                    ) t  WHERE t.payment_method_id=? ORDER BY account_number desc
+            
+---------------------Binding info---------------------
+No.1	Access path:/session/@lang	Data type of passed value :java.lang.String	Value:ZHS	Output:false	Database Type:null	
+No.2	Access path:/session/@session_id	Data type of passed value :java.lang.Long	Value:55518	Output:false	Database Type:null	
+No.3	Access path:/session/@user_id	Data type of passed value :java.lang.Long	Value:2242	Output:false	Database Type:null	
+No.4	Access path:/session/@company_id	Data type of passed value :java.lang.Integer	Value:835	Output:false	Database Type:null	
+No.5	Access path:@document_payment_method_id	Data type of passed value :java.lang.String	Value:11	Output:false	Database Type:null	
+
+=============== END [query] SQL Statement execution dump ============
+
+2018-10-19 08:42:02.303 [uncertain.proc] [CONFIG] [action] CreateSuccessResponse

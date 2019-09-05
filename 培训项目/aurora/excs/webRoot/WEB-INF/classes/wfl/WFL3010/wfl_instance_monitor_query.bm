@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ns1:model xmlns:ns2="aurora.database.local.oracle" xmlns:ns1="http://www.aurora-framework.org/schema/bm">
+    <ns1:operations>
+        <ns1:operation name="query">
+            <ns1:query-sql><![CDATA[
+                WITH
+                    comp_temp AS
+                    (SELECT
+                        company_id
+                    FROM
+                        fnd_companies_vl START
+                    WITH company_id            = ${/session/@company_id} CONNECT BY PRIOR company_id = parent_company_id AND
+                        ${@include_child_flag} = 'Y'
+                    UNION ALL
+                    SELECT
+                        company_id
+                    FROM
+                        fnd_companies_vl
+                    WHERE
+                        company_id = ${/session/@company_id}
+                    )
+                SELECT
+                    t.*,
+                    DECODE(t.last_approve_name, NULL, NULL, TO_CHAR(t.last_update_date, 'yyyy-mm-dd hh24:mi')) last_update_date_desc
+                FROM
+                    (SELECT
+                        rs.*,
+                        TO_CHAR(rs.creation_date, 'yyyy-mm-dd hh24:mi') creation_date_desc,
+                        (SELECT
+                            code_value_name
+                        FROM
+                            sys_service_lookup_v
+                        WHERE
+                            code       = 'WFL_WORKFLOW_INSTANCE_STATUS' AND
+                            code_value = TO_CHAR(rs.status) AND
+                            language   = 'ZHS'
+                        ) status_name,
+                        (SELECT
+                            fcv.company_short_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = wfl_common_pkg.get_instance_company(rs.instance_id)
+                        ) company_name,
+                        wfl_common_pkg.get_current_node(rs.workflow_id, rs.instance_id, rs.current_node) curr_approve_name,
+                        wfl_common_pkg.get_wfl_user_name(rs.created_by) create_by_name,
+                        wfl_common_pkg.get_wfl_user_name(
+                        (SELECT
+                            r.created_by
+                        FROM
+                            wfl_approve_record r
+                        WHERE
+                            r.record_id =
+                            (SELECT
+                                record_id
+                            FROM
+                                (SELECT
+                                    a.record_id,
+                                    a.instance_id
+                                FROM
+                                    wfl_approve_record a,
+                                    wfl_workflow_node n
+                                WHERE
+                                    a.node_id = n.node_id
+                                ORDER BY
+                                    n.sequence_num DESC,
+                                    a.creation_date DESC
+                                )x
+                            WHERE
+                                x.instance_id = r.instance_id AND
+                                rownum        = 1
+                            ) AND
+                            r.instance_id = rs.instance_id
+                        )) last_approve_name,
+                        (SELECT
+                            wdr.document_desc
+                        FROM
+                            wfl_document_reference_vl wdr
+                        WHERE
+                            rs.workflow_category = wdr.workflow_category
+                        ) order_type,
+                        TO_CHAR(
+                        (SELECT
+                            MAX(nr.date_limit)
+                        FROM
+                            wfl_instance_node_recipient nr,
+                            wfl_workflow_node n
+                        WHERE
+                            nr.instance_id = rs.instance_id AND
+                            nr.node_id     = n.node_id AND
+                            n.sequence_num = rs.current_node
+                        ), 'yyyy-mm-dd hh24:mi') date_limit
+                    FROM
+                        (SELECT
+                            a.instance_id,
+                            a.workflow_id,
+                            a.current_node,
+                            a.created_by,
+                            a.creation_date,
+                            a.document_number order_no,
+                            b.name workflow_name,
+                            a.last_update_date,
+                            b.workflow_category,
+                            a.status,
+                            a.status_desc,
+                            wfl_common_pkg.get_instance_company(a.instance_id) company_id
+                        FROM
+                            wfl_workflow_instance a,
+                            Wfl_Workflow_Vl b
+                        WHERE
+                            a.workflow_id = b.workflow_id
+                        ) rs
+                    WHERE
+                        rs.company_id IN
+                        (SELECT * FROM comp_temp
+                        )
+                    ) t #WHERE_CLAUSE#
+                ORDER BY
+                    t.creation_date DESC
+            ]]></ns1:query-sql>
+        </ns1:operation>
+    </ns1:operations>
+    <ns1:query-fields>
+        <ns1:query-field name="creation_date_from" datatype="java.lang.String" queryexpression="t.creation_date &gt; to_date(${@creation_date_from}, &apos;yyyy-mm-dd&apos;)"/>
+        <ns1:query-field name="creation_date_to" datatype="java.lang.String" queryexpression="t.creation_date &lt; to_date(${@creation_date_to}, &apos;yyyy-mm-dd&apos;) + 1"/>
+        <ns1:query-field name="workflow_status" datatype="java.lang.String" queryexpression="t.status = ${@workflow_status}"/>
+        <ns1:query-field name="order_type" datatype="java.lang.String" queryexpression="t.workflow_category = ${@order_type}"/>
+        <ns1:query-field name="create_by_name" datatype="java.lang.String" queryexpression="t.create_by_name like ${@create_by_name}"/>
+        <ns1:query-field name="approver" datatype="java.lang.String" queryexpression="t.curr_approve_name like &apos;%&apos;||${@approver}||&apos;%&apos;"/>
+        <ns1:query-field name="workflow_name" datatype="java.lang.String" queryexpression="t.workflow_name like ${@workflow_name}"/>
+        <ns1:query-field name="order_no" datatype="java.lang.String" queryexpression="t.order_no like ${@order_no}"/>
+        <ns1:query-field name="company_id" queryExpression="t.company_id = ${@company_id}"/>
+    </ns1:query-fields>
+</ns1:model>

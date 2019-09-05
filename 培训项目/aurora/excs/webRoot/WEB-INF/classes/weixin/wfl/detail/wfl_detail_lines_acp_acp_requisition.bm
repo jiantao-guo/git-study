@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    vv.payee_partner_name,
+                    vv.due_amount,
+                    (SELECT
+                        vv.due_amount -
+                        (SELECT
+                            NVL(SUM(w.csh_write_off_amount), 0)
+                        FROM
+                            csh_write_off w
+                        WHERE
+                            w.document_source    = 'EXPENSE_REPORT' AND
+                            w.document_header_id = vv.ref_document_id AND
+                            w.document_line_id   = vv.ref_document_line_id
+                        )
+                    FROM
+                        dual
+                    ) unpayment_amount,
+                    (vv.due_amount -
+                    (SELECT
+                        NVL(SUM(w.csh_write_off_amount), 0)
+                    FROM
+                        csh_write_off w
+                    WHERE
+                        w.document_source    = 'EXPENSE_REPORT' AND
+                        w.document_header_id = vv.ref_document_id AND
+                        w.document_line_id   = vv.ref_document_line_id
+                    )) -
+                    (SELECT
+                        DECODE(SUM(l.amount), NULL, 0, SUM(l.amount))
+                    FROM
+                        acp_acp_requisition_lns l,
+                        acp_acp_requisition_hds h
+                    WHERE
+                        l.ref_document_id           = vv.ref_document_id AND
+                        l.ref_document_line_id      = vv.ref_document_line_id AND
+                        l.payment_status            = 'NEVER' AND
+                        l.acp_requisition_header_id = h.acp_requisition_header_id AND
+                        h.status                   IN ('SUBMITED', 'APPROVED')
+                    ) can_req_amount
+                FROM
+                    (SELECT
+                        (DECODE(ll.partner_category, 'EMPLOYEE',
+                        (SELECT nn.name FROM exp_employees nn WHERE nn.employee_id = ll.partner_id
+                        ), 'VENDER',
+                        (SELECT
+                            nn.description
+                        FROM
+                            pur_system_venders_vl nn
+                        WHERE
+                            nn.vender_id = ll.partner_id
+                        ), 'CUSTOMER',
+                        (SELECT
+                            nn.description
+                        FROM
+                            ord_system_customers_vl nn
+                        WHERE
+                            nn.customer_id = ll.partner_id
+                        ), NULL)) payee_partner_name,
+                        (SELECT
+                            ee.due_amount
+                        FROM
+                            exp_report_pmt_schedules ee
+                        WHERE
+                            ll.ref_document_line_id = ee.payment_schedule_line_id
+                        ) due_amount,
+                        ll.ref_document_line_id,
+                        ll.ref_document_id
+                    FROM
+                        acp_acp_requisition_lns ll
+                    WHERE
+                        ll.acp_requisition_header_id = ${@doc_id}
+                       
+                    ) vv
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="payee_partner_name"/>
+        <bm:field name="due_amount"/>
+        <bm:field name="unpayment_amount"/>
+        <bm:field name="can_req_amount"/>
+    </bm:fields>
+</bm:model>

@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Administrator  
+    $Date: 2013-1-30 下午07:30:11  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:update-sql><![CDATA[
+                SELECT
+                    vv.*,
+                    (SELECT
+                        vv.due_amount -
+                        (SELECT
+                            NVL(SUM(w.csh_write_off_amount), 0)
+                        FROM
+                            csh_write_off w
+                        WHERE
+                            w.document_source    = 'EXPENSE_REPORT' AND
+                            w.document_header_id = vv.REF_DOCUMENT_ID AND
+                            w.document_line_id   = vv.REF_DOCUMENT_LINE_ID
+                        )
+                    FROM
+                        dual
+                    ) unpayment_amount,
+                    (vv.due_amount -
+                    (SELECT
+                        NVL(SUM(w.csh_write_off_amount), 0)
+                    FROM
+                        csh_write_off w
+                    WHERE
+                        w.document_source    = 'EXPENSE_REPORT' AND
+                        w.document_header_id = vv.REF_DOCUMENT_ID AND
+                        w.document_line_id   = vv.REF_DOCUMENT_LINE_ID
+                    ))-
+                    (SELECT
+                        DECODE(SUM(l.amount), NULL, 0, SUM(l.amount))
+                    FROM
+                        acp_acp_requisition_lns l,
+                        acp_acp_requisition_hds h
+                    WHERE
+                        l.ref_document_id           = vv.ref_document_id AND
+                        l.ref_document_line_id      = vv.ref_document_line_id AND
+                        l.payment_status            = 'NEVER' AND
+                        l.acp_requisition_header_id = h.acp_requisition_header_id AND
+                        h.status                   IN ('SUBMITED','APPROVED')
+                    ) can_req_amount
+                FROM
+                    (SELECT
+                        (SELECT
+                            description
+                        FROM
+                            csh_payment_usedes_vl cp
+                        WHERE
+                            cp.usedes_id=ll.usedes_id
+                        ) usedes_name,
+                        (SELECT
+                            t.code_value_name
+                        FROM
+                            SYS_CODE_VALUES_V t
+                        WHERE
+                            code      ='PAYMENT_OBJECT' AND
+                            code_value=ll.PARTNER_CATEGORY
+                        ) partner_category_name,
+                        ( DECODE(ll.partner_category,'EMPLOYEE',
+                        (SELECT nn.name FROM exp_employees nn WHERE nn.employee_id = ll.partner_id
+                        ),'VENDER',
+                        (SELECT
+                            nn.description
+                        FROM
+                            pur_system_venders_vl nn
+                        WHERE
+                            nn.vender_id = ll.partner_id
+                        ),'CUSTOMER',
+                        (SELECT
+                            nn.description
+                        FROM
+                            ord_system_customers_vl nn
+                        WHERE
+                            nn.customer_id = ll.partner_id
+                        ),NULL)) payee_partner_name,
+                        (SELECT
+                            ee.due_amount
+                        FROM
+                            exp_report_pmt_schedules ee
+                        WHERE
+                            ll.REF_DOCUMENT_LINE_ID = ee.PAYMENT_SCHEDULE_LINE_ID
+                        ) due_amount,
+                        (SELECT
+                            fd.DESCRIPTION
+                        FROM
+                            csh_payment_methods_vl fd
+                        WHERE
+                            fd.PAYMENT_METHOD_ID =ll.PAYMENT_METHOD_ID
+                        ) payment_method,
+                        (SELECT
+                            t.contract_number
+                        FROM
+                            con_contract_headers t
+                        WHERE
+                            t.CONTRACT_HEADER_ID=ll.contract_header_id
+                        ) contract_number,
+                        (SELECT
+                            tt.payment_schedule_line_number
+                        FROM
+                            con_payment_schedules tt
+                        WHERE
+                            tt.payment_schedule_line_id = ll.payment_schedule_line_id
+                        ) payment_schedule_line_number,
+                        ll.acp_requisition_line_id,
+                        ll.acp_requisition_line_type,
+                        ll.company_id,
+                        ll.partner_category partner_category_value,
+                        ll.partner_id,
+                        ll.ref_document_line_id,
+                        ll.ref_document_id,
+                        ll.amount req_amount,
+                        ll.payment_status,
+                        ll.account_name,
+                        ll.bank_code,
+                        ll.bank_name,
+                        ll.bank_location_name,
+                        ll.bank_location_code,
+                        ll.province_code,
+                        ll.province_name,
+                        ll.city_code,
+                        TO_CHAR(ll.requisition_payment_date,'YYYY-MM-DD') plan_pay_date,
+                        ll.city_name,
+                        ll.account_number,
+                        ll.contract_header_id,
+                        ll.usedes_id,
+                        ll.payment_method_id,
+                        ll.payment_schedule_line_id payment_sch_line_id,
+                        ll.gather_flag,
+                        (SELECT
+                                b.code_value_name
+                            FROM
+                                sys_codes a,
+                                sys_code_values_vl b
+                            WHERE
+                                a.code_id       = b.code_id AND
+                                a.code          ='GATHER_FLAG' AND
+                                b.code_value = ll.gather_flag
+                            )gather_flag_desc
+                    FROM
+                        acp_acp_requisition_lns ll,
+                        acp_acp_requisition_hds hh
+                    WHERE
+                        ll.acp_requisition_header_id =hh.acp_requisition_header_id AND
+                        ll.acp_requisition_header_id = ${@acp_requisition_header_id}
+                    ) vv
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="acp_requisition_header_id" queryExpression="ll.acp_requisition_header_id=${@acp_requisition_header_id}"/>
+    </bm:query-fields>
+    <bm:fields>
+        <bm:field name="usedes_name"/>
+        <bm:field name="partner_category_name"/>
+        <bm:field name="payee_partner_name"/>
+        <bm:field name="req_amount"/>
+        <bm:field name="due_amount"/>
+        <bm:field name="plan_pay_date"/>
+        <bm:field name="ref_document_line_id"/>
+        <bm:field name="unpayment_amount"/>
+        <bm:field name="ref_document_id"/>
+        <bm:field name="payment_method"/>
+        <bm:field name="can_req_amount"/>
+        <bm:field name="account_number"/>
+        <bm:field name="partner_category_value"/>
+        <bm:field name="bank_location_name"/>
+        <bm:field name="bank_location_code"/>
+        <bm:field name="payment_schedule_line_number"/>
+        <bm:field name="bank_name"/>
+        <bm:field name="bank_code"/>
+        <bm:field name="usedes_id"/>
+        <bm:field name="company_id"/>
+        <bm:field name="account_name"/>
+        <bm:field name="province_code"/>
+        <bm:field name="city_code"/>
+        <bm:field name="city_name"/>
+        <bm:field name="partner_id"/>
+        <bm:field name="contract_number"/>
+        <bm:field name="province_name"/>
+        <bm:field name="contract_header_id"/>
+        <bm:field name="payment_sch_line_id"/>
+        <bm:field name="acp_requisition_line_id"/>
+        <bm:field name="gather_flag"/>
+        <bm:field name="gather_flag_desc"/>
+    </bm:fields>
+</bm:model>

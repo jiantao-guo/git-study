@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-6-7 下午4:00:26  
+    $Revision: 1.0  
+    $Purpose: 资产业务单据部门查询
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            SELECT ssv.*,
+			       (SELECT fvl.company_short_name FROM fnd_companies_vl fvl WHERE fvl.company_id = ssv.entity_company_id) entity_company_name,
+			       (SELECT uvl.description FROM exp_org_unit_vl uvl WHERE uvl.unit_id = ssv.entity_unit_id) entity_unit_name,
+			       (SELECT pvl.description FROM exp_org_position_vl pvl WHERE pvl.position_id = ssv.entity_position_id) entity_position_name
+			  FROM (SELECT rh.requisition_header_id,
+			               rh.requisition_number,
+			               rh.ast_requisition_type_id,
+			               rh.company_id,
+			               (SELECT fvl.company_short_name FROM fnd_companies_vl fvl WHERE fvl.company_id = rh.company_id) company_name,
+			               --rh.unit_id,
+			               --(SELECT uvl.description FROM exp_org_unit_vl uvl WHERE uvl.unit_id = rh.unit_id) unit_name,
+			               ${@unit_id} unit_id,
+			               (select u.description
+							  from sys_user             su,
+							       exp_employee_assigns a,
+							       exp_org_position     p,
+							       exp_org_unit_vl      u
+							 where su.user_id = ${/session/@user_id}
+							   and rh.created_by = su.user_id
+							   and su.employee_id = a.employee_id
+							   and a.position_id = p.position_id
+							   and p.unit_id = u.unit_id
+							   and u.unit_id = ${@unit_id}) unit_name,
+			               rh.created_by,
+			               tv.ast_requisition_type_name,
+			               ah.asset_id,
+			               ah.asset_code,
+			               ah.asset_name,
+			               rh.description,
+			               to_char(rh.requisition_date,'yyyy-mm-dd') as requisition_date,
+			               rh.requisition_status,
+			               (select t.base_trx_category from eam_requisition_types t where t.ast_requisition_type_id=rh.ast_requisition_type_id)base_trx_category,
+			               (SELECT v.code_value_name FROM sys_code_values_v v WHERE v.code = 'EAM_REQUISITION_STATUS' and v.code_value=rh.requisition_status) req_status_desc,
+			               ah.asset_source_type,
+			               (SELECT v.code_value_name
+			                  FROM sys_code_values_v v
+			                 WHERE v.code = 'EAM_AST_SOURCE_TYPE'
+			                       AND v.code_value = ah.asset_source_type) asset_source_type_desc,
+			               ah.category_id,
+			               cvl.description category_name,
+			               ah.entity_class_id,
+			               ev.description entity_class_name,
+			               ah.lock_flag,
+			               to_char(ah.gain_date,'yyyy-mm-dd') as gain_date,
+			               ah.currency_code,
+			               (SELECT gvl.currency_name FROM gld_currency_vl gvl WHERE gvl.currency_code = ah.currency_code) currency_desc,
+			               ah.quantity,
+			               ah.asset_unit,
+			               (SELECT v.code_value_name
+			                  FROM sys_service_lookup_v v
+			                 WHERE v.enabled_flag = 'Y'
+			                       AND v.code_value = ah.asset_unit
+			                       AND code = 'FRS_AMOUNT_UOM_CODE'
+			                       AND LANGUAGE = ${/session/@lang}) AS asset_unit_desc,
+			               ah.cost,
+			               ah.status,
+			               (SELECT v.code_value_name
+				                  FROM sys_service_lookup_v v
+				                 WHERE v.enabled_flag = 'Y'
+				                       AND v.code_value = ah.status
+				                       AND code = 'EAM_ASSET_STATUS'
+				                       AND LANGUAGE = ${/session/@lang}) AS status_desc,
+			               fi.finance_class_id,
+			               (SELECT vl.description FROM eam_asset_fin_classes_vl vl WHERE vl.class_id = fi.finance_class_id) finance_class_name,
+			               fi.currency_code fi_currency_code,
+			               (SELECT gvl.currency_name FROM gld_currency_vl gvl WHERE gvl.currency_code = fi.currency_code) fi_currency_desc,
+			               fi.original_cost,
+			               fi.current_cost,
+			               to_char(ah.start_use_date,'yyyy-mm-dd') as start_use_date,
+			               fi.depreciate_flag,
+			               fi.accumulated_dep_amt,
+			               fi.impairment_loss_amt,
+			               fi.life_in_month,
+			               fi.remaining_life_in_month,
+			               (fi.current_cost - fi.accumulated_dep_amt - fi.impairment_loss_amt) current_value,
+			               decode(ah.entity_company_id,
+			                      NULL,
+			                      (SELECT vl.entity_man_company_id
+			                         FROM eam_asset_entity_classes_vl vl
+			                        WHERE vl.class_id = ah.entity_class_id),
+			                      ah.entity_company_id) entity_company_id,
+			               decode(ah.entity_unit_id,
+			                      NULL,
+			                      (SELECT vl.entity_man_unit_id
+			                         FROM eam_asset_entity_classes_vl vl
+			                        WHERE vl.class_id = ah.entity_class_id),
+			                      ah.entity_unit_id) entity_unit_id,
+			               decode(ah.entity_position_id,
+			                      NULL,
+			                      (SELECT vl.entity_man_position_id
+			                         FROM eam_asset_entity_classes_vl vl
+			                        WHERE vl.class_id = ah.entity_class_id),
+			                      ah.entity_position_id) entity_position_id,
+			               lv.location_id,
+			               lv.description location_name,
+			               lv.location_type,
+			               (SELECT v.code_value_name
+				                  FROM eam_locations_vl  vl,
+				                       sys_code_values_v v
+				                 WHERE vl.location_type = v.code_value
+				                       AND v.code = 'EAM_LOCATION_TYPE'
+				                       AND vl.location_id = lv.location_id) location_type_desc,
+			               ah.asset_book_id,
+			               bv.description asset_book_name,
+			               ah.tag_number,
+			               ah.serial_number,
+			               rh.employee_id,
+			               ee.name employee_name
+			          FROM eam_requisition_headers     rh,
+			               eam_requisition_lines       rl,
+			               eam_requisition_types_vl    tv,
+			               eam_asset_headers_vl        ah,
+			               eam_asset_finance_info      fi,
+			               eam_asset_categories_vl     cvl,
+			               eam_asset_entity_classes_vl ev,
+			               eam_locations_vl            lv,
+			               exp_employees               ee,
+			               eam_asset_books_vl          bv
+			         WHERE rh.requisition_header_id = rl.requisition_header_id
+			               AND tv.ast_requisition_type_id = rh.ast_requisition_type_id
+			               AND rl.asset_id = ah.asset_id
+			               AND bv.asset_book_id = ah.asset_book_id
+			               AND ah.asset_id = fi.asset_id(+)
+			               AND rh.employee_id = ee.employee_id
+			               AND ah.location_id = lv.location_id
+			               AND cvl.category_id = ah.category_id
+			               AND ev.class_id = ah.entity_class_id) ssv
+               #WHERE_CLAUSE#
+               ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="requisition_header_id" prompt=""/>
+        <bm:field name="requisition_number" prompt="ACP_REQUISITION.REQUEST_NO"/>
+        <bm:field name="ast_requisition_type_id"/>
+        <bm:field name="base_trx_category"/>
+        <bm:field name="ast_requisition_type_name" prompt="WFL_WORKFLOW_APPROVE.PROCESS_TYPE"/>
+        <bm:field name="asset_id"/>
+        <bm:field name="asset_code" prompt="EAM_ASSET_HEADERS.ASSET_CODE"/>
+        <bm:field name="asset_name" prompt="EAM_ASSET_HEADERS.DESCRIPTION"/>
+        <bm:field name="description" prompt="AST_REQUISITION_DESC"/>
+        <bm:field name="requisition_date" prompt="CON_CONTRACT_HEADERS.REQUISITION_DATE"/>
+        <bm:field name="requisition_status" prompt=""/>
+        <bm:field name="req_status_desc" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUSII"/>
+        <bm:field name="asset_source_type" prompt=""/>
+        <bm:field name="asset_source_type_desc" prompt="EAM_ASSET_HEADERS.ASSET_SOURCE_TYPE"/>
+        <bm:field name="category_id" prompt=""/>
+        <bm:field name="category_name" prompt="EAM_ASSET_HEADERS.CATEGORY_ID"/>
+        <bm:field name="entity_class_id" prompt=""/>
+        <bm:field name="entity_class_name" prompt="EAM_ASSET_HEADERS.ENTITY_CLASS_ID"/>
+        <bm:field name="lock_flag" prompt="EAM_ASSET_HEADERS.LOCK_FLAG"/>
+        <bm:field name="gain_date" prompt="EAM_ASSET_HEADERS.GAIN_DATE"/>
+        <bm:field name="currency_code" prompt=""/>
+        <bm:field name="currency_desc" prompt="GLD_EXCHANGE_RATES.FROM_CURRENCY"/>
+        <bm:field name="quantity" prompt="BGT_JOURNAL_LINES.QUANTITY"/>
+        <bm:field name="asset_unit" prompt=""/>
+        <bm:field name="asset_unit_desc" prompt="AST_ASSET_HEADERS.ASSET_UNIT"/>
+        <bm:field name="cost" prompt="EAM_ASSET_HEADERS.COST"/>
+        <bm:field name="status" prompt="AST_ASSET_HEADERS_VL.ASSET_STATUS"/>
+        <bm:field name="status_desc" prompt="AST_ASSET_HEADERS_VL.ASSET_STATUS"/>
+        <bm:field name="finance_class_id" prompt=""/>
+        <bm:field name="finance_class_name" prompt="EAM_ASSET_HEADERS.FIN_CLASS_ID"/>
+        <bm:field name="fi_currency_code" prompt=""/>
+        <bm:field name="fi_currency_desc" prompt="EAM_ASSET_HEADER.FIN_CURRENCY_CODE"/>
+        <bm:field name="original_cost" prompt="EAM_ASSET_FINANCE_INFO.ORIGINAL_COST"/>
+        <bm:field name="current_cost" prompt="EAM_ASSET_FINANCE_INFO.CURRENT_COST"/>
+        <bm:field name="start_use_date" prompt="EAM_ASSET_HEADERS.START_USE_DATE"/>
+        <bm:field name="depreciate_flag" prompt="AST_ASSET.CHECK_DEPRECIATION_FLAG"/>
+        <bm:field name="accumulated_dep_amt" prompt="EAM_ASSET_FINANCE_INFO.ACCUMULATED_DEP_AMT"/>
+        <bm:field name="impairment_loss_amt" prompt="EAM_ASSET_FINANCE_INFO.IMPAIRMENT_LOSS_AMT"/>
+        <bm:field name="life_in_month" prompt="EAM_ASSET_FINANCE_INFO.LIFE_IN_MONTH"/>
+        <bm:field name="remaining_life_in_month" prompt="EAM_ASSET_FINANCE_INFO.REMAINING_LIFE_IN_MONTH"/>
+        <bm:field name="current_value" prompt="EAM_REQUISITION_LINES.CURRENT_VALUE"/>
+        <bm:field name="entity_company_name" prompt="EAM_ASSET_HEADERS.ENTITY_COMPANY_ID"/>
+        <bm:field name="entity_unit_name" prompt="EAM_ASSET_HEADERS.ENTITY_UNIT_ID"/>
+        <bm:field name="entity_position_name" prompt="EAM_ASSET_HEADERS.ENTITY_POSITION_ID"/>
+        <bm:field name="entity_company_id" prompt=""/>
+        <bm:field name="entity_unit_id" prompt=""/>
+        <bm:field name="entity_position_id" prompt=""/>
+        <bm:field name="location_type" prompt=""/>
+        <bm:field name="location_name" prompt="EXP_REQ_EXPENSE_POLICIES.PLACE_ID"/>
+        <bm:field name="location_type_desc" prompt="EXP_REQ_EXPENSE_POLICIES.PLACE_TYPE_ID"/>
+        <bm:field name="tag_number" prompt="EAM_ASSET_HEADERS.TAG_NUMBER"/>
+        <bm:field name="serial_number" prompt="EAM_ASSET_HEADERS.SERIAL_NUMBER"/>
+        <bm:field name="asset_book_id" prompt=""/>
+        <bm:field name="asset_book_name" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK"/>
+        <bm:field name="employee_id" prompt=""/>
+        <bm:field name="employee_name" prompt="AST_REQUISITION_ORIGINATOR"/>
+        <bm:field name="company_id" prompt=""/>
+        <bm:field name="created_by" prompt=""/>
+        <bm:field name="unit_id" prompt=""/>
+        <bm:field name="company_name" prompt="DOCUMENTS_COMPANY_NAME"/>
+        <bm:field name="unit_name" prompt="DOCUMENTS_UNIT_NAME"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="status" queryOperator="="/>
+        <bm:query-field name="asset_code" queryExpression="ssv.asset_code like &apos;%&apos; || ${@asset_code} || &apos;%&apos;"/>
+        <bm:query-field name="asset_name" queryExpression="ssv.asset_name like &apos;%&apos; || ${@asset_name} || &apos;%&apos;"/>
+        <bm:query-field field="employee_id" queryOperator="="/>
+        <bm:query-field field="asset_source_type" queryOperator="="/>
+        <bm:query-field field="ast_requisition_type_id" queryOperator="="/>
+        <bm:query-field field="requisition_status" queryOperator="="/>
+        <bm:query-field field="requisition_number" queryOperator="like"/>
+        <bm:query-field name="req_date_from" queryExpression="ssv.requisition_date &gt;= to_date(${@req_date_from}, &apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="req_date_to" queryExpression="ssv.requisition_date &lt;= to_date(${@req_date_to}, &apos;yyyy-mm-dd&apos;)"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="asset_book_id" expression="ssv.asset_book_id = ${@asset_book_id}"/>
+        <bm:data-filter name="company_id" expression="ssv.company_id = ${@company_id}"/>
+        <bm:data-filter name="unit_id" expression="exists (select 1 from sys_user su ,exp_employee_assigns a,exp_org_position p, exp_org_unit u where su.user_id = ${/session/@user_id} and ssv.created_by = su.user_id and su.employee_id = a.employee_id and a.position_id = p.position_id and p.unit_id = u.unit_id and u.unit_id = ${@unit_id})"/>
+    </bm:data-filters>
+</bm:model>

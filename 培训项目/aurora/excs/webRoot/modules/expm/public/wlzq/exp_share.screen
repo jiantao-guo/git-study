@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Rick  
+    $Date: 2017-7-27 19:54:01
+    $Revision: 1.0  
+    $Purpose: 费用分摊复制
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:view>
+        <a:link id="share_link" url="${/request/@context_path}/modules/expm/public/wlzq/exp_share.svc"/>
+        <script><![CDATA[
+            function share_confirm_fun() {
+                if (!$('exp_share_ds').validate()) {
+                    return;
+                }
+                var records = $('exp_share_ds').getAll();
+                if (records.length == 0) {
+                    return;
+                }
+                var param = {};
+                param.exp_report_line_id = '${/parameter/@exp_report_line_id}';
+                var arr = [];
+            
+                for (var i = 0;i < records.length;i++) {
+                    var item = {};
+                    item.company_id = records[i].get('company_id');
+                    item.unit_id = records[i].get('unit_id');
+                    item.amount = records[i].get('amount');
+                    arr.push(item);
+                }
+                param.shares = arr;
+                Aurora.request({
+                    para: param,
+                    url: $('share_link').getUrl(),
+                    success: function() {
+                        $('exp_report_lines').query();
+                        $('pmtplan_schedules_ds').query();
+                        //触发一次保存
+                        $('share_win').close();
+            
+                    },
+                    sync: true,
+                    scope: this
+                });
+            }
+            
+            function unitShareCellClickFunction(grid, row, name, record, value) {
+                if (name == 'unit_code') {
+                    record.getMeta().getField('unit_code').setLovPara('company_id', record.get('company_id'));
+                }
+            }
+            
+            function shareUpdateFun(ds, record, name, value, oldvalue) {
+                if (name == 'company_code') {
+                    record.set('unit_id', '');
+                    record.set('unit_code', '');
+                    record.set('unit_name', '');
+                    if (value != '1000000') {
+                        record.getMeta().getField('unit_code').setReadOnly(true);
+                    }
+                }
+            }
+            
+            function create_share_fun() {
+                var linerecord = $('exp_share_ds').getSelected();
+                if (linerecord.length == 0) {
+                    var newOneRecord = $('exp_share_ds').create();
+                } else {
+                    for (var i = 0;i < linerecord.length;i++) {
+                        var newOneRecord = $('exp_share_ds').create();
+                        newOneRecord.set('amount', linerecord[i].get('amount'));
+                    }
+                }
+            }
+            
+            function summaryRenderer(datas, name) {
+                var sum = 0;
+                for (var i = 0;i < datas.length;i++) {
+                    var r = datas[i];
+                    var d = r.get(name);
+                    var n = parseFloat(d);
+                    if (!isNaN(n)) {
+                        sum += n;
+                    }
+                }
+                return '合计: <font color="red">' + Aurora.formatNumber(sum) + '</font>';
+            }
+            
+            function company_sel_fun() {
+                var default_amount = $('default_amount_ds').getAll()[0].get('default_amount');
+                var comps = $('share_company_ds').getJsonData(true);
+                for (var i = 0;i < comps.length;i++) {
+                    var newOneRecord = $('exp_share_ds').create();
+                    newOneRecord.set('amount', default_amount);
+                    newOneRecord.set('company_id', comps[i].company_id);
+                    newOneRecord.set('company_code', comps[i].company_code);
+                    newOneRecord.set('company_short_name', comps[i].company_short_name);
+                    newOneRecord.set('unit_id', comps[i].unit_id);
+                    newOneRecord.set('unit_code', comps[i].unit_code);
+                    newOneRecord.set('unit_name', comps[i].unit_name);
+                    if (comps[i].company_code != '1000000') {
+                        newOneRecord.getMeta().getField('unit_code').setReadOnly(true);
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="default_amount_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="default_amount"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="share_company_ds" autoQuery="true" fetchAll="true" model="expm.public.wlzq.exp_share_company_lov" selectable="true">
+                <a:fields>
+                    <a:field name="company_code"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exp_share_ds" selectable="true">
+                <a:fields>
+                    <a:field name="exp_report_line_id" defaultValue="${/parameter/@exp_report_line_id}"/>
+                    <a:field name="company_code" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="expm.public.wlzq.exp_share_company_lov" lovWidth="500" required="true" title="分配公司">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_short_name" to="company_short_name"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="unit_code" to="unit_code"/>
+                            <a:map from="unit_name" to="unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_code" autoComplete="true" autoCompleteField="unit_code" lovGridHeight="340" lovHeight="460" lovService="expm.EXP1220.exp_org_unit_exp_lov?resp_filter_op=Y" lovWidth="540" required="true" title="BGT_BUDGET_ITEM_MAPPING.ORG_UNIT_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="unit_code" to="unit_code"/>
+                            <a:map from="description" to="unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="amount" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="shareUpdateFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:hBox>
+                <a:grid id="company_grid" bindTarget="share_company_ds" marginHeight="150" navBar="true" showRowNumber="true" width="600">
+                    <a:toolBar>
+                        <div>
+                            <font color="red"><![CDATA[默认金额:]]></font>
+                        </div>
+                        <a:numberField name="default_amount" allowDecimals="true" bindTarget="default_amount_ds" decimalPrecision="2" emptyText="默认金额"/>
+                    </a:toolBar>
+                    <a:columns>
+                        <a:column name="company_short_name" align="center" prompt="公司名称" sortable="true" width="200"/>
+                        <a:column name="unit_name" align="center" prompt="部门名称" width="150"/>
+                    </a:columns>
+                </a:grid>
+                <a:Vbox>
+                    <a:button click="company_sel_fun" text="&gt;&gt;&gt;"/>
+                </a:Vbox>
+                <a:grid id="exp_share_grid" bindTarget="exp_share_ds" marginHeight="150" navBar="true" showRowNumber="true" width="840">
+                    <a:toolBar>
+                        <a:button click="create_share_fun" text="新增" width="80"/>
+                        <a:button type="delete"/>
+                        <a:button click="share_confirm_fun" text="确认" width="80"/>
+                    </a:toolBar>
+                    <a:columns>
+                        <a:column name="company_code" align="center" editor="share_company_code_lov" prompt="公司代码" sortable="true" width="100"/>
+                        <a:column name="company_short_name" align="center" prompt="公司名称" width="150"/>
+                        <a:column name="unit_code" align="center" editor="share_company_code_lov" prompt="部门代码" sortable="true" width="100"/>
+                        <a:column name="unit_name" align="center" prompt="部门名称" width="150"/>
+                        <a:column name="amount" align="right" editor="share_number_editor" footerRenderer="summaryRenderer" prompt="不含税金额" renderer="Aurora.formatMoney" width="203"/>
+                    </a:columns>
+                    <a:editors>
+                        <a:lov id="share_company_code_lov"/>
+                        <a:numberField id="share_number_editor" allowDecimals="true" decimalPrecision="2"/>
+                    </a:editors>
+                    <a:events>
+                        <a:event name="cellclick" handler="unitShareCellClickFunction"/>
+                    </a:events>
+                </a:grid>
+            </a:hBox>
+        </a:screenBody>
+    </a:view>
+</a:screen>

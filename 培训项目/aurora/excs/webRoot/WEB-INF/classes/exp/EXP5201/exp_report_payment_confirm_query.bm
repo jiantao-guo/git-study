@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[		
+            select *
+			  from (select 'EXP_REPORT' document_type,
+						   v.need_payment_amount - payed_amount unpayment_amount,
+						   v.need_payment_amount - payed_amount payment_amount,
+						   v.*
+					  from (select erh.exp_report_header_id,
+								   erh.exp_report_number,
+								   erh.employee_id,
+								  
+								   (select t.name from  exp_employees t where t.employee_id = erh.employee_id ) report_name,
+								   erps.payee_category,
+								   (select a.code_value_name
+									  from sys_code_values_v a
+									 where a.code = 'PAYMENT_OBJECT'
+									   and a.code_value = erps.payee_category) p_payee_category,
+								   decode(erps.payee_category,
+										  'EMPLOYEE',
+										  (select ee.employee_code || '-' || ee.name
+											 from exp_employees ee
+											where ee.employee_id = erps.payee_id),
+										  'VENDER',
+										  (select svv.vender_code || '-' || svv.description
+											 from pur_system_venders_vl svv
+											where svv.vender_id = erps.payee_id),
+										  'CUSTOMER',
+										  (select scv.customer_code || '-' || scv.description
+											 from ord_system_customers_vl scv
+											where scv.customer_id = erps.payee_id)) payee_name,
+								   erps.payee_id,
+								   erh.exp_report_type_id,
+								   erh.report_date,
+								   to_char(erh.report_date, 'yyyy-mm-dd') p_report_date,
+								   erps.schedule_due_date,
+								   to_char(erps.schedule_due_date, 'yyyy-mm-dd') p_schedule_due_date,
+								   erh.currency_code,
+								   (select currency_name from gld_currency_vl gcv where gcv.currency_code = erh.currency_code) currency_name,
+								   (select sum(erl.report_amount)
+									  from exp_report_lines erl
+									 where erl.exp_report_header_id =
+										   erh.exp_report_header_id) report_amount,
+								   erps.due_amount need_payment_amount,
+								   (select nvl(sum(w.csh_write_off_amount), 0)
+									  from csh_write_off w
+									 where w.document_source = 'EXPENSE_REPORT'
+									   and w.document_header_id = erps.exp_report_header_id
+									   and w.document_line_id = erps.payment_schedule_line_id) payed_amount,
+								   (select ertv.description
+									  from exp_expense_report_types_vl ertv
+									 where ertv.expense_report_type_id =
+										   erh.exp_report_type_id) exp_report_type,
+								   erps.payment_schedule_line_id,
+								   (select fv.company_short_name
+									  from fnd_companies_vl fv
+									 where fv.company_id = erps.company_id) company_name,
+								   cdpc.payment_status,
+								   decode(cdpc.payment_status, 'ALLOWED', 'PENDING', 'PENDING', 'ALLOWED') payment_status1,
+								   (select b.code_value_name
+									  from sys_code_values_v b
+									 where b.code_value = cdpc.payment_status
+									   and b.code = 'PENDING_PAYMENT_STATUS') pending_payment_status,
+								   cdpc.payment_company_id,
+								   cdpc.payment_operation_unit_id,
+								   (select cch.contract_number
+									  from con_document_flows cdf, con_contract_headers cch
+									 where cdf.document_id = cch.contract_header_id
+									   and cdf.document_type = 'CON_CONTRACT'
+									   and cdf.source_document_type = 'EXP_REPORT_PMT_SCHEDULES'
+									   and cdf.source_document_id = erh.exp_report_header_id
+									   and cdf.source_document_line_id = erps.payment_schedule_line_id) contract_number,
+								   (select cps.payment_schedule_line_number
+									  from con_document_flows cdf, con_payment_schedules cps
+									 where cdf.document_line_id = cps.payment_schedule_line_id
+									   and cdf.document_type = 'CON_CONTRACT'
+									   and cdf.source_document_type = 'EXP_REPORT_PMT_SCHEDULES'
+									   and cdf.source_document_id = erh.exp_report_header_id
+									   and cdf.source_document_line_id = erps.payment_schedule_line_id) payment_schedule_line_number
+							  from exp_report_headers       erh,
+								   exp_report_pmt_schedules erps,
+								   csh_doc_payment_company  cdpc,
+								   fnd_companies_vl         vvv
+							 where erh.exp_report_header_id = erps.exp_report_header_id
+							   and sys_user_secure_exit_pkg.exp_report_payment_confirm(erh.exp_report_header_id ,${/session/@session_id})='Y'
+							   and cdpc.document_id = erh.exp_report_header_id
+							   and cdpc.document_line_id = erps.payment_schedule_line_id
+							   and erps.company_id = vvv.company_id
+							   and cdpc.document_type = 'EXP_REPORT'
+							   and cdpc.payment_status != 'PAID'
+							   and erh.audit_flag = 'Y'
+							   and erh.write_off_status != 'C'
+							   and nvl(erh.reversed_flag, 'N') = 'N'
+							   --增加判断
+							   and cdpc.payment_status != 'FROZEN'
+							   and erps.company_id = ${/session/@company_id}) v
+					 where (v.need_payment_amount - payed_amount) > 0) t
+	
+			#WHERE_CLAUSE# 
+		order by t.exp_report_number desc
+		]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="exp_report_type_id" datatype="java.lang.String" queryexpression="exp_report_type_id = ${@exp_report_type_id}"/>
+        <bm:query-field name="exp_report_number" datatype="java.lang.String" queryexpression="exp_report_number like &apos;%&apos;||${@exp_report_number}||&apos;%&apos;"/>
+        <bm:query-field name="contract_number" datatype="java.lang.String" queryexpression="contract_number like &apos;%&apos;||${@contract_number}||&apos;%&apos;"/>
+        <bm:query-field name="schedule_due_date_from" datatype="java.lang.String" queryexpression="(${@schedule_due_date_from} is null or to_date(p_schedule_due_date,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@schedule_due_date_from},&apos;yyyy-mm-dd&apos;))"/>
+        <bm:query-field name="schedule_due_date_to" datatype="java.lang.String" queryexpression="(${@schedule_due_date_to} is null or to_date(p_schedule_due_date,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@schedule_due_date_to},&apos;yyyy-mm-dd&apos;))"/>
+        <bm:query-field name="payee_category" datatype="java.lang.String" queryexpression="payee_category = ${@payee_category}"/>
+        <bm:query-field name="payee_id" datatype="java.lang.String" queryexpression="payee_id = ${@payee_id}"/>
+        <bm:query-field name="currency_code" datatype="java.lang.String" queryexpression="currency_code = ${@currency_code}"/>
+        <bm:query-field name="payment_status" datatype="java.lang.String" queryexpression="payment_status = ${@payment_status}"/>
+        <bm:query-field name="report_date_from" queryExpression="report_date &gt;= to_date(${@report_date_from},&apos;yyyy-mm-dd&apos;) "/>
+        <bm:query-field name="report_date_to" queryExpression="report_date &lt;= to_date(${@report_date_to},&apos;yyyy-mm-dd&apos;)"/>
+    </bm:query-fields>
+</bm:model>

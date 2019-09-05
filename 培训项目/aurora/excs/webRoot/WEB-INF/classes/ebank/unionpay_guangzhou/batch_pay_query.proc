@@ -1,0 +1,573 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<p:procedure xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application"  xmlns:rs="aurora.database.rsconsumer" xmlns:p="uncertain.proc" trace="true">
+    <s:server-script import="composite_map_util.js"/>
+    <s:server-script import="ebank_util.js"/>
+    <s:server-script import="gz_unionpay_util.js"/>
+    <s:server-script><![CDATA[
+            function doQuery() {
+                //生成EbankUtil实例
+                var eUtil = new EbankUtil();
+                var logger = Packages.org.apache.log4j.Logger.getLogger('gzQuery');
+                try {
+                    eUtil.dolock('GZ_UNIONPAY_QUERY');
+                    eUtil.log({
+                        ref_table: 'gzQuery',
+                        log_text: '广银联-交易结果查询-锁表'
+                    });
+                    //生成GzUnionPayUtil实例
+                    var gzUtil = new GzUnionPayUtil();
+                    eUtil.log({
+                        ref_table: 'gzQuery',
+                        log_text: '广银联-交易结果查询-生成广银联工具包实例'
+                    });
+                    //生成CmUTIL包实例
+                    var cmUtil = new CmUtil();
+                    eUtil.log({
+                        ref_table: 'gzQuery',
+                        log_text: '广银联-交易结果查询-生成CompositeMap工具包实例'
+                    });
+            
+                    var errorMsg;
+                    eUtil.log({
+                        ref_table: 'gzQuery',
+                        log_text: '广银联-交易结果查询请求发起'
+                    });
+                    var needQueryRecords = gzUtil.getNeedQueryRecords();
+                    eUtil.log({
+                        ref_table: 'gzQuery',
+                        log_text: '广银联-交易结果查询-获取待查询REQ_SN号'
+                    });
+            
+                    if (needQueryRecords.length == 0) {
+                        eUtil.log({
+                            ref_table: 'gzQuery',
+                            log_text: String('广银联-交易结果查询-本次待查询的结果数量为0，退出')
+                        });
+            
+                        //解除锁表
+                        eUtil.unlock('GZ_UNIONPAY_QUERY');
+                        eUtil.log({
+                            ref_table: 'gzQuery',
+                            log_text: '广银联-交易结果查询-解锁'
+                        });
+            
+                        return;
+                    } else {
+                        eUtil.log({
+                            ref_table: 'gzQuery',
+                            log_text: String('广银联-交易结果查询-本次待查询的结果数量为:' + needQueryRecords.length)
+                        });
+                    }
+            
+                    for (var i = 0;i < needQueryRecords.length;i++) {
+                        try {
+                            var queryRecord = needQueryRecords[i];
+                            var reqSn = gzUtil.getReqSn();
+                            //根节点生成
+                            var gzelink = cmUtil.createNode({
+                                tag: 'GZELINK'
+                            });
+                            //info信息节点插入
+                            var info = cmUtil.addChild(gzelink, {
+                                tag: 'INFO'
+                            });
+                            //body信息节点插入
+                            var body = cmUtil.addChild(gzelink, {
+                                tag: 'BODY'
+                            });
+                            //query_trans信息节点插入
+                            var query_trans = cmUtil.addChild(body, {
+                                tag: 'QUERY_TRANS'
+                            });
+                            //query_details信息节点插入
+                            var query_details = cmUtil.addChild(body, {
+                                tag: 'QUERY_DETAILS'
+                            });
+                            //query_detail信息节点插入
+                            var query_detail = cmUtil.addChild(query_details, {
+                                tag: 'QUERY_DETAIL'
+                            });
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: '广银联-交易结果查询-报文基础结构生成完成'
+                            });
+                            /*******************************************************************
+                             *头信息明细生成
+                             ********************************************************************/
+                            /**
+                             *字段ID:TRX_CODE
+                             *字段名称:交易代码
+                             *类型:C(1, 20)
+                             *取值:100002
+                             *可空:否
+                             *备注:默认100002
+                             */
+                            cmUtil.addChild(info, {
+                                tag: 'TRX_CODE',
+                                text: '200001'
+                            });
+                            /**
+                             *字段ID:VERSION
+                             *字段名称:版本
+                             *类型:C(2)
+                             *取值:05
+                             *可空:否
+                             *备注:版本05进行了字段扩展，变更内容在字段说明中会标出，默认05
+                             */
+                            cmUtil.addChild(info, {
+                                tag: 'VERSION',
+                                text: '05'
+                            });
+                            /**
+                             *字段ID:DATA_TYPE
+                             *字段名称:数据格式
+                             *类型:N(1)
+                             *取值:2：xml格式
+                             *可空:可
+                             *备注:默认2
+                             */
+                            cmUtil.addChild(info, {
+                                tag: 'DATA_TYPE',
+                                text: '2'
+                            });
+                            /**
+                             *字段ID:USER_NAME
+                             *字段名称:用户名
+                             *类型:C(1,20)
+                             *取值:
+                             *可空:可
+                             *备注:需要提供用户名,做系统参数,系统参数[EBANK_GZ_UNIONPAY_USERNAME]
+                             */
+                            cmUtil.addChild(info, {
+                                tag: 'USER_NAME',
+                                text: gzUtil.username
+                            });
+                            /**
+                             *字段ID:USER_PASS
+                             *字段名称:用户密码
+                             *类型:
+                             *取值:
+                             *可空:可
+                             *备注:需要提供用户密码,做系统参数,系统参数[EBANK_GZ_UNIONPAY_PASSWORD]
+                             */
+                            cmUtil.addChild(info, {
+                                tag: 'USER_PASS',
+                                text: gzUtil.password
+                            });
+                            /**
+                             *字段ID:REQ_SN
+                             *字段名称:交易流水号
+                             *类型:C(30)
+                             *取值:
+                             *可空:否
+                             *备注:不重复流水(对代收付系统需要唯一)，付款批号
+                             */
+                            cmUtil.addChild(info, {
+                                tag: 'REQ_SN',
+                                text: reqSn
+                            });
+                            /**
+                             *字段ID:SIGNED_MSG
+                             *字段名称:签名信息
+                             *类型:
+                             *取值:
+                             *可空:否
+                             *备注:
+                             */
+                            cmUtil.addChild(info, {
+                                tag: 'SIGNED_MSG',
+                                text: ''
+                            });
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: '广银联-交易结果查询-报文INFO部分生成'
+                            });
+                            logger.info('广银联-交易结果查询-报文INFO部分生成,报文内容为:\n' + gzelink.toXML());
+                            /*******************************************************************
+                             *query_trans信息生成
+                             ********************************************************************/
+                            /**
+                             *字段ID:QUERY_SN
+                             *字段名称:要查询的交易流水
+                             *类型:C(30)
+                             *取值:
+                             *可空:非空
+                             *备注:请求报文的交易流水,支付请求时的付款批号
+                             */
+                            cmUtil.addChild(query_trans, {
+                                tag: 'QUERY_SN',
+                                text: queryRecord['req_sn']
+                            });
+                            /**
+                             *字段ID:QUERY_REMARK
+                             *字段名称:查询备注
+                             *类型:C(50)
+                             *取值:
+                             *可空:可空
+                             *备注:空
+                             */
+                            cmUtil.addChild(query_trans, {
+                                tag: 'QUERY_REMARK',
+                                text: ''
+                            });
+                            /**
+                             *字段ID:RET_TYPE
+                             *字段名称:返回类型
+                             *类型:N（1）
+                             *取值:0，批次未完成时，不返回明细,1，批次未完成时，返回所有明细
+                             *可空:可空
+                             *备注:版本05新增，默认为0，但如果批次状态为完成，返回所有明细，0
+                             */
+                            cmUtil.addChild(query_trans, {
+                                tag: 'RET_TYPE',
+                                text: '0'
+                            });
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: '广银联-交易结果查询-报文QUERY_TRANS部分生成完成'
+                            });
+                            logger.info('广银联-交易结果查询-报文QUERY_TRANS部分生成,报文内容为:\n' + gzelink.toXML());
+                            /*******************************************************************
+                             *query_detail信息，明细信息生成
+                             ********************************************************************/
+                            /**
+                             *字段ID:QUERY_DETAIL_SN
+                             *字段名称:交易明细号
+                             *类型:C(1,25)
+                             *取值:同一个请求内必须唯一。建议从0001开始递增
+                             *可空:非空
+                             *备注:csh_transaction_details下的detail_id
+                             */
+                            cmUtil.addChild(query_detail, {
+                                tag: 'QUERY_DETAIL_SN',
+                                text: queryRecord['detail_sn']
+                            });
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: '广银联-交易结果查询-报文QUERY_DETAIL部分生成完成'
+                            });
+            
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: '广银联-交易结果查询-报文生成完成'
+                            });
+                            var xmlStr = '<?xml version="1.0" encoding="GBK"?>' + String(gzelink.toXML());
+                            xmlStr = xmlStr.replace(/\n */g, '').replace(/\t/g, '');
+                            logger.info(String('广银联-交易结果查询-报文生成完成,报文内容为:\n' + xmlStr));
+            
+                            //加密操作
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: '广银联-交易结果查询-开始执行加密操作'
+                            });
+                            try {
+                                var signedXmlStr = gzUtil.encryptXML(xmlStr);
+                            } catch (e) {
+                                eUtil.log({
+                                    ref_table: 'gzQuery',
+                                    log_text: String('广银联-交易结果查询-加密部分出现异常，异常信息为:' + e.message)
+                                });
+                                errorMsg = String('加密部分出现异常:' + e.message);
+                                throw new Error('ENCRYPT_ERROR');
+                            }
+                            logger.info(String('广银联-交易结果查询-报文加密完成,报文内容为:\n' + signedXmlStr));
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: '广银联-交易结果查询-结束执行加密操作'
+                            });
+            
+                            //HTTP传输操作
+                            try {
+                                var result = gzUtil.invokeInterface(signedXmlStr);
+                            } catch (e) {
+                                eUtil.log({
+                                    ref_table: 'gzQuery',
+                                    log_text: String('广银联-交易结果查询-执行HTTP传输操作部分出现异常，异常信息为:' + e.message)
+                                });
+                                errorMsg = String('执行HTTP传输操作部分出现异常:' + e.message);
+                                throw new Error('HTTP_TRANS_ERROR');
+                            }
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: '广银联-交易结果查询-结束执行HTTP传输操作'
+                            });
+                            logger.info(String('广银联-交易结果查询-结束执行HTTP传输操作，返回结果为:' + result));
+            
+                            //验证返回信息
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: '广银联-交易结果查询-开始执行验证返回信息操作'
+                            });
+                            try {
+                                var validateResult = gzUtil.validateSign(result);
+                            } catch (e) {
+                                eUtil.log({
+                                    ref_table: 'gzQuery',
+                                    log_text: String('广银联-交易结果查询-执行验证返回信息操作部分出现异常，异常信息为:' + e.message)
+                                });
+                                errorMsg = String('执行验证返回信息操作部分出现异常:' + e.message);
+                                throw new Error('VALIDATE_ERROR');
+                            }
+                            eUtil.log({
+                                ref_table: 'gzQuery',
+                                log_text: String('广银联-交易结果查询-结束执行验证返回信息操作,验证结果为:' + validateResult)
+                            });
+            
+                            //信息验证成功，继续执行操作
+                            if (validateResult) {
+                                eUtil.log({
+                                    ref_table: 'gzQuery',
+                                    log_text: '广银联-交易结果查询-开始执行返回信息转换操作'
+                                });
+                                try {
+                                    // 修改xml头上的编码格式，CompositeMapLocator转换时根据头上的encoding进行转换
+                                    result = result.replace('encoding="GBK"', 'encoding="UTF-8"');
+                                    var resultMap = cmUtil.parseXml(result);
+                                } catch (e) {
+                                    eUtil.log({
+                                        ref_table: 'gzQuery',
+                                        log_text: String('广银联-交易结果查询-执行返回信息转换操作部分出现异常，异常信息为:' + e.message)
+                                    });
+                                    errorMsg = String('执行返回信息转换操作部分出现异常:' + e.message);
+                                    throw new Error('PARSE_XML_ERROR');
+                                }
+                                eUtil.log({
+                                    ref_table: 'gzQuery',
+                                    log_text: '广银联-交易结果查询-结束执行返回信息转换操作'
+                                });
+                                //查看查询状况
+                                /**
+                                 0000	处理完成（最终结果）
+                                 0001	系统处理失败(最终结果，如果是代付，则未受理，不扣账户金额)
+                                 0002	已撤销（暂不支持撤消）
+                                 1000	报文内容检查错或者处理错（具体内容见返回错误信息）
+                                 1001	报文解释错
+                                 1002	无法查询到该交易，可以重发
+                                 2000	系统正在对数据处理（中间状态，需要继续查询）
+                                 2001	等待商户审核（中间状态）
+                                 2002	商户审核不通过（最终结果，全部失败，明细全部为2002状态）
+                                 2003	等待银联网络受理（中间状态）
+                                 2004	银联网络不通过受理（最终结果，全部失败，明细全部为2004状态）
+                                 2005	等待银联网络复核（中间状态）
+                                 2006	银联网络不通过复核（最终结果，全部失败，明细全部为2006状态）
+                                 2007	提交银行处理
+                                 */
+                                var infoNode = resultMap.getChild('INFO');
+                                if (infoNode && infoNode.getChild('RET_CODE')) {
+                                    //银联接受成功
+                                    if (infoNode.getChild('RET_CODE').getText() == '0000') {
+                                        eUtil.log({
+                                            ref_table: 'gzQuery',
+                                            log_text: '广银联-交易结果查询-调用查询接口成功'
+                                        });
+            
+                                        var detailNode = resultMap.getChild('BODY').getChild('RET_DETAILS').getChild('RET_DETAIL');
+                                        var detailSn = detailNode.getChild('SN').getText();
+                                        var completeTime = detailNode.getChild('COMPLETE_TIME').getText();
+                                        var retCode = detailNode.getChild('RET_CODE').getText();
+                                        var errMsg = detailNode.getChild('ERR_MSG').getText();
+                                        var actualPayDateFormat = 'YYYYMMDDHH24MISS';
+            
+                                        /**
+                                         0000	交易成功
+                                         2000	处理中（系统正在对数据处理，银行还未返回结果）
+                                         2008	银行已接收（新增中间状态，主要用于跨行代付，表示银行已接收处理）
+                                         3001	查开户方原因
+                                         3002	没收卡
+                                         3003	不予承兑
+                                         3004	无效卡号
+                                         3005	受卡方与安全保密部门联系
+                                         3006	已挂失卡
+                                         3007	被窃卡
+                                         3008	余额不足
+                                         3009	无此账户
+                                         3010	过期卡
+                                         3011	密码错
+                                         3012	不允许持卡人进行的交易
+                                         3013	超出提款限额，超出交易金额限制
+                                         3014	原始金额不正确
+                                         3015	超出取款次数限制，超出交易次数限制
+                                         3016	已挂失折
+                                         3017	账户已冻结
+                                         3018	已清户
+                                         3019	原交易已被取消或冲正
+                                         3020	账户被临时锁定
+                                         3021	未登折行数超限
+                                         3022	存折号码有误
+                                         3023	当日存入的金额当日不能支取
+                                         3024	日期切换正在处理
+                                         3025	PIN格式出错
+                                         3026	发卡方保密子系统失败
+                                         3027	原始交易不成功
+                                         3028	系统忙，请稍后再提交
+                                         3029	交易已被冲正
+                                         3030	账号错误
+                                         3031	账号户名不符
+                                         3032	账号货币不符
+                                         3033	无此原交易
+                                         3034	非活期账号，或为旧账号
+                                         3035	找不到原记录
+                                         3036	货币错误
+                                         3037	磁卡未生效
+                                         3038	非通兑户
+                                         3039	账户已关户
+                                         3040	金额错误
+                                         3041	非存折户
+                                         3042	交易金额小于该储种的最低支取金额，交易金额小于最低限额
+                                         3043	未与银行签约
+                                         3044	超时拒付
+                                         3045	合同（协议）号在协议库里不存在
+                                         3046	合同（协议）号还没有生效
+                                         3047	合同（协议）号已撤销
+                                         3048	业务已经清算，不能撤销
+                                         3049	业务已被拒绝，不能撤销
+                                         3050	业务已撤销
+                                         3051	重复业务
+                                         3052	找不到原业务
+                                         3053	批量回执包未到规定最短回执期限（M日）
+                                         3054	批量回执包超过规定最长回执期限（N日）
+                                         3055	当日通兑业务累计金额超过规定金额，累计交易金额超过规定金额
+                                         3056	退票
+                                         3057	账户状态错误
+                                         3058	数字签名或证书错
+                                         3059	渠道返回结果不明确，系统直接置失败。在文档v2.4以后新增，
+                                         3060	手机号码错误
+                                         3061	没有配置短信模板
+                                         3062	授权不支持的交易类型
+                                         3063	系统异常
+                                         3064	持卡人拒绝授权
+                                         3065	授权超时
+                                         3097	系统不能对该账号进行处理
+                                         3999	交易失败，具体信息见中文(对于不能明确归入上面的情况置为该反馈码)
+                                         */
+            
+                                        //支付成功
+                                        if (retCode == '0000') {
+                                            throw new Error('PAY_SUCCESS');
+                                        }
+                                        //支付处理中
+                                        else if (retCode == '2000' || retCode == '2008' || retCode == '3028') {
+                                            throw new Error('IN_PROGRESS');
+                                        }
+                                        //支付失败
+                                        else {
+                                            throw new Error('PAY_FAILED');
+                                        }
+            
+                                    } else if (infoNode.getChild('RET_CODE').getText() == '0001' || infoNode.getChild('RET_CODE').getText() == '1000' || infoNode.getChild('RET_CODE').getText() == '1002' || infoNode.getChild('RET_CODE').getText() == '1001' || infoNode.getChild('RET_CODE').getText() == '2002' || infoNode.getChild('RET_CODE').getText() == '2004' || infoNode.getChild('RET_CODE').getText() == '2006') {
+                                        //银联未接收到该笔交易，支付失败
+                                        var errMsg = infoNode.getChild('ERR_MSG').getText();
+                                        throw new Error('PAY_FAILED');
+                                    }
+                                    //处理中
+                                    else if (infoNode.getChild('RET_CODE').getText() == '2000' || infoNode.getChild('RET_CODE').getText() == '2001' || infoNode.getChild('RET_CODE').getText() == '2003' || infoNode.getChild('RET_CODE').getText() == '2005' || infoNode.getChild('RET_CODE').getText() == '2007') {
+                                        eUtil.log({
+                                            ref_table: 'gzQuery',
+                                            log_text: '广银联-交易结果查询-处理中，后续再次查询'
+                                        });
+                                        errorMsg = String(infoNode.getChild('RET_CODE').getText() + '-' + infoNode.getChild('ERR_MSG').getText());
+                                        throw new Error('IN_PROGRESS');
+                                    }
+                                    //银联接受异常
+                                    else {
+                                        eUtil.log({
+                                            ref_table: 'gzQuery',
+                                            log_text: '广银联-交易结果查询-调用查询接口异常'
+                                        });
+                                        errorMsg = String(infoNode.getChild('RET_CODE').getText() + '-' + infoNode.getChild('ERR_MSG').getText());
+                                        throw new Error('ACCESS_FAILED');
+                                    }
+                                } else {
+                                    eUtil.log({
+                                        ref_table: 'gzQuery',
+                                        log_text: '广银联-交易结果查询-返回结果格式错误'
+                                    });
+                                    errorMsg = '返回结果格式错误';
+                                    throw new Error('RESULT_FORMAT_ERROR');
+                                }
+                            } else {
+                                //信息验证失败，修改接口表支付状态为：支付传送[PAY_SENT]，接口状态为：传送状态未知[UNKNOWN]
+                                errorMsg = '返回结果验证失败';
+                                throw new Error('VALIDATE_ERROR');
+                            }
+                        } catch (e) {
+                            //加密异常，HTTP传输异常，验证异常，解析异常，结果格式异常，银联接收请求异常，不修改支付状态和接口状态，并记录异常信息
+                            if (e.message == 'ENCRYPT_ERROR' || e.message == 'HTTP_TRANS_ERROR' || e.message == 'VALIDATE_ERROR' || e.message == 'PARSE_XML_ERROR' || e.message == 'RESULT_FORMAT_ERROR' || e.message == 'ACCESS_FAILED') {
+                                var data = [];
+                                data.push({
+                                    detail_id: queryRecord['detail_sn'],
+                                    status_desc: '交易结果查询-' + e.message + '出现异常' + ',' + 　errorMsg
+                                });
+                                eUtil.paySendUpdateTrans(data);
+                            }
+                            //支付成功，修改支付状态为[PAY_SUCCESS]，接口状态为已发送[SENT]
+                            else if (e.message == 'PAY_SUCCESS') {
+                                var data = [];
+                                data.push({
+                                    detail_id: queryRecord['detail_sn'],
+                                    payment_status: 'PAY_SUCCESS',
+                                    interface_status: 'SENT',
+                                    status_desc: errMsg,
+                                    actual_pay_date: completeTime,
+                                    actual_pay_date_format: actualPayDateFormat,
+                                    _status: 'update'
+                                });
+                                eUtil.paySendUpdateTrans(data);
+                            }
+                            //支付处理中，修改支付状态为支付传送[PAY_SENT]，接口状态为已发送[SENT]
+                            else if (e.message == 'IN_PROGRESS') {
+                                var data = [];
+                                data.push({
+                                    detail_id: queryRecord['detail_sn'],
+                                    payment_status: 'PAY_SENT',
+                                    interface_status: 'SENT',
+                                    status_desc: errMsg,
+                                    _status: 'update'
+                                });
+                                eUtil.paySendUpdateTrans(data);
+                            }
+                            //支付失败，修改支付状态为支付传送[PAY_FAILED]，接口状态为已发送[SENT]
+                            else if (e.message == 'PAY_FAILED') {
+                                var data = [];
+                                data.push({
+                                    detail_id: queryRecord['detail_sn'],
+                                    payment_status: 'PAY_FAILED',
+                                    interface_status: 'SENT',
+                                    status_desc: errMsg,
+                                    _status: 'update'
+                                });
+                                eUtil.paySendUpdateTrans(data);
+                            }
+                            //其他异常情况，不修改支付状态和接口状态，并记录异常信息
+                            else {
+                                eUtil.log({
+                                    ref_table: 'gzQuery',
+                                    log_text: String('广银联-交易结果查询-出现异常，异常信息为:' + e.message)
+                                });
+                                var data = [];
+                                data.push({
+                                    detail_id: queryRecord['detail_sn'],
+                                    status_desc: '交易结果查询-' + e.message + '出现异常'
+                                });
+                                eUtil.paySendUpdateTrans(data);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    eUtil.log({
+                        ref_table: 'gzQuery',
+                        log_text: String('广银联-交易结果查询-最外层出现异常，异常信息为:' + e.message)
+                    });
+                } finally {
+                    //解除锁表
+                    eUtil.unlock('GZ_UNIONPAY_QUERY');
+                    eUtil.log({
+                        ref_table: 'gzQuery',
+                        log_text: '广银联-交易结果查询-解锁'
+                    });
+                }
+            }
+            
+            doQuery();
+    ]]></s:server-script>
+</p:procedure>

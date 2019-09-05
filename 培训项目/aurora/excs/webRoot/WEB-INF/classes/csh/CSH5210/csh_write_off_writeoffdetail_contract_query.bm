@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+			SELECT *
+			  FROM (SELECT V.*, NVL(DUE_AMOUNT - WRITE_OFF_AMOUNT, 0) UNWRITE_OFF_AMOUNT
+					  FROM (SELECT 'PAYMENT_EXPENSE_REPORT' WRITE_OFF_TYPE,
+								   (SELECT B.CODE_VALUE_NAME
+									  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+									 WHERE A.CODE_ID = B.CODE_ID
+									   AND A.CODE = 'CSH_WRITE_OFF_TYPE'
+									   AND B.CODE_VALUE = 'PAYMENT_EXPENSE_REPORT') WRITE_OFF_TYPE_DISPLAY,
+								   CTL.TRANSACTION_HEADER_ID,
+								   ERH.EXP_REPORT_HEADER_ID,
+								   CTL.TRANSACTION_LINE_ID,
+								   TO_CHAR(CTH.TRANSACTION_DATE, 'YYYY-MM-DD') TRANSACTION_DATE,
+								   ERPS.PAYMENT_SCHEDULE_LINE_ID,
+								   ERH.EXP_REPORT_NUMBER,
+								   ERPS.DUE_AMOUNT,
+								   TO_CHAR(ERH.AUDIT_DATE, 'YYYY-MM-DD') AUDIT_DATE,
+								   (SELECT NVL(SUM(W.DOCUMENT_WRITE_OFF_AMOUNT), 0)
+									  FROM CSH_WRITE_OFF W
+									 WHERE W.DOCUMENT_SOURCE = 'EXPENSE_REPORT'
+									   AND W.DOCUMENT_HEADER_ID =
+										   ERPS.EXP_REPORT_HEADER_ID
+									   AND W.DOCUMENT_LINE_ID =
+										   ERPS.PAYMENT_SCHEDULE_LINE_ID) WRITE_OFF_AMOUNT,
+										   ERH.COMPANY_ID COMPANY_ID_DISPLAY,
+							   (select t.COMPANY_SHORT_NAME
+								  from FND_COMPANIES_VL t
+								 where t.COMPANY_ID = ERH.COMPANY_ID) COMPANY_SHORT_NAME
+							  FROM EXP_REPORT_PMT_SCHEDULES ERPS,
+								   EXP_REPORT_HEADERS       ERH,
+								   CSH_TRANSACTION_LINES    CTL,
+								   CSH_TRANSACTION_HEADERS  CTH,
+								   CON_DOCUMENT_FLOWS       CDF,
+								   CON_DOCUMENT_FLOWS       CDFC,
+								   CSH_DOC_PAYMENT_COMPANY  cch
+							 WHERE (ERH.REVERSED_FLAG IS NULL OR ERH.REVERSED_FLAG = 'N')
+							   AND ERH.EXP_REPORT_HEADER_ID = ERPS.EXP_REPORT_HEADER_ID
+							   AND CTL.TRANSACTION_HEADER_ID = CTH.TRANSACTION_HEADER_ID
+							   AND ERPS.PAYEE_CATEGORY = CTL.PARTNER_CATEGORY
+							   AND ERPS.PAYEE_ID = CTL.PARTNER_ID
+							   AND ERH.AUDIT_FLAG = 'Y'
+							   AND ERH.AUDIT_DATE <= CTH.TRANSACTION_DATE
+							   AND ERH.WRITE_OFF_STATUS != 'C'
+							   AND ERPS.CURRENCY = CTL.CURRENCY_CODE
+							   AND ERPS.COMPANY_ID IN (SELECT A.COMPANY_ID FROM FND_COMPANIES A WHERE A.SET_OF_BOOKS_ID = (SELECT T.SET_OF_BOOKS_ID  FROM FND_COMPANIES T WHERE T.COMPANY_ID = ${/session/@company_id}))
+							   AND CDF.DOCUMENT_TYPE = 'CON_CONTRACT'
+							   AND CDF.DOCUMENT_ID = ${@contract_header_id}
+							   AND CDF.SOURCE_DOCUMENT_TYPE = 'EXP_REPORT_HEADERS'
+							   AND CDF.SOURCE_DOCUMENT_ID = ERH.EXP_REPORT_HEADER_ID
+							   AND CDFC.DOCUMENT_TYPE = 'CON_CONTRACT'
+							   AND CDFC.DOCUMENT_ID = ${@contract_header_id}
+							   AND CDFC.SOURCE_DOCUMENT_TYPE = 'CSH_TRANSACTION_HEADERS'
+							   AND CDFC.SOURCE_DOCUMENT_ID = CTH.TRANSACTION_HEADER_ID
+							   AND cch.document_type='EXP_REPORT'
+							   AND cch.document_line_id= ERPS.PAYMENT_SCHEDULE_LINE_ID
+							   AND cch.payment_company_id=${/session/@company_id}
+							   and cch.payment_status= 'ALLOWED'
+							 ORDER BY ERH.EXP_REPORT_NUMBER) V
+					 WHERE DUE_AMOUNT - WRITE_OFF_AMOUNT > 0)
+		#WHERE_CLAUSE#]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="transaction_header_id" dataType="java.lang.String" queryExpression="TRANSACTION_HEADER_ID = ${@transaction_header_id}"/>
+        <bm:query-field name="contract_header_id" queryExpression="CONTRACT_HEADER_ID = ${@contract_header_id}"/>
+    </bm:query-fields>
+</bm:model>

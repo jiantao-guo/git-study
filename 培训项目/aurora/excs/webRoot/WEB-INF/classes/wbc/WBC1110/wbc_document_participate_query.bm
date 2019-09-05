@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        a.dispatch_line_id,
+                        a.dispatch_header_id,
+                        a.business_node_id,
+                        (SELECT
+                            wbn.business_node_description
+                        FROM
+                            wbc_business_nodes wbn
+                        WHERE
+                            wbn.business_node_id = a.business_node_id
+                        ) AS business_node_desc,
+                        wbc_common_pkg.get_doc_page(a.dispatch_header_id)
+                        || '?'
+                        || wbc_common_pkg.get_doc_param_name(a.dispatch_header_id)
+                        || '='
+                        || b.document_id AS service_name,
+                        a.status,
+                        b.document_id,
+                        b.document_num,
+                        b.doc_category,
+                        (SELECT
+                            wbtp.head_param_name
+                        FROM
+                            wbc_business_type_parameters wbtp
+                        WHERE
+                            wbtp.business_type_code = b.doc_category
+                        ) AS p_head_id,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code_value = b.doc_category AND
+                            scv.code       = 'EXP_DOCUMENT_CATEGORY'
+                        ) AS doc_category_desc,
+                        b.doc_company_id,
+                        (SELECT
+                            company_short_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = b.doc_company_id
+                        ) AS company_desc,
+                        b.doc_type,
+                        DECODE(b.doc_category, NULL, '', 'EXP_REQ',
+                        (SELECT
+                            ert.description
+                        FROM
+                            exp_expense_req_types_vl ert
+                        WHERE
+                            ert.expense_requisition_type_id = b.doc_type
+                        ), 'EXP_RPT',
+                        (SELECT
+                            ertv.description
+                        FROM
+                            exp_expense_report_types_vl ertv
+                        WHERE
+                            ertv.expense_report_type_id = b.doc_type
+                        ), 'WORK_ORDER',
+                        (SELECT
+                            g.work_order_type_desc
+                        FROM
+                            gld_sob_work_order_types g
+                        WHERE
+                            g.work_order_type_id = b.doc_type
+                        ), 'PAY_REQ',
+                        (SELECT
+                            cprt.description
+                        FROM
+                            csh_pay_req_types_vl cprt
+                        WHERE
+                            cprt.type_id = b.doc_type
+                        ), '') AS doc_type_desc,
+                        decode(b.doc_category,
+                          null,
+                          '',
+                          'EXP_RPT',
+                          (select sum(erl.report_amount) 
+                             from exp_report_lines erl
+                            where erl.exp_report_header_id = b.document_id),
+                          'PAY_REQ',
+                          (select crh.amount
+                             from csh_payment_requisition_hds crh
+                            where crh.payment_requisition_header_id = b.document_id),
+                          'WORK_ORDER',
+                          (select gh.amount
+                             from gld_work_order_headers gh
+                            where gh.work_order_header_id = b.document_id),
+                           'ACP_REQUISITION',
+                           (select arh.amount
+                             from acp_acp_requisition_hds arh
+                            where arh.acp_requisition_header_id = b.document_id),
+                            'CSH_REPAYMENT_REGISTER',
+                           (select crh.total_amount
+                             from csh_repayment_register_hds crh
+                            where crh.register_header_id = b.document_id),
+                          '') as amount,
+                        DECODE(b.doc_category, NULL, '', 'EXP_RPT',
+                        (SELECT
+                            min(a.period_name)
+                        FROM
+                            exp_report_accounts a
+                        WHERE
+                            a.exp_report_header_id = b.document_id
+                        ), 'WORK_ORDER',
+                        (SELECT
+                            min(g.period_name)
+                        FROM
+                            gld_work_order_accounts g
+                        WHERE
+                            g.work_order_header_id = b.document_id
+                        ), 'PAY_REQ',
+                        (SELECT
+                            min(cpra.period_name)
+                        FROM
+                            csh_payment_req_accounts cpra,
+                            csh_payment_requisition_lns l 
+                        WHERE
+                            cpra.payment_req_line_id = l.payment_requisition_line_id
+                            and l.payment_requisition_header_id = b.document_id
+                        ), '') AS je_period_name,
+                        b.submited_by,
+                        (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = b.submited_by
+                        ) AS submited_by_desc,
+                        b.submited_position_id,
+                        (SELECT
+                            eop.description
+                        FROM
+                            exp_org_position_vl eop
+                        WHERE
+                            eop.position_id = b.submited_position_id
+                        ) AS submited_position_desc,
+                        TO_CHAR(c.process_time, 'yyyy-mm-dd') AS start_time
+                    FROM
+                        wbc_dispatch_pool_lines a,
+                        wbc_dispatch_pool_headers b,
+                        wbc_dispatch_process c,
+                        (SELECT
+                            MAX(pc.dispatch_process_id) AS dispatch_process_id
+                        FROM
+                            wbc_dispatch_process pc
+                        WHERE
+                            pc.created_by     = ${/session/@user_id} AND
+                            pc.process_state IN ('REQUIRE_RETURN', 'APPROVED', 'REJECT')
+                        GROUP BY
+                            pc.dispatch_header_id,
+                            pc.created_by
+                        ) cp
+                    WHERE
+                        a.dispatch_header_id  = b.dispatching_header_id AND
+                        a.dispatch_header_id  = c.dispatch_header_id AND
+                        a.dispatch_line_id    = c.dispatch_line_id AND
+                        c.process_state      IN ('REQUIRE_RETURN', 'APPROVED', 'REJECT') AND
+                        c.dispatch_process_id = cp.dispatch_process_id AND
+                        a.handler_id          =
+                        (SELECT employee_id FROM sys_user u WHERE u.user_id = ${/session/@user_id}
+                        )
+                    UNION ALL
+                    SELECT
+                        l.dispatch_line_id,
+                        h.dispatching_header_id,
+                        l.business_node_id,
+                        (SELECT
+                            wbn.business_node_description
+                        FROM
+                            wbc_business_nodes wbn
+                        WHERE
+                            wbn.business_node_id = l.business_node_id
+                        ) AS business_node_desc,
+                        wbc_common_pkg.get_doc_page(h.dispatching_header_id)
+                        || '?'
+                        || wbc_common_pkg.get_doc_param_name(h.dispatching_header_id)
+                        || '='
+                        || h.document_id AS service_name,
+                        l.status,
+                        h.document_id,
+                        h.document_num,
+                        h.doc_category,
+                        (SELECT
+                            wbtp.head_param_name
+                        FROM
+                            wbc_business_type_parameters wbtp
+                        WHERE
+                            wbtp.business_type_code = h.doc_category
+                        ) AS p_head_id,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code_value = h.doc_category AND
+                            scv.code       = 'EXP_DOCUMENT_CATEGORY'
+                        ) AS doc_category_desc,
+                        h.doc_company_id,
+                        (SELECT
+                            company_short_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = h.doc_company_id
+                        ) AS company_desc,
+                        h.doc_type,
+                        DECODE(h.doc_category, NULL, '', 'EXP_REQ',
+                        (SELECT
+                            ert.description
+                        FROM
+                            exp_expense_req_types_vl ert
+                        WHERE
+                            ert.expense_requisition_type_id = h.doc_type
+                        ), 'EXP_RPT',
+                        (SELECT
+                            ertv.description
+                        FROM
+                            exp_expense_report_types_vl ertv
+                        WHERE
+                            ertv.expense_report_type_id = h.doc_type
+                        ), 'WORK_ORDER',
+                        (SELECT
+                            g.work_order_type_desc
+                        FROM
+                            gld_sob_work_order_types g
+                        WHERE
+                            g.work_order_type_id = h.doc_type
+                        ), 'PAY_REQ',
+                        (SELECT
+                            cprt.description
+                        FROM
+                            csh_pay_req_types_vl cprt
+                        WHERE
+                            cprt.type_id = h.doc_type
+                        ), '') AS doc_type_desc,
+                        decode(h.doc_category,
+                          null,
+                          '',
+                          'EXP_RPT',
+                          (select sum(erl.report_amount) 
+                             from exp_report_lines erl
+                            where erl.exp_report_header_id = h.document_id),
+                          'PAY_REQ',
+                          (select crh.amount
+                             from csh_payment_requisition_hds crh
+                            where crh.payment_requisition_header_id = h.document_id),
+                          'WORK_ORDER',
+                          (select gh.amount
+                             from gld_work_order_headers gh
+                            where gh.work_order_header_id = h.document_id),
+                           'ACP_REQUISITION',
+                           (select arh.amount
+                             from acp_acp_requisition_hds arh
+                            where arh.acp_requisition_header_id = h.document_id),
+                           'CSH_REPAYMENT_REGISTER',
+                           (select crh.total_amount
+                             from csh_repayment_register_hds crh
+                            where crh.register_header_id = h.document_id),
+                          '') as amount,
+                        DECODE(h.doc_category, NULL, '', 'EXP_RPT',
+                        (SELECT
+                            min(a.period_name)
+                        FROM
+                            exp_report_accounts a
+                        WHERE
+                            a.exp_report_header_id = h.document_id
+                        ), 'WORK_ORDER',
+                        (SELECT
+                            min(g.period_name)
+                        FROM
+                            gld_work_order_accounts g
+                        WHERE
+                            g.work_order_header_id = h.document_id
+                        ), 'PAY_REQ',
+                        (SELECT
+                            min(cpra.period_name)
+                        FROM
+                            csh_payment_req_accounts cpra,
+                            csh_payment_requisition_lns cl 
+                        WHERE
+                            cpra.payment_req_line_id = cl.payment_requisition_line_id
+                            and cl.payment_requisition_header_id = h.document_id
+                        ), '') AS je_period_name,
+                        h.submited_by,
+                        (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = h.submited_by
+                        ) AS submited_by_desc,
+                        h.submited_position_id,
+                        (SELECT
+                            eop.description
+                        FROM
+                            exp_org_position_vl eop
+                        WHERE
+                            eop.position_id = h.submited_position_id
+                        ) AS submited_position_desc,
+                        TO_CHAR(c.process_time, 'yyyy-mm-dd') AS start_time
+                    FROM
+                        wbc_disp_pool_headers_his h,
+                        wbc_disp_pool_lines_his l,
+                        wbc_dispatch_process c,
+                        (SELECT
+                            MAX(pc.dispatch_process_id) AS dispatch_process_id
+                        FROM
+                            wbc_dispatch_process pc
+                        WHERE
+                            pc.created_by     = ${/session/@user_id} AND
+                            pc.process_state IN ('REQUIRE_RETURN', 'APPROVED', 'REJECT')
+                        GROUP BY
+                            pc.dispatch_header_id,
+                            pc.created_by
+                        ) cp
+                    WHERE
+                        h.dispatching_header_id = l.dispatch_header_id AND
+                        h.dispatching_header_id = c.dispatch_header_id AND
+                        l.dispatch_line_id      = c.dispatch_line_id AND
+                        c.process_state        IN ('REQUIRE_RETURN', 'APPROVED', 'REJECT') AND
+                        cp.dispatch_process_id  = c.dispatch_process_id AND
+                        c.created_by            = ${/session/@user_id}
+                    )V #WHERE_CLAUSE#
+                ORDER BY
+                    start_time DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="dispatch_line_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="DISPATCH_LINE_ID"/>
+        <bm:field name="dispatch_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="DISPATCH_HEADER_ID"/>
+        <bm:field name="business_node_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="BUSINESS_NODE_ID"/>
+        <bm:field name="business_node_desc"/>
+        <bm:field name="service_name"/>
+        <bm:field name="status" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="STATUS"/>
+        <bm:field name="document_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="DOCUMENT_ID"/>
+        <bm:field name="document_num" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DOCUMENT_NUM"/>
+        <bm:field name="doc_category" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DOC_CATEGORY"/>
+        <bm:field name="doc_category_desc"/>
+        <bm:field name="p_head_id"/>
+        <bm:field name="doc_company_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="DOC_COMPANY_ID"/>
+        <bm:field name="company_desc"/>
+        <bm:field name="doc_type" databaseType="NUMBER" datatype="java.lang.Long" physicalName="DOC_TYPE"/>
+        <bm:field name="doc_type_desc"/>
+        <bm:field name="submited_by" databaseType="NUMBER" datatype="java.lang.Long" physicalName="SUBMITED_BY"/>
+        <bm:field name="submited_by_desc"/>
+        <bm:field name="submited_position_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="SUBMITED_POSITION_ID"/>
+        <bm:field name="submited_position_desc"/>
+        <bm:field name="start_time" databaseType="DATE" datatype="java.util.Date" physicalName="START_TIME"/>
+        <bm:field name="je_period_name"/>
+        <bm:field name="amount"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="doc_company_id" queryOperator="="/>
+        <bm:query-field field="business_node_id" queryOperator="="/>
+        <bm:query-field field="submited_by_desc" queryOperator="like"/>
+        <bm:query-field field="doc_category" queryOperator="="/>
+        <bm:query-field field="document_num" queryOperator="like"/>
+        <bm:query-field name="start_time_from" queryExpression="start_time &gt;= ${@start_time_from} "/>
+        <bm:query-field name="start_time_to" queryExpression="start_time &lt;= ${@start_time_to} "/>
+        <bm:query-field name="amount_from" queryExpression="v.amount &gt;= to_number(${@amount_from})"/>
+        <bm:query-field name="amount_to" queryExpression="v.amount &lt;= to_number(${@amount_to})"/>
+    </bm:query-fields>
+</bm:model>

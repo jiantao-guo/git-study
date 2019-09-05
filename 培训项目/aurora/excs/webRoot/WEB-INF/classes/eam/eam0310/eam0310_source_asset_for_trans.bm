@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2013-3-6 下午4:53:58  
+    $Revision: 1.0  
+    $Purpose: 源对象查询(资产换入)
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            
+select *
+  from (SELECT v.asset_book_id,
+
+               h.asset_code,
+               v.description,
+               h.asset_id,
+               (SELECT nvl(SUM(cost), 0)
+                  FROM eam_asset_cost_sources e
+                 WHERE e.source_asset_id = h.asset_id
+                   AND e.confirm_status <> 'NEW'
+                   AND e.asset_id <> h.asset_id) source_asset_sum_cost,
+               h.status,
+               nvl(eaf.current_cost, 0) + nvl(eaf.scrap_amount, 0) source_asset_cost,
+               d.description_text asset_name,
+               v.asset_type
+          FROM eam_asset_categories_vl v,
+               eam_asset_headers       h,
+               fnd_descriptions        d,
+               eam_asset_finance_info  eaf
+         WHERE v.category_id = h.category_id
+           AND v.asset_book_id = h.asset_book_id
+           AND h.description_id = d.description_id
+           AND v.enabled_flag = 'Y'
+           AND d.language = ${/session/@lang}
+           AND v.asset_type in ('IST', 'FST')
+           AND h.status in ( 'INVALID', 'SCRAPPED')
+           AND NOT EXISTS
+         (SELECT 1
+                  FROM eam_asset_cost_sources cs, eam_asset_headers eah2
+                 where cs.source_asset_id = h.asset_id
+                   and cs.asset_id = eah2.asset_id
+                   and cs.document_type = 'EAM_REQUISITION'
+                   and cs.document_id = ${@document_id}
+                   and cs.document_line_id = ${@document_line_id}
+                   and (cs.asset_id = nvl(${@asset_id}, 0) or eah2.status <> 'NEW'))
+           AND h.asset_id = eaf.asset_id
+           AND 
+               EXISTS
+         (SELECT 1
+                  FROM eam_employee_assigns_v eav
+                 WHERE eav.user_id = ${/session/@user_id}
+                   AND eav.enabled_flag = 'Y'
+                   AND exists
+                 (select 1
+                          from (SELECT fcs.company_id
+                                  FROM fnd_companies fcs
+                                 START WITH fcs.company_id = ${/session/@company_id}
+                                CONNECT BY prior fcs.company_id =
+                                            fcs.parent_company_id) v
+                         where eav.company_id = v.company_id)
+                   AND ((select ec.ENTITY_MAN_UNIT_ID
+                           from eam_asset_entity_classes_vl ec
+                          where ec.CLASS_ID = h.entity_Class_Id ) =
+                       eav.unit_id OR (select el.ENTITY_MAN_UNIT_ID
+                                          from eam_locations_vl el
+                                         where el.LOCATION_ID = h.location_id) =
+                       eav.unit_id 
+                       ))) vv
+			               #WHERE_CLAUSE#
+               
+               ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="asset_book_id"/>
+        <bm:field name="asset_code" forDisplay="true" forQuery="true" prompt="AST_ASSET_HEADERS_VL.ASSET_NUM"/>
+        <bm:field name="asset_name" forDisplay="true" forQuery="true" prompt="AST_ASSET_HEADERS.ASSET_NAME" queryExpression="v.asset_name like ${@asset_name}"/>
+        <bm:field name="asset_type"/>
+        <bm:field name="source_asset_cost" forDisplay="true" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_COST"/>
+        <bm:field name="source_asset_sum_cost" forDisplay="true" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_SUM_COST"/>
+        <bm:field name="description" prompt="AST_ASSET_HEADER_DS.DESCRIPTION"/>
+        <bm:field name="asset_id"/>
+        <bm:field name="status"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="status" queryOperator="="/>
+        <bm:query-field field="asset_book_id" queryOperator="="/>
+        <bm:query-field field="asset_type" queryOperator="="/>
+        <bm:query-field field="description" queryOperator="like"/>
+        <bm:query-field field="asset_name" queryOperator="like"/>
+        <bm:query-field field="asset_code" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

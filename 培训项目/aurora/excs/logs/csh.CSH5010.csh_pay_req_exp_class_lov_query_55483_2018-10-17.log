@@ -1,0 +1,260 @@
+2018-10-17 01:55:05.311 [aurora.application.session_check] [CONFIG] Session data copied to context
+2018-10-17 01:55:05.311 [aurora.application.session_check] [CONFIG] Checking BM access csh.CSH5010.csh_pay_req_exp_class_lov for operation query
+2018-10-17 01:55:05.312 [aurora.application.session_check] [CONFIG] Result from aurora.bm.DefaultAccessChecker@47ae0f1b is true
+2018-10-17 01:55:05.312 [uncertain.proc] [CONFIG] [action] AccessCheck
+2018-10-17 01:55:05.313 [uncertain.proc] [CONFIG] [action] CheckServiceLock
+2018-10-17 01:55:05.313 [uncertain.proc] [CONFIG] [action] ParseParameter
+2018-10-17 01:55:05.313 [uncertain.proc] [CONFIG] [action] ValidateInput
+2018-10-17 01:55:05.313 [uncertain.proc] [CONFIG] [action] InvokeService
+2018-10-17 01:55:05.313 [aurora.database] [CONFIG] ===================================== prepare to run model-query csh.CSH5010.csh_pay_req_exp_class_lov==============================
+2018-10-17 01:55:05.318 [uncertain.proc] [CONFIG] [action] DecideSqlGenerationMode
+2018-10-17 01:55:05.318 [uncertain.proc] [FINE] aurora.database.service.BusinessModelService.onDecideSqlGenerationMode
+2018-10-17 01:55:05.318 [uncertain.proc] [CONFIG] [action] CreateOperationSql
+2018-10-17 01:55:05.318 [uncertain.proc] [CONFIG] [action] PopulateOperationSql
+2018-10-17 01:55:05.318 [uncertain.proc] [FINE] aurora.database.features.OrderByClauseCreator.onPopulateOperationSql
+2018-10-17 01:55:05.318 [uncertain.proc] [FINE] aurora.database.features.WhereClauseCreator.onPopulateOperationSql
+2018-10-17 01:55:05.318 [uncertain.proc] [CONFIG] [action] ExecuteQuery
+2018-10-17 01:55:05.318 [uncertain.proc] [FINE] aurora.bm.QuerySqlCreator.onExecuteQuery
+2018-10-17 01:55:05.325 [aurora.database] [CONFIG] 
+============= BEGIN [query] SQL Statement execution dump ============
+
+                SELECT
+                    v.*,
+                    p_requisited_amount,
+                    p_need_pay_amount - p_requisited_amount - p_c_r_amount - doc_release_amount + write_off_amount p_need_payment_amount,
+                    p_requisited_amount - p_requisited_payment_amount p_requisited_unpayment_amount
+                FROM
+                    (SELECT
+                        erh.exp_requisition_header_id,
+                        erh.exp_requisition_number,
+                        erh.employee_id,
+                        erh.currency_code,
+                        erh.exp_requisition_type_id,
+                        (SELECT
+                            v.description
+                        FROM
+                            exp_expense_req_types_vl v
+                        WHERE
+                            v.expense_requisition_type_id = erh.exp_requisition_type_id
+                        ) description,
+                        (SELECT
+                            NVL (SUM (erl.requisition_amount), 0)
+                        FROM
+                            exp_requisition_lines erl
+                        WHERE
+                            erl.exp_requisition_header_id = erh.exp_requisition_header_id AND
+                            erl.payment_flag              = 'Y'
+                        ) p_need_pay_amount,
+                        (SELECT
+                            NVL (SUM (cprl.amount), 0)
+                        FROM
+                            csh_payment_requisition_lns cprl,
+                            csh_payment_requisition_hds cprh
+                        WHERE
+                            cprl.ref_document_id               = erh.exp_requisition_header_id AND
+                            cprh.payment_requisition_header_id = cprl.payment_requisition_header_id AND
+                            cprh.status                       IN ('SUBMITTED', 'APPROVED')
+                        ) p_requisited_amount,
+                        (SELECT
+                            NVL (SUM (r.amount), 0)
+                        FROM
+                            csh_payment_requisition_refs r,
+                            csh_payment_requisition_lns lns,
+                            csh_payment_requisition_hds cprh
+                        WHERE
+                            lns.payment_requisition_line_id    = r.payment_requisition_line_id AND
+                            lns.ref_document_id                = erh.exp_requisition_header_id AND
+                            cprh.payment_requisition_header_id = lns.payment_requisition_header_id AND
+                            cprh.status                       IN ('CLOSED')
+                        ) p_c_r_amount,
+                        (SELECT
+                            NVL (SUM (cprr.amount), 0)
+                        FROM
+                            csh_payment_requisition_lns cprl,
+                            csh_payment_requisition_hds cprh,
+                            csh_payment_requisition_refs cprr,
+                            csh_transaction_lines ctl,
+                            csh_transaction_headers cth
+                        WHERE
+                            cprl.ref_document_id               = erh.exp_requisition_header_id AND
+                            cprh.payment_requisition_header_id = cprl.payment_requisition_header_id AND
+                            cprl.payment_requisition_line_id   = cprr.payment_requisition_line_id AND
+                            cprr.csh_transaction_line_id       = ctl.transaction_line_id AND
+                            ctl.transaction_header_id          = cth.transaction_header_id AND
+                            cth.posted_flag                    = 'Y' AND
+                            cprh.status NOT                   IN ('CLOSED')
+                        ) p_requisited_payment_amount,
+                        (SELECT
+                            COUNT (flw.document_id) cont
+                        FROM
+                            con_document_flows flw,
+                            exp_requisition_lines erl
+                        WHERE
+                            flw.document_type             = 'CON_CONTRACT' AND
+                            flw.source_document_type      = 'EXP_REQUISITION_LINES' AND
+                            flw.source_document_id        = erl.exp_requisition_header_id AND
+                            erh.exp_requisition_header_id = erl.exp_requisition_header_id
+                        ) cont_flag,
+                        erh.company_id,
+                        (select NVL(sum(doc_release_amount),0)
+		                  from exp_requisition_release err
+		                 where err.exp_requisition_header_id =
+		                       erh.exp_requisition_header_id
+		                   and err.document_type = 'EXP_REPORT') doc_release_amount,
+		                   (SELECT
+                                NVL(SUM(cwo.csh_write_off_amount), 0)
+                            FROM
+                                csh_write_off cwo
+                            WHERE
+                                cwo.document_header_id in (select err.document_id
+										                  from exp_requisition_release err
+										                 where err.exp_requisition_header_id =
+										                       erh.exp_requisition_header_id
+										                   and err.document_type = 'EXP_REPORT') AND
+                                cwo.document_source    = 'EXPENSE_REPORT' AND
+                                cwo.write_off_type     = 'PREPAYMENT_EXPENSE_REPORT'
+                            ) AS write_off_amount
+                    FROM
+                        exp_requisition_headers erh
+                    WHERE
+                        erh.audit_flag         = 'Y' AND
+                        erh.employee_id        = ? AND
+                        erh.currency_code      = ? AND
+                        erh.requisition_status = 'COMPLETELY_APPROVED' AND
+                        erh.company_id         = ? AND
+                        NOT EXISTS
+                        (SELECT 1
+	                       FROM exp_requisition_release err
+	                      WHERE err.exp_requisition_header_id = erh.exp_requisition_header_id
+	                        AND err.document_type = 'EXP_REPORT' 
+	                        having (select sum(l.requisition_amount)
+	                               from exp_requisition_lines l
+	                              where l.exp_requisition_header_id = erh.exp_requisition_header_id) -
+	                            sum(err.doc_release_amount) = 0
+                        ) AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            exp_requisition_dists dist,
+                            exp_requisition_lines erl
+                        WHERE
+                            dist.close_flag               = 'N' AND
+                            dist.exp_requisition_line_id  = erl.exp_requisition_line_id AND
+                            erl.exp_requisition_header_id = erh.exp_requisition_header_id
+                        ) AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            csh_req_type_trn_classes cr
+                        WHERE
+                            cr.enabled_flag           = 'Y' AND
+                            cr.company_id             = erh.company_id AND
+                            cr.expense_req_type_code IN
+                            (SELECT
+                                ee.expense_requisition_type_code
+                            FROM
+                                exp_expense_req_types_vl ee
+                            WHERE
+                                ee.expense_requisition_type_id = erh.exp_requisition_type_id AND
+                                cr.csh_transaction_class_code  =?
+                            )
+                        )
+                    ) v  WHERE p_need_pay_amount > 0 and p_need_payment_amount > 0
+                ORDER BY
+                    exp_requisition_number
+            
+---------------------Binding info---------------------
+No.1	Access path:@employee_id	Data type of passed value :java.lang.String	Value:2271	Output:false	Database Type:null	
+No.2	Access path:@currency_code	Data type of passed value :java.lang.String	Value:CNY	Output:false	Database Type:null	
+No.3	Access path:/session/@company_id	Data type of passed value :java.lang.String	Value:835	Output:false	Database Type:null	
+No.4	Access path:@csh_transaction_class_code	Data type of passed value :java.lang.String	Value:XJSW002	Output:false	Database Type:null	
+
+=============== END [query] SQL Statement execution dump ============
+
+2018-10-17 01:55:05.325 [uncertain.proc] [CONFIG] [action] HandleException
+2018-10-17 01:55:05.325 [uncertain.proc] [CONFIG] [action] CreateFailResponse
+2018-10-17 01:55:05.325 [aurora.application] [SEVERE] java.sql.SQLSyntaxErrorException: ORA-00904: "P_NEED_PAYMENT_AMOUNT": 标识符无效
+
+	at oracle.jdbc.driver.T4CTTIoer.processError(T4CTTIoer.java:450)
+	at oracle.jdbc.driver.T4CTTIoer.processError(T4CTTIoer.java:399)
+	at oracle.jdbc.driver.T4C8Oall.processError(T4C8Oall.java:1059)
+	at oracle.jdbc.driver.T4CTTIfun.receive(T4CTTIfun.java:522)
+	at oracle.jdbc.driver.T4CTTIfun.doRPC(T4CTTIfun.java:257)
+	at oracle.jdbc.driver.T4C8Oall.doOALL(T4C8Oall.java:587)
+	at oracle.jdbc.driver.T4CCallableStatement.doOall8(T4CCallableStatement.java:220)
+	at oracle.jdbc.driver.T4CCallableStatement.doOall8(T4CCallableStatement.java:48)
+	at oracle.jdbc.driver.T4CCallableStatement.executeForDescribe(T4CCallableStatement.java:769)
+	at oracle.jdbc.driver.OracleStatement.executeMaybeDescribe(OracleStatement.java:925)
+	at oracle.jdbc.driver.OracleStatement.doExecuteWithTimeout(OracleStatement.java:1111)
+	at oracle.jdbc.driver.OraclePreparedStatement.executeInternal(OraclePreparedStatement.java:4798)
+	at oracle.jdbc.driver.OraclePreparedStatement.executeQuery(OraclePreparedStatement.java:4845)
+	at oracle.jdbc.driver.OraclePreparedStatementWrapper.executeQuery(OraclePreparedStatementWrapper.java:1501)
+	at com.mchange.v2.c3p0.impl.NewProxyCallableStatement.executeQuery(NewProxyCallableStatement.java:2131)
+	at aurora.database.SqlRunner.query(SqlRunner.java:248)
+	at aurora.bm.QuerySqlCreator.onExecuteQuery(QuerySqlCreator.java:176)
+	at sun.reflect.GeneratedMethodAccessor1262.invoke(Unknown Source)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:498)
+	at uncertain.event.ReflectionMethodHandle.handleEvent(ReflectionMethodHandle.java:92)
+	at uncertain.event.ReflectionMethodHandle.handleEvent(ReflectionMethodHandle.java:49)
+	at uncertain.event.Configuration.fireEventInternal(Configuration.java:450)
+	at uncertain.event.Configuration.fireEvent(Configuration.java:388)
+	at uncertain.proc.ProcedureRunner.fireEvent(ProcedureRunner.java:352)
+	at uncertain.proc.Action.run(Action.java:171)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:289)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:330)
+	at uncertain.proc.Procedure.run(Procedure.java:101)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:277)
+	at aurora.database.service.BusinessModelService.query(BusinessModelService.java:196)
+	at aurora.database.actions.ModelQuery.doQuery(ModelQuery.java:80)
+	at aurora.database.actions.AbstractQueryAction.query(AbstractQueryAction.java:164)
+	at aurora.database.actions.AbstractQueryAction.run(AbstractQueryAction.java:187)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:289)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:330)
+	at uncertain.proc.Procedure.run(Procedure.java:101)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:277)
+	at aurora.application.features.AbstractProcedureInvoker.runProcedure(AbstractProcedureInvoker.java:41)
+	at aurora.application.features.InitProcedureInvoker.doInvoke(InitProcedureInvoker.java:34)
+	at aurora.application.features.InitProcedureInvoker.onInvokeService(InitProcedureInvoker.java:42)
+	at sun.reflect.GeneratedMethodAccessor1483.invoke(Unknown Source)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:498)
+	at uncertain.event.ReflectionMethodHandle.handleEvent(ReflectionMethodHandle.java:92)
+	at uncertain.event.ReflectionMethodHandle.handleEvent(ReflectionMethodHandle.java:49)
+	at uncertain.event.Configuration.fireEventInternal(Configuration.java:450)
+	at uncertain.event.Configuration.fireEvent(Configuration.java:388)
+	at uncertain.proc.ProcedureRunner.fireEvent(ProcedureRunner.java:352)
+	at uncertain.proc.Action.run(Action.java:171)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:289)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:330)
+	at uncertain.proc.Procedure.run(Procedure.java:101)
+	at uncertain.proc.Switch.run(Switch.java:90)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:289)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:330)
+	at uncertain.proc.Procedure.run(Procedure.java:101)
+	at uncertain.proc.ProcedureRunner.run(ProcedureRunner.java:277)
+	at aurora.service.ServiceInstance.invoke(ServiceInstance.java:133)
+	at aurora.service.http.AbstractFacadeServlet.doService(AbstractFacadeServlet.java:158)
+	at aurora.service.http.AbstractFacadeServlet.doPost(AbstractFacadeServlet.java:97)
+	at javax.servlet.http.HttpServlet.service(HttpServlet.java:751)
+	at javax.servlet.http.HttpServlet.service(HttpServlet.java:844)
+	at weblogic.servlet.internal.StubSecurityHelper$ServletServiceAction.run(StubSecurityHelper.java:280)
+	at weblogic.servlet.internal.StubSecurityHelper$ServletServiceAction.run(StubSecurityHelper.java:254)
+	at weblogic.servlet.internal.StubSecurityHelper.invokeServlet(StubSecurityHelper.java:136)
+	at weblogic.servlet.internal.ServletStubImpl.execute(ServletStubImpl.java:346)
+	at weblogic.servlet.internal.ServletStubImpl.execute(ServletStubImpl.java:243)
+	at weblogic.servlet.internal.WebAppServletContext$ServletInvocationAction.wrapRun(WebAppServletContext.java:3432)
+	at weblogic.servlet.internal.WebAppServletContext$ServletInvocationAction.run(WebAppServletContext.java:3402)
+	at weblogic.security.acl.internal.AuthenticatedSubject.doAs(AuthenticatedSubject.java:321)
+	at weblogic.security.service.SecurityManager.runAs(SecurityManager.java:120)
+	at weblogic.servlet.provider.WlsSubjectHandle.run(WlsSubjectHandle.java:57)
+	at weblogic.servlet.internal.WebAppServletContext.doSecuredExecute(WebAppServletContext.java:2285)
+	at weblogic.servlet.internal.WebAppServletContext.securedExecute(WebAppServletContext.java:2201)
+	at weblogic.servlet.internal.WebAppServletContext.execute(WebAppServletContext.java:2179)
+	at weblogic.servlet.internal.ServletRequestImpl.run(ServletRequestImpl.java:1572)
+	at weblogic.servlet.provider.ContainerSupportProviderImpl$WlsRequestExecutor.run(ContainerSupportProviderImpl.java:255)
+	at weblogic.work.ExecuteThread.execute(ExecuteThread.java:311)
+	at weblogic.work.ExecuteThread.run(ExecuteThread.java:263)
+

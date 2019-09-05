@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:fields>
+        <bm:field name="ins_sub_emp"/>
+        <bm:field name="ins_doc_emp"/>
+        <bm:field name="ins_doc_hd_title"/>
+        <bm:field name="ins_cur_node_emp_name"/>
+        <bm:field name="ins_doc_status"/>
+        <bm:field name="ins_doc_status_name"/>
+        <bm:field name="ins_param"/>
+        <bm:field name="ins_doc_type"/>
+        <bm:field name="ins_sub_date"/>
+        <bm:field name="ins_sub_date_day"/>
+        <bm:field name="ins_sub_date_format"/>
+        <bm:field name="ins_doc_desc"/>
+        <bm:field name="ins_doc_amount"/>
+        <bm:field name="ins_id"/>
+        <bm:field name="ins_node_id"/>
+        <bm:field name="ins_node_name"/>
+        <bm:field name="ins_doc_num"/>
+        <bm:field name="ins_doc_category"/>
+        <bm:field name="ins_doc_category_desc"/>
+        <!-- update by fangqi 20151211 新增 判断当前用户是否可以进行逐级收回操作  -->
+        <bm:field name="can_back_to_pre_node_flag"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                select * from (
+                SELECT
+                    wfl_common_pkg.get_wfl_user_name(a.created_by) AS ins_sub_emp,
+                    sys_mobile_pkg.get_ins_doc_emp(a.instance_id) AS ins_doc_emp,
+                    sys_mobile_pkg.get_ins_doc_hd_title(a.instance_param, b.workflow_category) as ins_doc_hd_title,
+                    sys_mobile_pkg.get_current_node_emp_name(a.workflow_id,
+                                                               a.instance_id,
+                                                               a.current_node) ins_cur_node_emp_name,
+               		wfl_core_pkg.get_can_back_to_pre_node_flag(a.instance_id,
+                                                          	${/session/@user_id}) can_back_to_pre_node_flag,
+                    a.status as ins_doc_status,
+                    (select code_value_name
+                                  from sys_service_lookup_v
+                                 where code = 'WFL_WORKFLOW_INSTANCE_STATUS'
+                                   and code_value = to_char(a.status)
+                                   and language = 'ZHS') ins_doc_status_name,
+                    a.instance_param as ins_param,
+                    (
+                        SELECT
+                            wdr.document_desc
+                        FROM
+                            wfl_document_reference_vl wdr
+                        WHERE
+                            b.workflow_category = wdr.workflow_category
+                    ) AS ins_doc_type,
+                    a.creation_date AS ins_sub_date,
+                    to_char(a.creation_date,'yyyy-mm-dd') as ins_sub_date_day,
+                    sys_mobile_pkg.get_date_format(a.creation_date) AS ins_sub_date_format,
+                    a.instance_desc AS ins_doc_desc,
+                    a.instance_amount AS ins_doc_amount,
+                    a.instance_id AS ins_id,
+                    (SELECT
+                        node_id
+                    FROM
+                        wfl_workflow_node wnv
+                    WHERE
+                        wnv.SEQUENCE_NUM = a.current_node
+                        and wnv.workflow_id = a.workflow_id
+                    ) AS ins_node_id, 
+                    (SELECT
+                        name
+                    FROM
+                        wfl_workflow_node_vl wnv
+                    WHERE
+                        wnv.SEQUENCE_NUM = a.current_node
+                        and wnv.workflow_id = a.workflow_id
+                    ) AS ins_node_name,
+                    a.document_number AS ins_doc_num,
+                    b.workflow_category AS ins_doc_category,
+                    (select v.code_value_name from sys_codes sc, sys_code_values_vl v
+                                 where sc.code_id = v.code_id and sc.code = 'WFL_WORKFLOW_CATEGORY'
+                                            and v.code_value = b.workflow_category
+                            ) as ins_doc_category_desc
+                FROM
+                    wfl_workflow_instance a,
+                    Wfl_Workflow_Vl b
+                WHERE 
+                    a.workflow_id = b.workflow_id AND
+                    EXISTS
+                    (SELECT
+                        1
+                    FROM
+                        wfl_approve_record
+                    WHERE
+                        instance_id = a.instance_id AND
+                        created_by  = ${/session/@user_id}
+                    ) AND
+                    b.workflow_category in ('EXP_REQUISITION')
+                ORDER BY
+                    a.creation_date DESC )t
+                      #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <!-- update by fangqi 20151210 -->
+    <bm:query-fields>
+        <bm:query-field name="fuzzy_query" queryexpression="t.ins_doc_num like &apos;%&apos;|| UPPER(${@fuzzy_query}) ||&apos;%&apos; or t.ins_doc_amount like &apos;%&apos;||${@fuzzy_query}||&apos;%&apos; or t.ins_sub_emp like &apos;%&apos;||${@fuzzy_query}||&apos;%&apos; or t.ins_doc_hd_title like &apos;%&apos;||${@fuzzy_query}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

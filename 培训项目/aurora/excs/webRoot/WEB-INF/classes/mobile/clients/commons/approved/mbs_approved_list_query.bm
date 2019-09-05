@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-9-3 下午3:18:50  
+    $Revision: 1.0  
+    $Purpose: 当前用户的已审批记录
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[SELECT order_type || ':' || create_by_name item1,
+       creation_date_desc item2,
+       order_type || ':' || create_by_name || '(编号:' || order_no || ')' item3,
+       instance_desc item4,
+       decode(t.last_approve_name,
+              NULL,
+              NULL,
+              to_char(t.last_update_date,
+                      'yyyy-mm-dd hh24:mi')) item2_date,
+       decode(t.order_type,
+              '费用申请单',
+              'modules/mobile/exp_req/exp_requisition_readonly_for_mobile.screen?doc_head_id',
+              '借款申请单',
+              'modules/mobile/csh/csh_pay_req_readonly_for_mobile.screen?payment_requisition_header_id',
+              '费用报销单',
+              'modules/mobile/exp_report/exp_report_readonly_for_mobile.screen?doc_head_id',
+              '预算日记账',
+              'modules/mobile/bgt_budget/bgt_journal_detail_readonly_for_mobile.screen?doc_head_id',
+              '合同维护',
+              'modules/mobile/cont/con_contract_readonly_for_mobile.screen?contract_header_id')|| '=' ||
+       instance_param||'&&instance_id='||instance_id screen_name
+
+  FROM (SELECT rs.*,
+               to_char(rs.creation_date,
+                       'yyyy-mm-dd hh24:mi') creation_date_desc,
+               
+               wfl_common_pkg.get_wfl_user_name(rs.created_by) create_by_name,
+               wfl_common_pkg.get_wfl_user_name((SELECT r.created_by
+                                                  FROM wfl_approve_record r
+                                                 WHERE r.record_id = (SELECT MAX(record_id)
+                                                                        FROM wfl_approve_record
+                                                                       WHERE instance_id = rs.instance_id))) last_approve_name,
+               (SELECT wdr.document_desc
+                  FROM wfl_document_reference_vl wdr
+                 WHERE rs.workflow_category = wdr.workflow_category) order_type,
+               to_char((SELECT MAX(nr.date_limit)
+                         FROM wfl_instance_node_recipient nr,
+                              wfl_workflow_node           n
+                        WHERE nr.instance_id = rs.instance_id
+                              AND nr.node_id = n.node_id
+                              AND n.sequence_num = rs.current_node),
+                       'yyyy-mm-dd hh24:mi') date_limit,
+               rs.service_name || '=' || rs.instance_param AS doc_page_url
+          FROM (SELECT a.instance_id,
+                       a.workflow_id,
+                       a.current_node,
+                       a.created_by,
+                       a.creation_date,
+                       a.document_number order_no,
+                       b.NAME workflow_name,
+                       a.last_update_date,
+                       b.workflow_category,
+                       a.status,
+                       a.status_desc,
+                       a.instance_desc,
+                       a.instance_param,
+                       ws.service_name
+                  FROM wfl_workflow_instance a,
+                       wfl_workflow_vl b,
+                       (SELECT nvl((SELECT d.service_name
+                                     FROM wfl_workflow_page        p,
+                                          wfl_workflow_page_detail d
+                                    WHERE p.service_name = w.display_form
+                                          AND d.record_id = p.record_id
+                                          AND d.device_type = ''),
+                                   w.display_form) AS service_name,
+                               w.workflow_id AS wfl_id
+                          FROM wfl_workflow w) ws
+                 WHERE a.workflow_id = b.workflow_id
+                       AND a.workflow_id = ws.wfl_id
+                       AND EXISTS (SELECT 1
+                          FROM wfl_approve_record
+                         WHERE instance_id = a.instance_id
+                               AND created_by = ${/session/@user_id})
+                 ORDER BY a.last_update_date DESC) rs) t
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

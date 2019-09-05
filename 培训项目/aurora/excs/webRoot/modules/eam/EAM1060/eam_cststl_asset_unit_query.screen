@@ -1,0 +1,323 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2013-3-28 下午2:00:25  
+    $Revision: 1.0  
+    $Purpose: 暂估资产部门查询
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="eam.eam0311.eam0311_asset_books_query" rootPath="asset_books"/>
+        <a:model-query fetchAll="true" model="eam.eam0610.eam0610_requisition_types_query" rootPath="req_types"/>
+        <a:model-query model="eam.eam1010.eam1010_asset_finance_class_query" rootPath="asset_finance"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="asset_headers_link" url="${/request/@context_path}/modules/eam/public/eam_asset_headers_readonly_for_requisition.screen"/>
+        <script><![CDATA[
+    		
+    			// 查询
+    			function query() {
+    			    $('req_result_ds').query();
+    			}
+    		
+    			// 重置
+    			function reset() {
+    			    $('req_form_ds').reset();
+    			}
+    			
+    			// 申请号编辑器
+    			function reqNumRenderer(value,record,name) {
+    			    var requisition_header_id = record.get("requisition_header_id");
+    			    var base_trx_category = record.get('base_trx_category');
+			        return '<a href="javascript:reqDetail(' + requisition_header_id + ',\'' + base_trx_category + '\');">' + value + '</a>';
+    			}
+    			
+    			// 打开申请详情页面
+    			function reqDetail(requisition_header_id, base_trx_category) {
+    			    var d_url;
+    			   
+    			    switch(base_trx_category) {
+    			        case 'RET':
+    			        d_url = '${/request/@context_path}/modules/eam/EAM0622/eam_disposal_req_query_details_ret.screen?requisition_header_id=' + requisition_header_id;
+    			        break;
+    			        case 'DPL':
+    			        d_url = '${/request/@context_path}/modules/eam/EAM0622/eam_disposal_req_query_details_dpl.screen?requisition_header_id=' + requisition_header_id;
+    			        break;
+    			    }
+    			    
+    			    new Aurora.Window({
+    			        id: 'disposal_details_window',
+    			        url: d_url,
+    			        title: '${l:EAM_REQUISITION_DPL_DETAIL}',
+    			        fullScreen: true
+    			    });
+    			    
+    			}
+    			
+    			// 提交到cvs
+    			function reqSubmit() {
+    			    var selectedData = $('req_result_ds').getSelected();
+    			    
+    			    if(!selectedData.length) {
+    			        alert("${l:EAM_ASSET_HEADERS.CHOICE_REQ_FIRST}");
+    			        return false;
+    			    }
+    			    
+    			    var confirm = window.confirm('${l:EAM_SUBMIT_REQUISITION_CONFIRM}'); 
+    			    if(!confirm) {
+    			        return false;
+    			    }
+    			    
+    			    var data = [];
+    			    for(var i=0; i<selectedData.length; i++) {
+    			        var para = {};
+    			        para.requisition_header_id = selectedData[i].data.requisition_header_id;
+    			        data.push(para);
+    			    }
+    			     
+    			    Aurora.request({
+    			        url:'${/request/@context_path}/modules/eam/EAM0421/eam_cststl_req_submit.svc',
+    			        para: data,
+    			        success: function(args) {
+    			            $('req_result_ds').query();
+    			        }
+    			    });
+    			}
+    			 
+    				 
+			function dateValidate(record, name, value) {
+                if (name == 'req_date_from' || name == 'req_date_to') {
+                    var req_date_from = record.get('req_date_from');
+                    var req_date_to = record.get('req_date_to');
+                    
+                    if (typeof(req_date_from) != 'undefined' && !Ext.isEmpty(req_date_from)) {
+                        if (!compareDate(req_date_from, req_date_to)) {
+                            return '${l:EXP_REPORT_MAINTAIN.DATE_VALIDATE}';
+                        }
+                    }
+                     
+                    return true;
+                }
+            }
+            
+            function compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+              
+            //
+            function assetRenderer(value, record, name) {
+                if (record.isNew) {
+                    return value;
+                } else {
+                    var asset_id = record.get("asset_id");
+                    return '<a href="javascript:viewAsset(' + asset_id + ')">' + value + '</a>';
+                }
+            }
+            
+            function viewAsset(asset_id) {
+                new Aurora.Window({
+                    id: 'eam_asset_cost_vadj_window',
+                    url: $('asset_headers_link').getUrl() + '?asset_id=' + asset_id,
+                    title: '${l:EAM_ASSET_HEADERS.SEARCH}',
+                    height: 430,
+                    width: 930
+                });
+            }
+            
+            function onFormUpdate(dataSet, record, name, value) {
+                switch(name) {
+                    case 'asset_book_id': 
+                    	record.getField("category_desc").setLovPara("asset_book_id", value);
+                    	record.set("cls_ety_unit_name", null);
+                    	record.set("lct_ety_unit_name", null);
+                    	record.set("category_desc", null);
+                    	record.set("entity_class_desc", null);
+                    	record.set("asset_finance_ds", null);
+                    	record.set("asset_confirm_status_ds", null);
+                    break;
+                    case 'category_id':
+                    	record.getField("entity_class_desc").setLovPara("category_id", value);
+                    	$("asset_finance_ds").setQueryParameter("category_id", value);
+                    	$("asset_finance_ds").setQueryParameter("asset_book_id", record.get("asset_book_id"));
+                    	$("asset_finance_ds").query();
+                    	record.set("entity_class_desc", null);
+                    	record.set("asset_finance_ds", null);
+                    break;
+                }
+            }
+            //@Spencer 3893 20130524
+            function print_asset(){
+                var records = $('req_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT_PERIOD.PLEASE_CHOOSE_LINE}', null, 250, 100);
+                    return;
+                }
+                var data = [];
+    			    for(var i=0; i<records.length; i++) {
+    			        var para = {};
+    			        para.asset_id = records[i].data.asset_id;
+    			        data.push(para);
+    			    }
+    			     
+                Aurora.request({
+    			        url:'${/request/@context_path}/modules/eam/EAM1010/eam_asset_tag_batch_print.svc',
+    			        para: data,
+    			        success: function(args) {
+                			window.open('${/request/@context_path}/reports?__report=reports/eam_tag_number_batch.rptdesign&session_id=${/session/@session_id}');
+    			        }
+    			    });
+    			    
+            }
+            
+    	]]></script>
+        <a:dataSets>
+            <!-- 资产账簿DS -->
+            <a:dataSet id="asset_books_ds">
+                <a:datas dataSource="/model/asset_books"/>
+            </a:dataSet>
+            <a:dataSet id="asset_status_ds" lookupCode="EAM_ASSET_STATUS"/>
+            <a:dataSet id="asset_source_type_ds" lookupCode="EAM_AST_SOURCE_TYPE"/>
+            <a:dataSet id="asset_location_type_ds" lookupCode="EAM_LOCATION_TYPE"/>
+            <a:dataSet id="asset_finance_ds" model="eam.eam1010.eam1010_asset_finance_class_query"/>
+            <a:dataSet id="asset_confirm_status_ds" lookupCode="EAM_ASSET_STL_CONFIRM_STATUS"/>
+            <!-- 查询表单DS -->
+            <a:dataSet id="req_form_ds" model="eam.eam1060.eam1060_eam_cststl_asset_unit_query">
+                <a:fields>
+                    <a:field name="asset_book_id"/>
+                    <a:field name="asset_book_desc" displayField="asset_book_desc" options="asset_books_ds" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" returnField="asset_book_id" valueField="asset_book_id"/>
+                    <a:field name="asset_code"/>
+                    <a:field name="asset_name"/>
+                    <a:field name="confirm_status"/>
+                    <a:field name="confirm_status_desc" displayField="code_value_name" options="asset_confirm_status_ds" prompt="EAM_ASSET_COST_SOURCES.CONFIRM_STATUS" returnField="confirm_status" valueField="code_value">
+                        <a:mapping>
+                            <a:map from="code_value_name" to="confirm_status_desc"/>
+                            <a:map from="code_value" to="confirm_status"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="source_asset_name"/>
+                    <a:field name="source_type"/>
+                    <a:field name="asset_source_type_desc" displayField="code_value_name" options="asset_source_type_ds" returnField="source_type" valueField="code_value"/>
+                    <a:field name="source_document_id"/>
+                    <a:field name="source_asset_code"/>
+                    <a:field name="category_id"/>
+                    <a:field name="category_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam1010.eam1010_asset_categories_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.CATEGORY_ID" title="EAM_ASSET_HEADERS.CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_id" to="category_id"/>
+                            <a:map from="description" to="category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_class_id"/>
+                    <a:field name="entity_class_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam1010.eam1010_asset_entity_class_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_CLASS_ID" title="EAM_ASSET_HEADERS.ENTITY_CLASS_ID">
+                        <a:mapping>
+                            <a:map from="class_id" to="entity_class_id"/>
+                            <a:map from="description" to="entity_class_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="finance_class_id"/>
+                    <a:field name="finance_class_name" displayField="class_name" options="asset_finance_ds" prompt="EAM_ASSET_FINANCE_INFO.FINANCE_CLASS_DESC" returnField="finance_class_id" valueField="class_id">
+                        <a:mapping>
+                            <a:map from="class_name" to="finance_class_name"/>
+                            <a:map from="class_id" to="finance_class_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="cls_ety_unit_id"/>
+                    <a:field name="cls_ety_unit_name"/>
+                    <a:field name="lct_ety_unit_id"/>
+                    <a:field name="lct_ety_unit_name"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onFormUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 查询结果DS -->
+            <a:dataSet id="req_result_ds" model="eam.eam1060.eam1060_eam_cststl_asset_unit_query" queryDataSet="req_form_ds" selectable="true">
+                <a:fields>
+                    <a:field name="depreciate_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="lock_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <!-- 查询表单 -->
+            <a:form column="3" labelWidth="100" title="EAM_ASSET_COST_UNIT_SOURCES.TITLE" width="1100">
+                <!-- <a:comboBox name="asset_book_desc" bindTarget="req_form_ds"/>-->
+                <a:textField name="asset_code" bindTarget="req_form_ds" typeCase="upper">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:textField name="asset_name" bindTarget="req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:comboBox name="confirm_status_desc" bindTarget="req_form_ds"/>
+                <a:textField name="source_asset_name" bindTarget="req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:comboBox name="asset_source_type_desc" bindTarget="req_form_ds"/>
+                <a:textField name="source_document_id" bindTarget="req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:textField name="source_asset_code" bindTarget="req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:lov name="category_desc" bindTarget="req_form_ds"/>
+                <a:comboBox name="finance_class_name" bindTarget="req_form_ds"/>
+                <a:lov name="entity_class_desc" bindTarget="req_form_ds"/>
+                <a:textField name="cls_ety_unit_name" bindTarget="req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+                <a:textField name="lct_ety_unit_name" bindTarget="req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="query"/>
+                    </a:events>
+                </a:textField>
+            </a:form>
+            <a:hBox>
+                <a:button click="query" text="HAP_QUERY"/>
+                <a:button click="reset" text="HAP_RESET"/>
+                <!--<a:button click="print_asset" text="PROMPT.PRINT_ASSET"/>-->
+            </a:hBox>
+            <!-- 结果展示 -->
+            <a:grid bindTarget="req_result_ds" height="350" navBar="true" width="1200">
+                <a:toolBar>
+                    <a:label/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="asset_code" align="center" lock="true" renderer="assetRenderer" width="120"/>
+                    <a:column name="asset_name" align="center" lock="true" width="120"/>
+                    <a:column name="brand" align="center" prompt="品牌" width="120"/>
+                    <a:column name="model_number" align="center" prompt="型号" width="120"/>
+                    <a:column name="cost_value_type_desc" align="center"/>
+                    <a:column name="confirm_status_desc" align="center"/>
+                    <a:column name="status_desc" align="center"/>
+                    <a:column name="location_name" align="center"/>
+                    <a:column name="category_desc" align="center"/>
+                    <a:column name="entity_class_desc" align="center"/>
+                    <a:column name="finance_class_name" align="center"/>
+                    <a:column prompt="EAM_ASSET_HEADERS.ETY_UNIT_NAME">
+                        <a:column name="cls_ety_unit_name" align="center"/>
+                        <a:column name="lct_ety_unit_name" align="center"/>
+                    </a:column>
+                    <a:column name="asset_source_type_desc" align="center"/>
+                    <a:column name="source_document_id" align="center"/>
+                    <a:column name="source_asset_code" align="center"/>
+                    <a:column name="source_asset_name" align="center"/>
+                    <a:column name="cost" align="center"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

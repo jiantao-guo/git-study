@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: yh
+    $Date: 2014-5-5 下午2:19:50  
+    $Revision: 1.0  
+    $Purpose: 资产重分类批量录入
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="t1.code = &apos;EAM_ASSET_STATUS&apos; and t1.code_value in (&apos;INSTORE&apos;,&apos;USING&apos;,&apos;IN_PROCESS&apos;) and t1.language = ${/session/@lang}" model="sys.sys_service_lookup_v" rootPath="status"/>
+        <a:model-query defaultWhereClause="v.base_trx_category in (&apos;RCL&apos;) and v.ast_requisition_type_id = ${/parameter/@ast_requisition_type_id}" fetchAll="true" model="eam.eam0310.eam0310_default_trans_type" rootPath="eam_batch_transaction_types"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="eam_asset_batch_classify_save_link" url="${/request/@context_path}/modules/eam/EAM1210/eam_asset_batch_classify.svc"/>
+        <script><![CDATA[
+            Aurora.onReady(eam_asset_batch_transfer_init);
+            
+            function eam_asset_batch_transfer_init() {
+                var base_trx_category = '${/parameter/@base_trx_category}';
+                var head_ds = $('eam_asset_batch_lines_ds');
+                var head_meta = head_ds.getAt(0).getMeta();
+                var result_ds = $('eam_asset_batch_classify_result_ds');
+                var query_record = $('eam_asset_batch_classify_query_ds').getAt(0);
+             	var record = $('eam_asset_batch_lines_ds').getCurrentRecord();
+                record.getField('to_entity_class_desc').setLovPara('asset_book_id', '${/parameter/@asset_book_id}');
+                record.getField('to_entity_class_desc').setLovPara('entity_class_id', 0);
+                record.getField('to_entity_class_desc').setLovPara('category_code1', '10');
+                record.getField('to_entity_class_desc').setLovPara('category_code2', '30');
+                query_record.getField('from_tag_number').setLovPara('asset_book_id', '${/parameter/@asset_book_id}');
+                query_record.getField('tag_number').setLovPara('asset_book_id', '${/parameter/@asset_book_id}');
+                query_record.getField('from_entity_class_desc').setLovPara('asset_book_id', '${/parameter/@asset_book_id}');
+                query_record.getField('from_entity_class_desc').setLovPara('entity_class_id', 0);
+     			query_record.getField('entity_class_desc').setLovPara('asset_book_id', '${/parameter/@asset_book_id}');
+                query_record.getField('entity_class_desc').setLovPara('entity_class_id', 0);
+                
+                result_ds.query();
+            }
+            
+            
+            function onQueryDsUpdate(ds, record, name, value, oldvalue) {
+                var base_trx_category = '${/parameter/@base_trx_category}';
+                var head_ds = $('eam_asset_batch_lines_ds');
+                var head_meta = head_ds.getAt(0).getMeta();
+                var head_record = head_ds.getAt(0);
+                var query_ds = $('eam_asset_batch_classify_query_ds');
+                var query_record = query_ds.getAt(0);
+                var result_ds = $('eam_asset_batch_classify_result_ds');
+                if (name == 'location_id') {
+                    if (base_trx_category == 'DEP') {
+                        if (Aurora.isEmpty(value)) {
+                            head_record.set('to_employee_desc', '');
+                            head_meta.getField('to_employee_desc').setReadOnly(true);
+                        } else {
+                            head_record.set('location_id', value);
+                            head_record.getField('to_employee_desc').setLovPara('location_id', value);
+                            head_record.set('to_employee_desc', '');
+                            head_meta.getField('to_employee_desc').setReadOnly(false);
+                        }
+                        result_ds.removeAll();
+                    }
+                    record.set('asset_from', '');
+                    record.set('asset_to', '');
+                    record.getField('asset_from').setLovPara('location_id', value || null);
+                    record.getField('asset_to').setLovPara('location_id', value || null);
+            
+                } else if (name == 'location_desc') {
+                    if (base_trx_category == 'DEP') {
+                        if (Aurora.isEmpty(value)) {
+                            head_record.set('to_location', '');
+                        } else {
+                            head_record.set('to_location', value);
+                        }
+                    }
+                }
+            }
+            //查询表单
+            
+            function batch_query() {
+                $('eam_asset_batch_classify_result_ds').query();
+            }
+            //重置表单
+            
+            function batch_reset() {
+                $('eam_asset_batch_classify_query_ds').reset();
+            }
+            
+            //批量调动资产
+            function batch_classify_asset() {
+            
+                if (!$('eam_asset_batch_lines_ds').validate()) {
+                    return false;
+                }
+                var records = $('eam_asset_batch_classify_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.SELECT_LINE_DATE}', null, 250, 100);
+                    return;
+                }
+                var record = $('eam_asset_batch_lines_ds').getCurrentRecord();
+                
+                for(var j=0; j<records.length;j++){
+                    var entity_class_id = record.get('to_entity_class_id');
+                    if(records[j].get('entity_class_id') == entity_class_id){
+                     	  Aurora.showInfoMessage('${l:PROMPT}', '所选新类别不能与原类别相同！', null, 250, 100);
+                    	  return;
+                    }
+                }
+                var datas = $('eam_asset_batch_classify_result_ds').getJsonData(true);
+            
+                for (var i = 0;i < datas.length;i++) {
+                    datas[i].requisition_header_id = '${/parameter/@requisition_header_id}';
+                    datas[i].position_id = '${/parameter/@position_id}';
+                    datas[i].unit_id = '${/parameter/@unit_id}';
+                    datas[i].employee_id = '${/parameter/@employee_id}';
+                    datas[i].ast_requisition_type_id = '${/parameter/@ast_requisition_type_id}';
+                    datas[i].transaction_type_id = '${/parameter/@transaction_type_id}';
+                    datas[i].to_entity_class_id = record.get('to_entity_class_id');
+                    datas[i].to_category_id = record.get('to_category_id');
+                    datas[i].to_category_sec_id = record.get('to_category_sec_id');
+                    datas[i].to_fin_class_id = record.get('to_fin_class_id');
+                    datas[i].new_dep_flag = record.get('new_dep_flag');
+                    datas[i].copy_flag = record.get('copy_flag');
+                    datas[i].adjustment_flag = record.get('adjustment_flag');
+                    datas[i].amortize_adj = record.get('amortize_adj');
+                }
+                //console.log(datas);
+                Aurora.request({
+                    url: $('eam_asset_batch_classify_save_link').getUrl(),
+                    para: datas,
+                    success: function(args) {
+                        batch_back();
+                        eam1210_query();
+                    },
+                    scope: this
+                });
+            }
+            
+            function onLinesUpdateHandler(dataset, record, name, value) {
+                switch (name) {
+                case 'to_location_id':
+                    record.getField("to_employee_desc").setLovPara("location_id", value);
+                    record.set("to_employee_desc", null);
+                    break;
+                }
+            }
+            
+             function depFlagChangeFun(checkbox,value,oldValue){
+                 var record = $('eam_asset_batch_lines_ds').getCurrentRecord();
+                 if(value == 'Y'){
+                     record.getField("adjustment_flag").setReadOnly(false);
+                 }else{
+                     record.set("adjustment_flag","N");
+                     record.getField("adjustment_flag").setReadOnly(true);
+                 }
+             }
+            
+            function batch_back() {
+                $('eam_asset_batch_classify_window').close();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="status_ds">
+                <a:datas dataSource="/model/status"/>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_batch_classify_query_ds">
+                <a:fields>
+                    <a:field name="from_tag_number" lovGridHeight="300" lovHeight="450" lovService="eam.eam1210.eam1210_asset_headers_lov" lovWidth="550" prompt="卡片号从" title="卡片号从">
+                        <a:mapping>
+                            <a:map from="tag_number" to="from_tag_number"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tag_number" lovGridHeight="300" lovHeight="450" lovService="eam.eam1210.eam1210_asset_headers_lov" lovWidth="550" prompt="卡片号到" title="卡片号到">
+                        <a:mapping>
+                            <a:map from="tag_number" to="tag_number"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="from_entity_code"/>
+                    <a:field name="from_entity_class_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam1210.eam1210_asset_category_lov" lovWidth="800" prompt="资产类别从" title="资产类别从">
+                        <a:mapping>
+                            <a:map from="entity_code" to="from_entity_code"/>
+                            <a:map from="to_entity_class_desc" to="from_entity_class_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="to_entity_code"/>
+                    <a:field name="entity_class_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam1210.eam1210_asset_category_lov" lovWidth="800" prompt="资产类别到" title="资产类别到">
+                        <a:mapping>
+                            <a:map from="entity_code" to="to_entity_code"/>
+                            <a:map from="to_entity_class_desc" to="entity_class_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="from_using_unit_id"/>
+                    <a:field name="from_using_unit_code"/>
+                    <a:field name="from_using_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_unit_lov" lovWidth="550" prompt="使用部门从" title="使用部门从">
+                        <a:mapping>
+                            <a:map from="unit_id" to="from_using_unit_id"/>
+                            <a:map from="unit_code" to="from_using_unit_code"/>
+                            <a:map from="unit_code_name" to="from_using_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="using_unit_id"/>
+                    <a:field name="to_using_unit_code"/>
+                    <a:field name="using_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_unit_lov" lovWidth="550" prompt="使用部门到" title="使用部门到">
+                        <a:mapping>
+                            <a:map from="unit_id" to="using_unit_id"/>
+                            <a:map from="unit_code" to="to_using_unit_code"/>
+                            <a:map from="unit_code_name" to="using_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <!-- <a:event name="update" handler="onQueryDsUpdate"/> --><![CDATA[
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                ]]></a:events>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_batch_classify_result_ds" model="eam.eam1210.eam1210_requisition_lines_edit" pageSize="50" queryDataSet="eam_asset_batch_classify_query_ds" queryUrl="${/request/@context_path}/autocrud/eam.eam1210.eam1210_headers_batch_classify_query/query?asset_book_id=${/parameter/@asset_book_id}" selectable="true">
+                <a:fields>
+                    <a:field name="tag_number" prompt="卡片号" readOnly="true"/>
+                    <a:field name="asset_name" prompt="资产名称" readOnly="true"/>
+                    <a:field name="entity_class_desc" prompt="原类别" readOnly="true"/>
+                    <a:field name="entity_class_id"/>
+                    <a:field name="fin_class_id"/>
+                    <a:field name="using_unit_desc" prompt="折旧承担部门" readOnly="true"/>
+                    <a:field name="using_unit_id"/>
+                    <a:field name="depr_year" prompt="原折旧年限" readOnly="true"/>
+                    <a:field name="lifed_in_month" prompt="使用月数" readOnly="true"/>
+                    <a:field name="used_month" prompt="已用月数" readOnly="true"/>
+                    <a:field name="remaining_life_in_month" prompt="剩余月数" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="eam_batch_trans_type">
+                <a:datas dataSource="/model/eam_batch_transaction_types"/>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_batch_lines_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="to_fin_class_id"/>
+                    <a:field name="to_category_sec_id"/>
+                    <a:field name="to_category_id"/>
+                    <a:field name="to_entity_class_id"/>
+                    <a:field name="to_entity_class_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam1210.eam1210_asset_category_lov" lovWidth="800" prompt="新类别" required="true" title="新类别">
+                        <a:mapping>
+                            <a:map from="to_entity_class_id" to="to_entity_class_id"/>
+                            <a:map from="to_entity_class_desc" to="to_entity_class_desc"/>
+                            <a:map from="to_fin_class_id" to="to_fin_class_id"/>
+                            <a:map from="to_category_sec_id" to="to_category_sec_id"/>
+                            <a:map from="to_category_id" to="to_category_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="new_dep_flag" checkedValue="Y" defaultValue="Y" prompt="执行新类别折旧规则" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="copy_flag" checkedValue="Y" defaultValue="N" prompt="复制特性参数" uncheckedValue="N"/>
+                    <a:field name="adjustment_flag" checkedValue="Y" defaultValue="Y" prompt="追溯调整" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="amortize_adj" checkedValue="Y" defaultValue="N" prompt="摊销调整" readOnly="true" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onLinesUpdateHandler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form labelWidth="130" title="HAP_QUERY_TITLE" width="800">
+                <a:hBox labelWidth="130">
+                    <a:lov name="from_tag_number" bindTarget="eam_asset_batch_classify_query_ds" prompt="卡片号从"/>
+                    <a:lov name="tag_number" bindTarget="eam_asset_batch_classify_query_ds" prompt="卡片号到"/>
+                </a:hBox>
+                <a:hBox labelWidth="130">
+                    <a:lov name="from_entity_class_desc" bindTarget="eam_asset_batch_classify_query_ds" prompt="资产类别从"/>
+                    <a:lov name="entity_class_desc" bindTarget="eam_asset_batch_classify_query_ds" prompt="资产类别到"/>
+                </a:hBox>
+                <a:hBox labelWidth="130">
+                    <a:lov name="from_using_unit_desc" bindTarget="eam_asset_batch_classify_query_ds" prompt="使用部门从"/>
+                    <a:lov name="using_unit_desc" bindTarget="eam_asset_batch_classify_query_ds" prompt="使用部门到"/>
+                </a:hBox>
+                <!-- <a:hBox labelWidth="130">
+                    <a:checkBox name="dep_flag" checkedValue="Y" prompt="是否已提完折旧" uncheckedValue="N"/>
+                </a:hBox> -->
+            </a:form>
+            <a:form labelWidth="130" title="" width="800">
+                <a:hBox labelWidth="130">
+                    <a:lov name="to_entity_class_desc" bindTarget="eam_asset_batch_lines_ds"/>
+                    <!--    <a:checkBox name="new_dep_flag" bindTarget="eam_asset_batch_lines_ds">
+                        <a:events>
+                            <a:event name="change" handler="depFlagChangeFun"/>
+                        </a:events>
+                    </a:checkBox> -->
+                    <!-- <a:checkBox name="copy_flag" bindTarget="eam_asset_batch_lines_ds"/> -->
+                    <!-- <a:checkBox name="adjustment_flag" bindTarget="eam_asset_batch_lines_ds"/> -->
+                    <a:checkBox name="amortize_adj" bindTarget="eam_asset_batch_lines_ds"/>
+                </a:hBox>
+            </a:form>
+            <a:hBox>
+                <a:button click="batch_query" text="HAP_QUERY"/>
+                <a:button click="batch_reset" text="HAP_RESET"/>
+                <a:button click="batch_classify_asset" icon="${/request/@context_path}/images/add.gif" text="批量重分类"/>
+                <a:button click="batch_back" text="HAP_BACK" width="60"/>
+            </a:hBox>
+            <a:grid bindTarget="eam_asset_batch_classify_result_ds" height="240" navBar="true" width="800">
+                <a:toolBar>
+                    <a:label/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="tag_number" align="center" width="160"/>
+                    <a:column name="asset_name" align="center" width="160"/>
+                    <a:column name="entity_class_desc" align="center" width="140"/>
+                    <a:column name="using_unit_desc" align="center" width="140"/>
+                    <!-- <a:column name="depr_year" align="center" width="80"/> -->
+                    <!-- <a:column name="used_month" align="center" width="80"/> -->
+                    <a:column name="lifed_in_month" align="center" width="80"/>
+                    <a:column name="remaining_life_in_month" align="center" width="80"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

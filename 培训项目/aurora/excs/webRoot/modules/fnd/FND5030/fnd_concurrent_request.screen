@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: likun $
+    $Date: 2012/03/29 07:25:18 $
+    $Revision: 1.5 $
+    $Purpose: “并发查询
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="fnd_concurrent_request_log_link" url="${/request/@context_path}/modules/fnd/FND5030/fnd_concurrent_request_log.screen"/>
+        <a:link id="fnd_concurrent_request_job_log_link" url="${/request/@context_path}/modules/fnd/FND5030/fnd_concurrent_request_job_log.screen"/>
+        <script><![CDATA[
+
+            function query() {
+                $('fnd_concurrent_request_result_ds').query();
+            }
+            
+            function reset() {
+                $('fnd_concurrent_request_query_ds').reset();
+            }
+            
+            
+            
+            function requestDetails(value, record, name) {
+                var request_id = record.get('request_id');
+                if (request_id) {
+                   var url = record.get('url'); 
+                    var path = '${/request/@context_path}/'+url+ '?request_id=' + request_id;
+                    var window_id = "fnd_concurrent_request_detail_window";
+                    return "<a href=\"javascript:showdetails('" + window_id + "','" + path + "')\">"+request_id+"</a>";
+                } else {
+                    return '';
+                }
+            }
+            
+            function showdetails(window_id, path) {
+                new Aurora.Window({
+                    id: window_id,
+                    url: path,
+                    title: '请求结果',
+                    fullScreen: true
+            
+                });
+            }
+            
+            
+            
+            function actionRenderer(value, record, name) {
+                var request_id = record.get('request_id');
+                var job_flag = record.get('job_flag');
+                if (request_id) {
+                    var window_id = "fnd_concurrent_request_log_window";
+                    if (job_flag == 'Y') {
+                        var job_name = record.get('job_name');
+                        var path = $('fnd_concurrent_request_job_log_link').getUrl() + '?request_id=' + request_id + '&job_name=' + job_name;
+                    } else {
+                        var path = $('fnd_concurrent_request_log_link').getUrl() + '?request_id=' + request_id;
+                    }
+                    return "<a href=\"javascript:editProgram('" + window_id + "','" + path + "')\">日志信息</a>";
+                } else {
+                    return '';
+                }
+            }
+            
+            function editProgram(window_id, path) {
+                new Aurora.Window({
+                    id: window_id,
+                    url: path,
+                    title: '日志信息',
+                    fullScreen: true
+            
+                });
+            }
+            
+            function addForm() {
+                new Aurora.Window({
+                    id: 'fnd_concurrent_request_create_window',
+                    url: 'fnd_concurrent_request_create.screen',
+                    title: '请求创建',
+                    height: 520,
+                    width: 600
+                });
+            }
+            
+            function StopJob() {
+                var records = $('fnd_concurrent_request_result_ds').getSelected();
+                if (records.length < 1) {
+                    Aurora.showMessage('提示', '请至少选择一条数据!');
+                } else {
+                    Aurora.showConfirm('提示', '确认要暂挂吗？', function() {
+                        var data = [];
+                        for (var t = 0;t < records.length;t++) {
+                            job_flag = records[t].get('job_flag');
+                            if (job_flag == 'N') {
+                                Aurora.showMessage('提示', '您所选的请求中包含非周期性的请求，请查证!');
+                                return;
+                            }
+                            phase_code = records[t].get('phase_code');
+                            if (phase_code != 'R') {
+                                Aurora.showMessage('提示', '只有处于运行状态的请求才能被暂挂，请查证!');
+                                return;
+                            }
+            
+                            data.push(records[t].data);
+                        }
+                        Aurora.request({
+                            url: 'fnd_request_job_stop.svc',
+                            para: data,
+                            success: function() {
+                                Aurora.showMessage('提示', '操作成功!', function() {
+                                    query();
+                                });
+                            },
+                            scope: this
+                        });
+            
+                    });
+                }
+            }
+            
+            function RunJob() {
+                var records = $('fnd_concurrent_request_result_ds').getSelected();
+                if (records.length < 1) {
+                    Aurora.showMessage('提示', '请至少选择一条数据!');
+                } else {
+                    Aurora.showConfirm('提示', '确认要恢复吗？', function() {
+                        var data = [];
+                        for (var t = 0;t < records.length;t++) {
+                            job_flag = records[t].get('job_flag');
+                            if (job_flag == 'N') {
+                                Aurora.showMessage('提示', '您所选的请求中包含非周期性的请求，请查证!');
+                                return;
+                            }
+            
+                            phase_code = records[t].get('phase_code');
+                            if (phase_code != 'H') {
+                                Aurora.showMessage('提示', '只有处于挂起状态的请求才能被恢复，请查证!');
+                                return;
+                            }
+            
+                            data.push(records[t].data);
+                        }
+                        Aurora.request({
+                            url: 'fnd_request_job_run.svc',
+                            para: data,
+                            success: function() {
+                                Aurora.showMessage('提示', '操作成功!', function() {
+                                    query();
+                                });
+                            },
+                            scope: this
+                        });
+            
+                    });
+                }
+            }
+            
+            function DropJOB() {
+                var records = $('fnd_concurrent_request_result_ds').getSelected();
+                if (records.length < 1) {
+                    Aurora.showMessage('提示', '请至少选择一条数据!');
+                } else {
+                    Aurora.showConfirm('提示', '确认要删除吗？', function() {
+                        var data = [];
+                        for (var t = 0;t < records.length;t++) {
+                            job_flag = records[t].get('job_flag');
+                            if (job_flag == 'N') {
+                                Aurora.showMessage('提示', '您所选的请求中包含非周期性的请求，请查证!');
+                                return;
+                            }
+                            phase_code = records[t].get('phase_code');
+                            if (phase_code == 'D') {
+                                Aurora.showMessage('提示', '该请求已经处于删除状态，请查证!');
+                                return;
+                            }
+                            data.push(records[t].data);
+                        }
+                        Aurora.request({
+                            url: 'fnd_request_job_drop.svc',
+                            para: data,
+                            success: function() {
+                                Aurora.showMessage('提示', '操作成功!', function() {
+                                    query();
+                                });
+                            },
+                            scope: this
+                        });
+            
+                    });
+                }
+            }
+            
+            function ExeJOB() {
+                var records = $('fnd_concurrent_request_result_ds').getSelected();
+                if (records.length < 1) {
+                    Aurora.showMessage('提示', '请至少选择一条数据!');
+                } else {
+                    Aurora.showConfirm('提示', '确认要执行吗？', function() {
+                        var data = [];
+                        for (var t = 0;t < records.length;t++) {
+                            job_flag = records[t].get('job_flag');
+                            if (job_flag == 'N') {
+                                Aurora.showMessage('提示', '您所选的请求中包含非周期性的请求，请查证!');
+                                return;
+                            }
+                            phase_code = records[t].get('phase_code');
+                            if (phase_code == 'D') {
+                                Aurora.showMessage('提示', '删除状态的请求不能运行，请查证!');
+                                return;
+                            }
+                            data.push(records[t].data);
+                        }
+                        Aurora.request({
+                            url: 'fnd_request_job_execute.svc',
+                            para: data,
+                            success: function() {
+                                Aurora.showMessage('提示', '操作成功!', function() {
+                                    query();
+                                });
+                            },
+                            scope: this
+                        });
+            
+                    });
+                }
+            }
+            
+            function PhaseCodeRenderer(value, rec, name) {
+                var phase_code = rec.get('phase_code');
+                if (phase_code == 'R' || phase_code == 'F' || phase_code == 'D') {
+                    return "<div style='background-color:#00FF00'>" + value + "</div>";
+                } else if (phase_code == 'E') {
+                    return "<div style='background-color:#FF0000'>" + value + "</div>";
+                } else if (phase_code == 'H') {
+                    return "<div style='background-color:#FFFF00'>" + value + "</div>";
+                } else {
+                    return value;
+                }
+            }
+            
+            function StatusCodeRenderer(value, rec, name) {
+                var status_code = rec.get('status_code');
+                if (status_code == 'R' || status_code == 'F' || status_code == 'D') {
+                    return "<div style='background-color:#00FF00'>" + value + "</div>";
+                } else if (status_code == 'E') {
+                    return "<div style='background-color:#FF0000'>" + value + "</div>";
+                } else if (status_code == 'H') {
+                    return "<div style='background-color:#FFFF00'>" + value + "</div>";
+                } else {
+                    return value;
+                }
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="job_flag_ds">
+                <a:datas>
+                    <a:record name="是" code="Y"/>
+                    <a:record name="否" code="N"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="request_status_ds" lookupCode="FND_CONCURRENT_REQUEST_STATUS"/>
+            <a:dataSet id="status_code_ds" lookupCode="FND_CONCURRENT_REQUEST_STATUS"/>
+            <a:dataSet id="fnd_concurrent_request_query_ds" model="fnd.FND5030.fnd_concurrent_request">
+                <a:fields>
+                    <a:field name="phase_code_desc" displayField="code_value_name" options="request_status_ds" returnField="phase_code" valueField="code_value"/>
+                    <a:field name="status_code_desc" displayField="code_value_name" options="status_code_ds" returnField="status_code" valueField="code_value"/>
+                    <a:field name="request_code" lovHeight="500" lovService="fnd.FND5020.fnd_request_info_lov" lovWidth="500" title="请求编码">
+                        <a:mapping>
+                            <a:map from="request_info_id" to="request_info_id"/>
+                            <a:map from="request_code" to="request_code"/>
+                            <a:map from="request_name" to="request_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="job_flag_desc" displayField="name" options="job_flag_ds" returnField="job_flag" valueField="code"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="fnd_concurrent_request_result_ds" autoCount="true" autoQuery="true" fetchAll="false" model="fnd.FND5030.fnd_concurrent_request" queryDataSet="fnd_concurrent_request_query_ds" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="3" labelWidth="100" marginWidth="65" title="请求定义" width="750">
+                <a:textField name="request_id" bindTarget="fnd_concurrent_request_query_ds" prompt="请求ID"/>
+                <a:lov name="request_code" bindTarget="fnd_concurrent_request_query_ds" prompt="请求编码"/>
+                <a:label name="request_name" bindTarget="fnd_concurrent_request_query_ds" prompt="请求名称"/>
+                <a:comboBox name="phase_code_desc" bindTarget="fnd_concurrent_request_query_ds" prompt="运行状态"/>
+                <a:comboBox name="status_code_desc" bindTarget="fnd_concurrent_request_query_ds" prompt="请求状态"/>
+                <a:comboBox name="job_flag_desc" bindTarget="fnd_concurrent_request_query_ds" prompt="周期性"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="query" text="HAP_QUERY"/>
+                <a:button click="reset" text="HAP_RESET"/>
+                <a:button click="addForm" text="提交新请求"/>
+                <a:button click="StopJob" text="JOB暂挂"/>
+                <a:button click="RunJob" text="JOB恢复"/>
+                <a:button click="DropJOB" text="JOB删除"/>
+                <a:button click="ExeJOB" text="立即执行"/>
+            </a:hBox>
+            <a:grid id="grid" bindTarget="fnd_concurrent_request_result_ds" height="430" marginWidth="65" navBar="true" width="750">
+                <a:columns>
+                    <a:column name="request_id" align="center" prompt="请求ID" renderer="requestDetails" width="45"/>
+                    <a:column name="request_code" align="center" prompt="请求编码" width="70"/>
+                    <a:column name="request_name" align="center" prompt="请求名称" width="80"/>
+                    <a:column name="phase_code_desc" align="center" prompt="运行状态" renderer="PhaseCodeRenderer" width="50"/>
+                    <a:column name="status_code_desc" align="center" prompt="请求状态" renderer="StatusCodeRenderer" width="50"/>
+                    <a:column name="job_flag_desc" align="center" prompt="周期性" width="40"/>
+                    <a:column name="request_parameter" align="center" prompt="请求参数" width="100"/>
+                    <a:column name="start_date_desc" align="center" prompt="开始时间" width="115"/>
+                    <a:column name="end_date_desc" align="center" prompt="结束时间/下次运行时间" width="115"/>
+                    <!-- <a:column align="center" prompt="信息" renderer="requestDetails" width="55"/> -->
+                    <a:column align="center" prompt="日志" renderer="actionRenderer" width="55"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

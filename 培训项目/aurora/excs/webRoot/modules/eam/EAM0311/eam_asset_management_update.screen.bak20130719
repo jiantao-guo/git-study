@@ -1,0 +1,1159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010
+    $Date: 2013-2-28 下午2:00:50  
+    $Revision: 1.0  
+    $Purpose: 资产台账管理维护页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="eam.eam0311.eam0311_asset_headers_query" rootPath="eam0311_asset_msg"/>
+        <a:model-query fetchAll="true" model="eam.eam0311.eam0311_requisition_lines_edit" rootPath="req_line"/>
+        <a:model-query fetchAll="true" model="eam.eam0020.eam0020_asset_books_lov" queryOrderBy="asset_book_code" rootPath="eam0020_asset_books_list"/>
+        <a:model-query defaultWhereClause="t1.base_trx_category = &apos;ADD&apos;" fetchAll="true" model="eam.eam0120.eam_transaction_types_lv" rootPath="eam0310_transaction_types"/>
+        <a:model-query model="eam.eam0310.eam0310_asset_init_status" rootPath="eam0310_asset_status"/>
+        <a:model-query fetchAll="true" model="eam.eam0310.eam0310_employee_primary_position" rootPath="eam0311_employee_pmsg"/>
+        <a:model-query model="eam.common.eam_currency_query" rootPath="eam_currency"/>
+        <a:model-query fetchAll="true" model="/eam/eam0030/eam0030_default_responsibility_company" rootPath="eam0030_default_res_com"/>
+        <a:model-query fetchAll="true" model="/eam/eam0030/eam0030_default_responsibility_center" rootPath="eam0030_default_res_center"/>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+        	
+        	Aurora.onReady(eam0311_init);
+        	
+        	function eam0311_init() {
+        	     
+        	    var form_record = $('eam0810_asset_management_result_ds').getCurrentRecord();
+        	    
+                var records = $('eam0311_cost_source_ds').getAll();
+              	var value = form_record.get("asset_source_type");
+              	
+              	var tabs = $("eam0810_asset_management_tab"); 
+                // 当取得来源为"在建工程结转","抵债资产转自用","换入"时,"成本来源"标签可编辑
+                // 当取得来源为"购置"时,也可编辑,但里面只可编辑[价值类型],[本次结转]两个字段.
+                if(value == "FROMCIP" || value == "FROMDEBT" || value == "TRANSFERIN") {
+                    tabs.setEnabled(8);
+                } else {
+                    tabs.setDisabled(8); 
+                }
+              	 
+                for(var i=0; i<records.length; i++) {
+              	    var record = records[i];
+              	     
+              	    var default_value_type = '${/model/eam0311_asset_msg/record/@value_type}';
+                
+	                if(default_value_type == 'FINAL') {
+	                    record.getMeta().getField('cost_value_type_desc').setReadOnly(true);
+	                }
+              	    
+              	    record.set('cost_value_type', default_value_type);
+              	    
+					switch(asset_source_type) {
+	                     // 在建工程结转
+	                    case 'FROMCIP':
+	                    	//  能选择的源对象号资产分类为在建工程的,状态为建设中的资产,[价值类型] 可编辑,且值为"决算价"或"暂估价",默认值为"决算价"
+	                    	record.getField("source_asset_code").setLovPara('status', 'IN_PROCESS');
+	                    	record.getField("source_asset_code").setLovPara('asset_type', 'CIP');
+	                    	record.getField("cost").setRequired(true);
+	                    break;
+	                    // 抵债转自用
+	                    case 'FROMDEBT':
+	                    // 能选择的源对象为资产分类为抵债资产,且状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+	                    record.getField("source_asset_code").setLovService("eam.eam0310.eam0310_source_asset_for_debt");
+	                    record.getField("source_asset_code").setLovPara("asset_book_id", '${/parameter/@asset_book_id}');
+	                    record.getField("source_asset_code").setLovPara("asset_id", '${/parameter/@asset_id}');
+	                    break;
+	                    // 换入
+	                    case 'TRANSFERIN':
+	                    // 能选择源对象为固定资产或无形资产及状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+	                    record.getField("source_asset_code").setLovService('eam.eam0310.eam0310_source_asset_for_trans');
+	                    record.getField("source_asset_code").setLovPara("asset_book_id", '${/parameter/@asset_book_id}');
+	                    record.getField("source_asset_code").setLovPara("asset_id", '${/parameter/@asset_id}');
+	                    break;
+	                    // 购置
+	                    /* case 'PURCHASE':
+	                    record.getMeta().getField('source_asset_code').setReadOnly(true);
+	                	record.getMeta().getField('source_asset_code').setRequired(false);
+	                    break;  */
+	                }              	    
+              	}
+        	}
+        	
+        	function onCostLoad(dataset) {
+        	    var form_record = $('eam0810_asset_management_result_ds').getCurrentRecord();
+        	    
+              	var asset_source_type = form_record.get("asset_source_type");
+        	    var records = dataset.getAll();
+        	    for(var i=0; i<records.length; i++) {
+              	    var record = records[i];
+              	    
+              	    
+              	    var default_value_type = '${/model/eam0311_asset_msg/record/@value_type}';
+                
+	                if(default_value_type == 'FINAL') {
+	                    record.getMeta().getField('cost_value_type_desc').setReadOnly(true);
+	                }
+              	    
+              	    record.set('cost_value_type', default_value_type);
+              	    
+					switch(asset_source_type) {
+	                     // 在建工程结转
+	                    case 'FROMCIP':
+	                    	//  能选择的源对象号资产分类为在建工程的,状态为建设中的资产,[价值类型] 可编辑,且值为"决算价"或"暂估价",默认值为"决算价"
+	                    	record.getField("source_asset_code").setLovPara('status', 'IN_PROCESS');
+	                    	record.getField("source_asset_code").setLovPara('asset_type', 'CIP');
+	                    	record.getField("cost").setRequired(true);
+	                    break;
+	                    // 抵债转自用
+	                    case 'FROMDEBT':
+	                    // 能选择的源对象为资产分类为抵债资产,且状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+	                    record.getField("source_asset_code").setLovService("eam.eam0310.eam0310_source_asset_for_debt");
+	                    record.getField("source_asset_code").setLovPara("asset_book_id", '${/parameter/@asset_book_id}');
+	                    record.getField("source_asset_code").setLovPara("asset_id", '${/parameter/@asset_id}');
+	                    break;
+	                    // 换入
+	                    case 'TRANSFERIN':
+	                    // 能选择源对象为固定资产或无形资产及状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+	                    record.getField("source_asset_code").setLovService('eam.eam0310.eam0310_source_asset_for_trans');
+	                    record.getField("source_asset_code").setLovPara("asset_book_id", '${/parameter/@asset_book_id}');
+	                    record.getField("source_asset_code").setLovPara("asset_id", '${/parameter/@asset_id}');
+	                    break;
+	                    // 购置
+	                    /* case 'PURCHASE':
+	                    record.getMeta().getField('source_asset_code').setReadOnly(true);
+	                	record.getMeta().getField('source_asset_code').setRequired(false);
+	                    break; */ 
+	                }              	    
+              	}
+        	}
+        
+			// 保存
+            function eam0810_save() {
+            
+                /* Aurora.Masker.mask(Ext.getBody(), '${l:AST_ASSET.WAITING_FOR_OPERATION}'); */
+                
+                if(!$('eam0810_asset_management_result_ds').validate()) {
+                    return false;
+                }
+                
+                var allocate_element_type = $('eam0810_asset_management_result_ds').getCurrentRecord().get('allocate_element_type');
+                var result_ds = $('eam0810_eam_asset_allocations_result_ds');
+            	//mantis24468 当因子类型为比率时,保存分配记录时,先校验分配数量的和是否为1,不为1则报错.
+                if(allocate_element_type == 'RATIO' && result_ds){
+           		    var rs = result_ds.getAll();
+           		    var sum = 0;
+           		    for (var j = 0;j < rs.length;j++) {
+                            var r = rs[j];
+                            sum += r.get('quantity');
+                    }
+                    if(sum != 1){
+                        Aurora.showErrorMessage('${l:PROMPT}', '${l:EAM_ASSET_ALLOCATIONS.ALLOCATE_ELEMENT_TYPE}');
+                        return;
+                    }    
+           		}
+                
+                var unit_id = "${/model/eam0311_employee_pmsg/record/@unit_id}";
+                var employee_id = '${/model/eam0311_employee_pmsg/record/@employee_id}';
+                var position_id = '${/model/eam0311_employee_pmsg/record/@position_id}';
+                var requisition_line_id = '${/parameter/@requisition_line_id}';
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+                
+                var record = $('eam0810_asset_management_result_ds').getCurrentRecord();
+                
+                record.set('unit_id', unit_id);
+                record.set('employee_id', employee_id);
+                record.set('position_id', position_id);
+                record.set('requisition_line_id', requisition_line_id);
+                record.set('requisition_header_id', requisition_header_id); 
+                record.set('to_location_id', record.get('location_id'));
+                
+                $('eam0810_asset_management_result_ds').submit();
+            }
+            
+            // function submit_success() { 
+                // var requisition_line_id = '${/parameter/@requisition_line_id}';
+                // var asset_book_id = '${/parameter/@asset_book_id}';
+                // var asset_id = '${/parameter/@asset_id}';
+                
+                // $('eam0810_asset_management_result_ds').setQueryParameter('asset_book_id', asset_book_id);
+                // $('eam0810_asset_management_result_ds').setQueryParameter('requisition_line_id', requisition_line_id);
+                // $('eam0810_asset_management_result_ds').setQueryParameter('asset_id', asset_id);
+                // $('eam0810_asset_management_result_ds').query(); 
+                // // alert('${l:BGT_BUDGET_STRUCTURE_DIMENSION.SAVE_SUC}');
+            // }
+            
+            function onQueryUpdateFun(dataSet, record, name, value){
+                //资产账簿修改时资产大类联动改变
+                if (name == 'asset_book_id') {
+                    record.set('category_id', '');
+                    record.set('category_desc', '');
+                    record.getMeta().getField('category_desc').setReadOnly(false);
+                    $('eam0810_asset_categories_list_ds').setQueryParameter('asset_book_id',record.get("asset_book_id"));
+                    $('eam0810_asset_categories_list_ds').query();
+                }
+                //资产大类修改时财务分类联动改变
+                if (name == 'category_id') {
+                    //alert(record.get("category_id"));
+                    record.set('fin_class_id', '');
+                    record.set('entity_class_id', '');
+                    record.getMeta().getField('fin_class_id').setReadOnly(false);
+                    record.getMeta().getField('entity_class_id').setReadOnly(false);
+                    $('eam0810_asset_fin_class_list_ds').setQueryParameter('category_id',record.get("category_id"));
+                    $('eam0810_asset_fin_class_list_ds').query();
+                //资产大类修改时实物分类联动改变
+                    $('eam0810_asset_entity_class_list_ds').setQueryParameter('category_id',record.get("category_id"));
+                    $('eam0810_asset_entity_class_list_ds').query();
+                }
+                
+            }
+            
+            function eam0810AssetCodeEdit(record, name){
+                if(name == 'asset_code'){ 
+	                if (!record.isNew) {
+	                    return '';
+	                } else {
+	                    return 'eam0810_tf_upper';
+	                }
+                }
+                if(name == 'asset_book_desc'){  
+	                if (!record.isNew) {
+	                    return '';
+	                } else {
+	                    return 'eam0810_cbbx';
+	                }
+                }
+            }
+            
+            //ds第一次加载grid数据第一行对应form数据某些字段可修改
+            function onAssetManLoad(ds) {
+                var record = ds.getCurrentRecord();
+                 
+                if (record.get('value_man_company_id') != undefined && record.get('value_man_company_id') != '' && record.get('value_man_company_id') != null) {
+                    record.getMeta().getField('value_man_unit_desc').setReadOnly(false);
+                    record.getField("value_man_unit_desc").setLovPara('company_id', record.get('value_man_company_id'));
+                }
+            
+                if (record.get('value_man_unit_id') != undefined && record.get('value_man_unit_id') != '' && record.get('value_man_unit_id') != null) {
+                    record.getMeta().getField('value_man_position_desc').setReadOnly(false);
+                    record.getField("value_man_position_desc").setLovPara('unit_id', record.get('value_man_unit_id'));
+                }
+            
+                if (record.get('entity_company_id') != undefined && record.get('entity_company_id') != '' && record.get('entity_company_id') != null) {
+                    record.getMeta().getField('entity_man_unit_desc').setReadOnly(false);
+                    record.getField("entity_man_unit_desc").setLovPara('company_id', record.get('entity_company_id'));
+                }
+            
+                if (record.get('entity_unit_id') != undefined && record.get('entity_unit_id') != '' && record.get('entity_unit_id') != null) {
+                    record.getMeta().getField('entity_man_position_desc').setReadOnly(false);
+                    record.getField("entity_man_position_desc").setLovPara('unit_id', record.get('entity_unit_id'));
+                }
+            
+                if (record.get('responsibility_company_id') != undefined && record.get('responsibility_company_id') != '' && record.get('responsibility_company_id') != null) {
+                    record.getMeta().getField('responsibility_center_desc').setReadOnly(false);
+                    record.getField("responsibility_center_desc").setLovPara('company_id', record.get('responsibility_company_id'));
+                }
+                record.getField('entity_class_desc').setLovPara('category_id', record.get('category_id'));
+                
+            }
+            
+            //grid数据选择某一行对应form数据某些字段可修改
+            function gridRowClick(grid, row, record) {
+                if (record.get('asset_book_id') != undefined && record.get('asset_book_id') != '' && record.get('asset_book_id') != null) {
+                    record.getMeta().getField('category_desc').setReadOnly(false);
+                    record.getField("category_desc").setLovPara('asset_book_id', record.get('asset_book_id'));
+                    
+                     record.getField("value_man_company_desc").setLovPara('asset_book_id', record.get('asset_book_id'));
+                     record.getField("entity_man_company_desc").setLovPara('asset_book_id', record.get('asset_book_id'));
+                     record.getField("responsibility_company_desc").setLovPara('asset_book_id', record.get('asset_book_id'));
+                }
+                if (record.get('category_id') != undefined && record.get('category_id') != '' && record.get('category_id') != null) {
+                    record.getMeta().getField('entity_class_desc').setReadOnly(false);
+                    record.getField("entity_class_desc").setLovPara('category_id', record.get('category_id'));
+                }
+                if (record.get('value_man_company_id') != undefined && record.get('value_man_company_id') != '' && record.get('value_man_company_id') != null) {
+                    record.getMeta().getField('value_man_unit_desc').setReadOnly(false);
+                    record.getField("value_man_unit_desc").setLovPara('company_id', record.get('value_man_company_id'));
+                }
+            
+                if (record.get('value_man_unit_id') != undefined && record.get('value_man_unit_id') != '' && record.get('value_man_unit_id') != null) {
+                    record.getMeta().getField('value_man_position_desc').setReadOnly(false);
+                    record.getField("value_man_position_desc").setLovPara('unit_id', record.get('value_man_unit_id'));
+                }
+            
+                if (record.get('entity_company_id') != undefined && record.get('entity_company_id') != '' && record.get('entity_company_id') != null) {
+                    record.getMeta().getField('entity_man_unit_desc').setReadOnly(false);
+                    record.getField("entity_man_unit_desc").setLovPara('company_id', record.get('entity_company_id'));
+                }
+            
+                if (record.get('entity_unit_id') != undefined && record.get('entity_unit_id') != '' && record.get('entity_unit_id') != null) {
+                    record.getMeta().getField('entity_man_position_desc').setReadOnly(false);
+                    record.getField("entity_man_position_desc").setLovPara('unit_id', record.get('entity_unit_id'));
+                }
+            
+                if (record.get('responsibility_company_id') != undefined && record.get('responsibility_company_id') != '' && record.get('responsibility_company_id') != null) {
+                    record.getMeta().getField('responsibility_center_desc').setReadOnly(false);
+                    record.getField("responsibility_center_desc").setLovPara('company_id', record.get('responsibility_company_id'));
+                }
+            }
+            
+            function onUpdateFun(dataSet, record, name, value, oldValue) {
+                if (name == 'asset_book_id') { 
+                    lovField = record.getField("category_desc");
+                    record.getMeta().getField('category_desc').setReadOnly(false);
+                    record.set('category_id', '');
+                    record.set('category_desc', '');
+                    lovField.setLovPara('asset_book_id', record.get('asset_book_id'));
+                    
+                    lovField3 = record.getField("value_man_company_desc");
+                    lovField3.setLovPara('asset_book_id', record.get('asset_book_id'));
+                    
+                    lovField4 = record.getField("entity_man_company_desc");
+                    lovField4.setLovPara('asset_book_id', record.get('asset_book_id'));
+                    
+                    lovField5 = record.getField("responsibility_company_desc");
+                    lovField5.setLovPara('asset_book_id', record.get('asset_book_id'));
+                } else if (name == 'category_id') { 
+                    lovField = record.getField("entity_class_desc");
+                    record.getMeta().getField('entity_class_desc').setReadOnly(false);
+                    record.set('entity_class_id', '');
+                    record.set('entity_class_desc', '');
+                    lovField.setLovPara('category_id', record.get('category_id'));
+                } else if (name == 'value_man_company_id') {
+                    lovField = record.getField("value_man_unit_desc");
+                    record.getMeta().getField('value_man_unit_desc').setReadOnly(false);
+                    record.set('value_man_unit_id', '');
+                    record.set('value_man_unit_desc', '');
+                    record.set('value_man_position_id', '');
+                    record.set('value_man_position_desc', '');
+                    lovField.setLovPara('company_id', record.get('value_man_company_id'));
+                } else if (name == 'value_man_unit_id') {
+                    lovField = record.getField("value_man_position_desc");
+                    record.getMeta().getField('value_man_position_desc').setReadOnly(false);
+                    record.set('value_man_position_id', '');
+                    record.set('value_man_position_desc', '');
+                    lovField.setLovPara('unit_id', record.get('value_man_unit_id'));
+                } else if (name == 'entity_company_id') {
+                    lovField = record.getField("entity_man_unit_desc");
+                    record.getMeta().getField('entity_man_unit_desc').setReadOnly(false);
+                    record.set('entity_unit_id', '');
+                    record.set('entity_man_unit_desc', '');
+                    record.set('entity_position_id', '');
+                    record.set('entity_man_position_desc', '');
+                    lovField.setLovPara('company_id', record.get('entity_company_id'));
+                } else if (name == 'entity_unit_id') {
+                    lovField = record.getField("entity_man_position_desc");
+                    record.getMeta().getField('entity_man_position_desc').setReadOnly(false);
+                    record.set('entity_position_id', '');
+                    record.set('entity_man_position_desc', '');
+                    lovField.setLovPara('unit_id', record.get('entity_unit_id'));
+                } else if (name == 'responsibility_company_id') {
+                    lovField = record.getField("responsibility_center_desc");
+                    record.getMeta().getField('responsibility_center_desc').setReadOnly(false);
+                    record.set('responsibility_center_id', '');
+                    record.set('responsibility_center_desc', '');
+                    lovField.setLovPara('company_id', record.get('responsibility_company_id'));
+                } else if (name == 'asset_source_type') {
+                    var asset_id = record.get("asset_id");
+                    var requisition_header_id = record.get("requisition_header_id");
+                    var requisition_line_id = record.get("requisition_line_id");
+                    // 删除成本来源信息
+                    delete_assetCostMsg(asset_id,requisition_header_id,requisition_line_id);
+                    var tabs = $("eam0810_asset_management_tab"); 
+                    // 当取得来源为"在建工程结转","抵债资产转自用","换入"时,"成本来源"标签可编辑
+                    // 当取得来源为"购置"时,也可编辑,但里面只可编辑[价值类型],[本次结转]两个字段.
+                    if(value == "FROMCIP" || value == "FROMDEBT" || value == "TRANSFERIN") {
+                        tabs.setEnabled(8);
+                    } else {
+                        tabs.setDisabled(8); 
+                    }
+                } else if (name == 'quantity') {
+                    var price = record.get('price');
+                    record.set('cost', value * price);
+                } else if (name == 'price') {
+                    var quantity = record.get('quantity');
+                    record.set('cost', value * quantity);
+                } else if (name == 'gain_date' || name == 'start_use_date' || name == 'date_of_purchase') {
+                    record.validate('start_use_date');
+                    record.validate('date_of_purchase');
+                    record.validate('gain_date');
+                /* } else if (name == 'start_use_date') {
+                    record.validate('gain_date');
+                    record.validate('date_of_purchase');
+                } else if (name == 'date_of_purchase') {
+                    record.validate('gain_date');
+                    record.validate('start_use_date'); */
+                } else if (name == 'entity_class_id') {
+                    
+                    $('eam0810_eam_asset_character_values_result_ds').setQueryParameter('asset_id', record.get('asset_id'));
+                    $('eam0810_eam_asset_character_values_result_ds').setQueryParameter('entity_class_id', record.get('entity_class_id'));
+                    $('eam0810_eam_asset_character_values_result_ds').query();
+                }
+            }
+            
+            // 删除成本来源
+            function delete_assetCostMsg(asset_id,requisition_header_id,requisition_line_id) {
+                if(asset_id) {
+                    Aurora.request({
+	                    url: '${/request/@context_path}/autocrud/eam.eam0310.eam0310_asset_cost_sources_edit/execute?asset_id=' + asset_id + '&requisition_header_id=' + requisition_header_id + '&requisition_line_id=' + requisition_line_id,
+	                    success: function(args) {
+	                         
+	                    }
+	                });
+                }
+            }
+            
+            //date_of_purchase  gain_date  start_use_date
+            function dateValidate(record, name, value) {
+                if (name == 'date_of_purchase' || name == 'gain_date' || name == 'start_use_date') {
+                    var date_of_purchase = record.get('date_of_purchase');
+                    var gain_date = record.get('gain_date');
+                    var start_use_date = record.get('start_use_date');
+                    if (typeof(gain_date) != 'undefined' && !Ext.isEmpty(gain_date)) {
+                        if (!compareDate(date_of_purchase, gain_date)) {
+                            return '${l:EAM_ASSET_HEADERS.GAIN_DATE_VALIDATE}';
+                        }
+                    }
+                    if (typeof(start_use_date) != 'undefined' && !Ext.isEmpty(start_use_date)) {
+                        if (!compareDate(gain_date, start_use_date)) {
+                            return '${l:EAM_ASSET_HEADERS.START_USE_DATE_VALIDATE}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            // 事务类型加载
+            function eam0311_onTransFocusHandler() {
+                var asset_book_id = '${/parameter/@asset_book_id}';
+                var base_trx_category = '${/model/eam0310_transaction_types/record/@base_trx_category}';
+                $('eam0310_trans_type_ds').setQueryParameter('base_trx_category', base_trx_category);
+                $('eam0310_trans_type_ds').setQueryParameter('asset_book_id', asset_book_id);
+                $('eam0310_trans_type_ds').query();
+            }
+             
+            // 返回
+            function eam0810_back() {
+                $('eam0310_req_lines_ds').setQueryParameter('requisition_header_id', '${/parameter/@requisition_header_id}');
+                $('eam0310_req_lines_ds').query();
+        		$('eam0310_assetManage_screen').close();
+            }
+            
+            // 
+            function onCostSourceAdd(dataSet, record, index) {
+                var form_record = $("eam0810_asset_management_result_ds").getCurrentRecord();
+                var asset_source_type = form_record.get("asset_source_type");
+                var asset_source_type_desc = form_record.get("asset_source_type_desc");
+                var requisition_header_id = form_record.get("requisition_header_id");
+                var requisition_line_id = form_record.get("requisition_line_id");
+                record.set('source_type', asset_source_type);
+                record.set('source_type_desc', asset_source_type_desc);
+                record.set('document_type', 'EAM_REQUISITION');
+                record.set('document_id', requisition_header_id);
+                record.set('document_line_id', requisition_line_id);
+                
+                var default_value_type = '${/model/req_line/record/@value_type}';
+                
+                if(default_value_type == 'FINAL') {
+                    record.getMeta().getField('cost_value_type_desc').setReadOnly(true);
+                }
+                
+          	    record.set('cost_value_type', default_value_type);
+              	    
+                switch(asset_source_type) {
+                     // 在建工程结转
+                    case 'FROMCIP':
+                    	//  能选择的源对象号资产分类为在建工程的,状态为建设中的资产,[价值类型] 可编辑,且值为"决算价"或"暂估价",默认值为"决算价"
+                    	record.getField("source_asset_code").setLovPara('status', 'IN_PROCESS');
+                    	record.getField("source_asset_code").setLovPara('asset_type', 'CIP');
+                    	record.getField("cost").setRequired(true);
+                    	//
+                    break;
+                    // 抵债转自用
+                    case 'FROMDEBT':
+                    // 能选择的源对象为资产分类为抵债资产,且状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+                    record.getField("source_asset_code").setLovService("eam.eam0310.eam0310_source_asset_for_debt");
+                    record.getField("source_asset_code").setLovPara("asset_book_id", '${/parameter/@asset_book_id}');
+                    record.getField("source_asset_code").setLovPara("asset_id", '${/parameter/@asset_id}');
+	                    break;
+                    // 换入
+                    case 'TRANSFERIN':
+	                    // 能选择源对象为固定资产或无形资产及状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+	                    record.getField("source_asset_code").setLovService('eam.eam0310.eam0310_source_asset_for_trans');
+	                    record.getField("source_asset_code").setLovPara("asset_book_id", '${/parameter/@asset_book_id}');
+	                    record.getField("source_asset_code").setLovPara("asset_id", '${/parameter/@asset_id}');
+	                    break;
+                    // 购置
+                    /* case 'PURCHASE':
+                    record.getMeta().getField('source_asset_code').setReadOnly(true);
+                	record.getMeta().getField('source_asset_code').setRequired(false);
+                    break; */ 
+                }
+            }
+            
+            // 
+            function costValidator(record, name, value) {
+                var source_asset_cost = record.get("source_asset_cost") ;
+                var source_asset_sum_cost = record.get("source_asset_sum_cost");
+                
+                var cost = record.get("cost");
+                var cost_value_type = record.get("cost_value_type");
+                
+                source_asset_cost = !source_asset_cost ? 0 : source_asset_cost;
+                source_asset_sum_cost = !source_asset_sum_cost ? 0 : source_asset_sum_cost;
+                
+                var avaliable_cost = source_asset_cost - source_asset_sum_cost;
+                
+                if(avaliable_cost > 0 && value > avaliable_cost) {
+                    return '本次结转金额不得大于剩余可结转金额';
+                }
+                 
+                return true;
+            }
+            
+            // 
+            function onCostSelectHandler(tab, index) {
+              	 
+                if(index == 8) {
+                    
+	                var form_record = $('eam0810_asset_management_result_ds').getCurrentRecord();
+                    var asset_id = form_record.get("asset_id");
+	                var requisition_header_id = form_record.get("requisition_header_id");
+	                var requisition_line_id = form_record.get("requisition_line_id");
+                    if(asset_id) {
+                        $('eam0311_cost_source_ds').setQueryParameter('asset_id', asset_id);
+                        $('eam0311_cost_source_ds').setQueryParameter('document_id', requisition_header_id);
+                        $('eam0311_cost_source_ds').setQueryParameter('document_line_id', requisition_line_id);
+                        $('eam0311_cost_source_ds').query();
+                    }/*  else {
+                        $('eam0311_cost_source_ds').removeAll();
+                    } *///@Spencer 3893 20130619 选择tab页时当取得来源非"在建工程结转","抵债资产转自用","换入"时,"成本来源"成本来源清空
+                    
+                    var records = $('eam0311_cost_source_ds').getAll();
+	              	var asset_source_type = form_record.get("asset_source_type");
+                    for(var i=0; i<records.length; i++) {
+	              	    var record = records[i];
+	              	    
+	              	    var default_value_type = '${/model/eam0311_asset_msg/record/@value_type}';
+	                
+		                if(default_value_type == 'FINAL') {
+		                    record.getMeta().getField('cost_value_type_desc').setReadOnly(true);
+		                }
+	              	    
+	              	    record.set('cost_value_type', default_value_type);
+	              	    
+						switch(asset_source_type) {
+		                     // 在建工程结转
+		                    case 'FROMCIP':
+		                    	//  能选择的源对象号资产分类为在建工程的,状态为建设中的资产,[价值类型] 可编辑,且值为"决算价"或"暂估价",默认值为"决算价"
+		                    	record.getField("source_asset_code").setLovPara('status', 'IN_PROCESS');
+		                    	record.getField("source_asset_code").setLovPara('asset_type', 'CIP');
+                    			record.getField("cost").setRequired(true);
+		                    	//
+		                    break;
+		                    // 抵债转自用
+                    case 'FROMDEBT':
+                    // 能选择的源对象为资产分类为抵债资产,且状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+                    record.getField("source_asset_code").setLovService("eam.eam0310.eam0310_source_asset_for_debt");
+                    record.getField("source_asset_code").setLovPara("asset_book_id", '${/parameter/@asset_book_id}');
+                    record.getField("source_asset_code").setLovPara("asset_id", '${/parameter/@asset_id}');
+	                    break;
+		                    // 换入
+		                    case 'TRANSFERIN':
+	                    // 能选择源对象为固定资产或无形资产及状态为USING的资产,[价值类型] 不可编辑,且值为"决算价"
+	                    record.getField("source_asset_code").setLovService('eam.eam0310.eam0310_source_asset_for_trans');
+	                    record.getField("source_asset_code").setLovPara("asset_book_id", '${/parameter/@asset_book_id}');
+	                    record.getField("source_asset_code").setLovPara("asset_id", '${/parameter/@asset_id}');
+	                    break;
+		                    // 购置
+		                    /* case 'PURCHASE':
+		                    record.getMeta().getField('source_asset_code').setReadOnly(true);
+		                	record.getMeta().getField('source_asset_code').setRequired(false);
+		                    break;  */
+		                }              	    
+	              	}
+                }
+            }
+            
+            // 保存之前应当先校验时否已经有资产id
+            function beforeCostSubmit() {
+                var asset_id = $('eam0810_asset_management_result_ds').getCurrentRecord().get("asset_id");
+                if(!asset_id) {
+                    alert("${l:EAM_ASSET_PARTNER_INFO.DO_SAVE_EAM_ASSET_HEADERS}");
+                    return false;
+                } else {
+                    $('eam0311_cost_source_ds').getCurrentRecord().set('asset_id', asset_id);
+                }
+            } 
+            
+            
+            function onEntityBeforeSubmitFun(ds) {
+                var categories_result = $('eam0810_asset_management_result_ds');
+                var categories_record = categories_result.getCurrentRecord();
+                var asset_id = categories_record.get('asset_id');
+                if (asset_id == ' ' || asset_id == null || asset_id == undefined) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:EAM_ASSET_PARTNER_INFO.DO_SAVE_EAM_ASSET_HEADERS}');
+                    return false;
+                }
+                var result_ds = $('eam0810_eam_asset_character_values_result_ds');
+                if (result_ds.validate()) {
+                    var records = result_ds.getAll();
+                    if (records.length < 1) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:EAM_ASSET_PARTNER_INFO.ADD_DATA}');
+                    } else {
+                        for (var i = 0;i < records.length;i++) {
+                            var record = records[i];
+                            record.set('asset_id', asset_id);
+                        }
+                    }
+                }
+            }
+            
+            function init() {
+                
+                var record = $('eam0810_asset_management_result_ds').getCurrentRecord();
+                
+                if(record.get('asset_id')){
+                    	//查询特性参数
+                    	$('eam0810_eam_asset_character_values_result_ds').setQueryParameter('asset_id', record.get('asset_id'));
+                        $('eam0810_eam_asset_character_values_result_ds').setQueryParameter('entity_class_id', record.get('entity_class_id'));
+                        $('eam0810_eam_asset_character_values_result_ds').query();
+                }
+            }
+            
+            function eam0810ValueEdit(record, name) {
+                if (name == 'value') {
+                    var data_type = record.get('data_type');
+                    if (data_type == 'NUMERIC') {
+                        return 'eam0810_character_values_nf';
+                    } else if (data_type == 'TEXT') {
+                        return 'eam0810_character_values_tf';
+                    }
+                }
+            }
+            
+            function onAssetCharacterValuesLoad(ds) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var required_flag = records[i].get('required_flag');
+                    if (required_flag == 'Y') {
+                        records[i].getMeta().getField('value').setRequired(true);
+                    }
+                }
+            } 
+            
+            function onAllocationUpdateFun(dataSet, record, name, value) {
+/*             	if(name == 'company_desc'){
+            	    lovField = record.getField("company_desc");
+                    lovField.setLovPara('asset_book_id', $('eam0810_asset_management_result_ds').getCurrentRecord().get('asset_book_id'));
+            	}
+ */                if (name == 'company_id') {
+                    lovField = record.getField("responsibility_center_desc");
+                    record.getMeta().getField('responsibility_center_desc').setReadOnly(false);
+                    record.set('responsibility_center_id', '');
+                    record.set('responsibility_center_desc', '');
+                    lovField.setLovPara('company_id', record.get('company_id'));
+                }
+            }
+            
+       function gridAllocationsCellClick(grid, row, name, record) {
+	                var MetaData = record.getMeta();
+           		if(name == 'responsibility_center_desc'){
+	                var MetaField1 = MetaData.getField('responsibility_center_desc');
+	                MetaField1.setLovPara('company_id', $('eam0810_eam_asset_allocations_result_ds').getCurrentRecord().get('company_id'));
+           		}
+           		if(name == 'company_desc'){
+           		    //alert($('eam0810_asset_management_result_ds').getCurrentRecord().get('asset_book_id'));
+	                var MetaField2 = MetaData.getField('company_desc');
+	                MetaField2.setLovPara('asset_book_id', $('eam0810_asset_management_result_ds').getCurrentRecord().get('asset_book_id'));
+           		}
+            }
+            
+       function onEntityBeforeSubmitFun(ds) {
+                var categories_result = $('eam0810_asset_management_result_ds');
+                var categories_record = categories_result.getCurrentRecord();
+                var asset_id = categories_record.get('asset_id');
+                var allocate_element_type = categories_record.get('allocate_element_type');
+                if (asset_id == ' ' || asset_id == null || asset_id == undefined) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:EAM_ASSET_PARTNER_INFO.DO_SAVE_EAM_ASSET_HEADERS}');
+                    return false;
+                }
+                var result_ds = $('eam0810_eam_asset_allocations_result_ds');
+                if (result_ds.validate()) {
+                    var records = result_ds.getAll();
+                    if (records.length < 1) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:EAM_ASSET_PARTNER_INFO.ADD_DATA}');
+                        return false;
+                    } else {
+                        for (var i = 0;i < records.length;i++) {
+                            var record = records[i];
+                            record.set('asset_id', asset_id);
+                        }
+                    }
+                }
+              	
+            }
+            
+            function allocation_init(){
+                if($('eam0810_asset_management_result_ds').getCurrentRecord()){
+                    if($('eam0810_asset_management_result_ds').getCurrentRecord().get('asset_id') != undefined && $('eam0810_asset_management_result_ds').getCurrentRecord().get('asset_id') != '' && $('eam0810_asset_management_result_ds').getCurrentRecord().get('asset_id') != null){
+		        	    $('eam0810_eam_asset_allocations_result_ds').setQueryParameter('asset_id',$('eam0810_asset_management_result_ds').getCurrentRecord().get('asset_id'));
+		        	    $('eam0810_eam_asset_allocations_result_ds').query();
+                    }
+                }
+        	}
+        	
+        	function onSave(){
+        	    var categories_result = $('eam0810_asset_management_result_ds');
+                var categories_record = categories_result.getCurrentRecord();
+                var allocate_element_type = categories_record.get('allocate_element_type');
+                var result_ds = $('eam0810_eam_asset_allocations_result_ds');
+        	    //mantis24468 当因子类型为比率时,保存分配记录时,先校验分配数量的和是否为1,不为1则报错.
+                if(allocate_element_type == 'RATIO'){
+           		    var rs = result_ds.getAll();
+           		    var sum = 0;
+           		    for (var j = 0;j < rs.length;j++) {
+                            var r = rs[j];
+                            sum += r.get('quantity');
+                    }
+                    if(sum != 1){
+                        Aurora.showErrorMessage('${l:PROMPT}', '${l:EAM_ASSET_ALLOCATIONS.ALLOCATE_ELEMENT_TYPE}');
+                        return;
+                    } 
+           		}
+                $('eam0810_eam_asset_allocations_result_ds').submit();   
+        	}
+]]></script>
+        <a:dataSets>
+            <a:dataSet id="eam0310_trans_type_ds" model="eam.eam0120.eam_transaction_types_lv">
+                <a:datas dataSource="/model/eam0310_transaction_types"/>
+            </a:dataSet>
+            <a:dataSet id="eam0810_asset_books_list_ds">
+                <a:datas dataSource="/model/eam0020_asset_books_list"/>
+            </a:dataSet>
+            <a:dataSet id="eam_currency_ds">
+                <a:datas dataSource="/model/eam_currency"/>
+            </a:dataSet>
+            <a:dataSet id="eam0810_asset_categories_list_ds" model="eam.eam0810.eam0810_asset_categories_cmb"/>
+            <a:dataSet id="eam0810_asset_fin_class_list_ds" model="eam.eam0810.eam0810_asset_fin_class_cmb"/>
+            <a:dataSet id="eam0810_asset_entity_class_list_ds" model="eam.eam0810.eam0810_asset_entity_class_cmb"/>
+            <a:dataSet id="eam0810_asset_status_ds" lookupCode="EAM_ASSET_STATUS"/>
+            <a:dataSet id="eam0810_asset_source_type_ds" lookupCode="EAM_AST_SOURCE_TYPE"/>
+            <a:dataSet id="eam0810_asset_management_query_ds">
+                <a:fields>
+                    <a:field name="asset_code" prompt="EAM_ASSET_HEADERS.ASSET_CODE"/>
+                    <a:field name="asset_name" prompt="EAM_ASSET_HEADERS.DESCRIPTION"/>
+                    <a:field name="tag_number" prompt="EAM_ASSET_HEADERS.TAG_NUMBER"/>
+                    <a:field name="serial_number" prompt="EAM_ASSET_HEADERS.SERIAL_NUMBER"/>
+                    <a:field name="description" prompt="SYS_SESSION.NOTE"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="eam0310_v_type_ds" lookupCode="EAM_VALUE_TYPE"/>
+            <a:dataSet id="eam0810_asset_allocate_element_type_ds" lookupCode="EAM_ALLOCATE_ELEMENT_TYPE"/>
+            <a:dataSet id="eam0810_asset_management_result_ds" autoCreate="true" autoPageSize="true" model="eam.eam0311.eam0311_asset_headers_query" selectable="true" selectionModel="single" submitUrl="${/request/@context_path}/modules/eam/EAM0310/eam_asset_management_save.svc">
+                <a:datas dataSource="/model/eam0311_asset_msg"/>
+                <a:fields>
+                    <a:field name="value_type"/>
+                    <a:field name="currency_code" prompt="CSH_PAYMENT.CURRENCY_CODE"/>
+                    <a:field name="currency_desc" displayField="currency_name" options="eam_currency_ds" prompt="EAM_ASSET_FINANCE_INFO.CURRENCY_NAME" required="true" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="asset_id"/>
+                    <a:field name="requisition_header_id"/>
+                    <a:field name="requisition_line_id"/>
+                    <a:field name="description" prompt="EAM_ASSET_HEADERS.DESCRIPTION" required="true"/>
+                    <a:field name="asset_book_id" defaultValue="${/parameter/@asset_book_id}"/>
+                    <a:field name="transaction_type_id"/>
+                    <a:field name="transaction_type" displayField="description" options="eam0310_trans_type_ds" prompt="EAM_REQUISITION_TYPES.DEFAULT_TRX_TYPE_DESC" required="true" returnField="transaction_type_id" valueField="transaction_type_id"/>
+                    <a:field name="contract_header_id"/>
+                    <a:field name="contract_name" lovGridHeight="300" lovHeight="460" lovService="eam.eam0310.eam0310_csh_contract_lov" lovWidth="500" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER" title="CON_CONTRACT_HEADERS.CONTRACT_NUMBER">
+                        <a:mapping>
+                            <a:map from="contract_number" to="contract_name"/>
+                            <a:map from="contract_header_id" to="contract_header_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="asset_book_desc" displayField="asset_book_desc" options="eam0810_asset_books_list_ds" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" returnField="asset_book_id" valueField="asset_book_id"/>
+                    <a:field name="asset_code" prompt="EAM_ASSET_HEADERS.ASSET_CODE" readOnly="true" typeCase="upper"/>
+                    <a:field name="req_desc" prompt="SYS_SESSION.NOTE"/>
+                    <a:field name="tag_number" prompt="EAM_ASSET_HEADERS.TAG_NUMBER" readOnly="true"/>
+                    <a:field name="status_desc" defaultValue="${/model/eam0310_asset_status/record/@status_desc}" prompt="EAM_ASSET_HEADERS.STATUS" readOnly="true"/>
+                    <a:field name="serial_number" prompt="EAM_ASSET_HEADERS.SERIAL_NUMBER"/>
+                    <a:field name="asset_source_type"/>
+                    <a:field name="asset_source_type_desc" displayField="code_value_name" options="eam0810_asset_source_type_ds" prompt="EAM_ASSET_HEADERS.ASSET_SOURCE_TYPE" required="true" returnField="asset_source_type" valueField="code_value"/>
+                    <a:field name="lock_flag" checkedValue="Y" defaultValue="N" prompt="EAM_ASSET_HEADERS.LOCK_FLAG" uncheckedValue="N"/>
+                    <a:field name="date_of_purchase" prompt="EAM_ASSET_HEADERS.DATE_OF_PURCHASE" validator="dateValidate"/>
+                    <a:field name="gain_date" prompt="EAM_ASSET_HEADERS.GAIN_DATE" required="true" validator="dateValidate"/>
+                    <a:field name="start_use_date" prompt="EAM_ASSET_HEADERS.START_USE_DATE" required="true" validator="dateValidate"/>
+                    <a:field name="asset_unit" prompt="EAM_ASSET_HEADERS.ASSET_UNIT"/>
+                    <a:field name="asset_unit_desc" lovGridHeight="300" lovHeight="450" lovService="fnd.fnd_uom_codes_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.ASSET_UNIT" title="EAM_ASSET_HEADERS.ASSET_UNIT">
+                        <a:mapping>
+                            <a:map from="uom_code" to="asset_unit"/>
+                            <a:map from="uom_name" to="asset_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="quantity" prompt="EAM_ASSET_HEADERS.QUANTITY" required="true"/>
+                    <a:field name="cost" prompt="EAM_ASSET_HEADERS.COST" required="true"/>
+                    <a:field name="category_id"/>
+                    <a:field name="category_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0310.eam0310_asset_categories_lov?asset_book_id=${/parameter/@asset_book_id}&amp;ast_requisition_type_id=${/parameter/@ast_requisition_type_id}" lovWidth="550" prompt="EAM_ASSET_HEADERS.CATEGORY_ID" required="true" title="EAM_ASSET_HEADERS.CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_id" to="category_id"/>
+                            <a:map from="description" to="category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_class_id"/>
+                    <a:field name="entity_class_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0310.eam0310_asset_entity_class_lov?ast_requisition_type_id=${/parameter/@ast_requisition_type_id}" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_CLASS_ID" required="true" title="EAM_ASSET_HEADERS.ENTITY_CLASS_ID">
+                        <a:mapping>
+                            <a:map from="class_id" to="entity_class_id"/>
+                            <a:map from="description" to="entity_class_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="location_id"/>
+                    <a:field name="to_location_id"/>
+                    <a:field name="value_man_company_id"/>
+                    <a:field name="install_position" lovGridHeight="300" lovHeight="420" lovUrl="eam_asset_management_location_with_type_lov.screen?asset_book_id=${/parameter/@asset_book_id}" lovWidth="850" prompt="EAM_ASSET_HEADERS.INSTALL_POSITION" required="true" title="EAM_ASSET_HEADERS.INSTALL_POSITION">
+                        <a:mapping>
+                            <a:map from="location_id" to="location_id"/>
+                            <a:map from="location_code" to="location_code"/>
+                            <a:map from="description" to="install_position"/>
+                            <a:map from="location_type_desc" to="location_type_desc"/>
+                            <!-- <a:map from="value_man_company_id" to="value_man_company_id"/>
+                            <a:map from="value_man_company_desc" to="value_man_company_desc"/>
+                            <a:map from="value_man_unit_id" to="value_man_unit_id"/>
+                            <a:map from="value_man_unit_desc" to="value_man_unit_desc"/>
+                            <a:map from="value_man_position_id" to="value_man_position_id"/>
+                            <a:map from="value_man_position_desc" to="value_man_position_desc"/>
+                            <a:map from="value_man_company_id" to="entity_company_id"/>
+                            <a:map from="value_man_company_desc" to="entity_man_company_desc"/>
+                            <a:map from="entity_unit_id" to="entity_unit_id"/>
+                            <a:map from="entity_man_unit_desc" to="entity_man_unit_desc"/>
+                            <a:map from="entity_man_position_desc" to="entity_man_position_desc"/>
+                            <a:map from="entity_position_id" to="entity_position_id"/>
+                            <a:map from="responsibility_company_id" to="responsibility_company_id"/>
+                            <a:map from="responsibility_company_desc" to="responsibility_company_desc"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_desc" to="responsibility_center_desc"/> -->
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="location_type_desc" prompt="EAM_LOCATIONS.LOCATION_TYPE" readOnly="true"/>
+                    <a:field name="value_man_company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov?asset_book_id=${/parameter/@asset_book_id}" lovWidth="550" prompt="EAM_ASSET_HEADERS.VALUE_MAN_COMPANY_ID" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_id" to="value_man_company_id"/>
+                            <a:map from="company_short_name" to="value_man_company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="value_man_unit_id"/>
+                    <a:field name="value_man_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_unit_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.VALUE_MAN_UNIT_ID" readOnly="true" title="PUR_REQUISITION_ALLOCATE.UNIT_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="unit_id" to="value_man_unit_id"/>
+                            <a:map from="unit_code_name" to="value_man_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="value_man_position_id"/>
+                    <a:field name="value_man_position_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_position_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.VALUE_MAN_POSITION_ID" readOnly="true" title="BGT_BUDGET_ITEM_MAPPING.POSITION_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="position_id" to="value_man_position_id"/>
+                            <a:map from="position_code_name" to="value_man_position_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_company_id"/>
+                    <a:field name="entity_man_company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov?asset_book_id=${/parameter/@asset_book_id}" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_MAN_COMPANY_ID" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_id" to="entity_company_id"/>
+                            <a:map from="company_short_name" to="entity_man_company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_unit_id"/>
+                    <a:field name="entity_man_unit_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_unit_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_MAN_UNIT_ID" readOnly="true" title="PUR_REQUISITION_ALLOCATE.UNIT_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="unit_id" to="entity_unit_id"/>
+                            <a:map from="unit_code_name" to="entity_man_unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entity_position_id"/>
+                    <a:field name="entity_man_position_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_exp_org_position_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.ENTITY_MAN_POSITION_ID" readOnly="true" title="BGT_BUDGET_ITEM_MAPPING.POSITION_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="position_id" to="entity_position_id"/>
+                            <a:map from="position_code_name" to="entity_man_position_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <!-- <a:field name="responsibility_company_id" defaultValue="${/model/eam0030_default_res_com/record/@company_id}"/>
+                    <a:field name="responsibility_company_desc" defaultValue="${/model/eam0030_default_res_com/record/@company_short_name}" lovWidth="550" prompt="EAM_ASSET_HEADERS.RESPONSIBILITY_COMPANY_ID" readOnly="true"/>
+                    <a:field name="responsibility_center_id" defaultValue="${/model/eam0030_default_res_center/record/@responsibility_center_id}"/>
+                    <a:field name="responsibility_center_desc" defaultValue="${/model/eam0030_default_res_center/record/@responsibility_center_name}" lovWidth="550" prompt="EAM_ASSET_HEADERS.RESPONSIBILITY_CENTER_ID" readOnly="true"/>
+                   -->
+                    <a:field name="responsibility_company_id"/>
+                    <a:field name="responsibility_company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov?asset_book_id=${/parameter/@asset_book_id}" lovWidth="550" prompt="EAM_ASSET_HEADERS.RESPONSIBILITY_COMPANY_ID" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_id" to="responsibility_company_id"/>
+                            <a:map from="company_short_name" to="responsibility_company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="responsibility_center_desc" lovGridHeight="300" lovHeight="450" lovService="expm.exp_responsibility_center_lov" lovWidth="550" prompt="EAM_ASSET_HEADERS.RESPONSIBILITY_CENTER_ID" title="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="price" prompt="EXP_REPORT_LINES.PRIC" required="true"/>
+                    <a:field name="allocate_element_type"/>
+                    <a:field name="allocate_element_type_desc" displayField="code_value_name" options="eam0810_asset_allocate_element_type_ds" returnField="allocate_element_type" valueField="code_value"/>
+                    <a:field name="allocate_element_name"/>
+                    <a:field name="address" prompt="EAM_ASSET_HEADERS.ADDRESS"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onUpdateFun"/>
+                    <!--   <a:event name="submitsuccess" handler="submit_success"/> -->
+                    <a:event name="load" handler="onAssetManLoad"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="eam0810_eam_asset_character_values_result_ds" bindName="character_values" bindTarget="eam0810_asset_management_result_ds" model="eam.eam0810.eam0810_asset_character_values_query" selectable="true" submitUrl="${/request/@context_path}/autocrud/eam.eam0810.eam0810_asset_character_values_edit/batch_update">
+                <a:fields>
+                    <a:field name="character_value_id"/>
+                    <a:field name="asset_id"/>
+                    <a:field name="character_id"/>
+                    <a:field name="data_type"/>
+                    <a:field name="required_flag"/>
+                    <a:field name="character_desc" prompt="EAM_ASSET_CHARACTER_VALUES.CHARACTER_DESC" readOnly="true"/>
+                    <a:field name="value" prompt="EAM_ASSET_CHARACTER_VALUES.VALUE"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="beforesubmit" handler="onEntityBeforeSubmitFun"/>
+                    <a:event name="load" handler="onAssetCharacterValuesLoad"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="eam0311_cost_source_ds" bindName="cost_lines" bindTarget="eam0810_asset_management_result_ds" model="eam.eam0310.eam0310_asset_cost_sources_edit" queryUrl="${/request/@context_path}/autocrud/eam.eam0310.eam0310_asset_cost_sources_edit/query?asset_id=${/parameter/@asset_id}&amp;document_id=${/parameter/@requisition_header_id}&amp;document_line_id=${/parameter/@requisition_line_id}" selectable="true">
+                <a:fields>
+                    <a:field name="cost_source_id"/>
+                    <a:field name="source_type" prompt="EAM_ASSET_HEADERS.ASSET_SOURCE_TYPE"/>
+                    <a:field name="source_type_desc" prompt="EAM_ASSET_HEADERS.ASSET_SOURCE_TYPE"/>
+                    <a:field name="source_asset_id"/>
+                    <a:field name="asset_id"/>
+                    <a:field name="source_asset_code" lovGridHeight="240" lovHeight="400" lovService="eam.eam0310.eam0310_source_asset_query?asset_book_id=${/parameter/@asset_book_id}&amp;asset_id=${/parameter/@asset_id}&amp;document_id=${/parameter/@requisition_header_id}&amp;document_line_id=${/parameter/@requisition_line_id}" lovWidth="500" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_CODE" title="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_CODE">
+                        <a:mapping>
+                            <a:map from="asset_id" to="source_asset_id"/>
+                            <a:map from="asset_code" to="source_asset_code"/>
+                            <a:map from="asset_name" to="source_asset_name"/>
+                            <a:map from="source_asset_cost" to="source_asset_cost"/>
+                            <a:map from="source_asset_sum_cost" to="source_asset_sum_cost"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="source_asset_name" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_NAME"/>
+                    <a:field name="source_asset_cost" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_COST"/>
+                    <a:field name="source_asset_sum_cost" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_SUM_COST"/>
+                    <a:field name="cost_value_type" defaultValue="${/model/req_line/record/@value_type}"/>
+                    <a:field name="cost_value_type_desc" displayField="code_value_name" options="eam0310_v_type_ds" prompt="EAM_ASSET_COST_SOURCES.COST_VALUE_TYPE" required="true" returnField="cost_value_type" valueField="code_value"/>
+                    <a:field name="cost" prompt="EAM_ASSET_COST_SOURCES.COST" required="true" validator="costValidator"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="onCostSourceAdd"/>
+                    <a:event name="beforesubmit" handler="beforeCostSubmit"/>
+                    <a:event name="load" handler="onCostLoad"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="eam0810_eam_asset_allocations_result_ds" bindName="allocations" bindTarget="eam0810_asset_management_result_ds" model="eam.eam0810.eam0810_asset_allocations_query" selectable="true" submitUrl="${/request/@context_path}/autocrud/eam.eam0810.eam0810_asset_allocations_edit/batch_update">
+                <!-- <a:datas dataSource="/model/allocations"/> -->
+                <a:fields>
+                    <a:field name="allocation_id"/>
+                    <a:field name="asset_id"/>
+                    <a:field name="company_id"/>
+                    <a:field name="company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov" lovWidth="550" prompt="EAM_ASSET_ALLOCATIONS.COMPANY_DESC" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_short_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="responsibility_center_desc" lovGridHeight="300" lovHeight="450" lovService="expm.exp_responsibility_center_lov" lovWidth="550" prompt="EAM_ASSET_ALLOCATIONS.RESPONSIBILITY_CENTER_DESC" readOnly="true" title="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="quantity" required="true"/>
+                    <a:field name="memo"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onAllocationUpdateFun"/>
+                    <a:event name="beforesubmit" handler="onEntityBeforeSubmitFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="1" labelWidth="100" title="EAM_ASSET_HEADERS.TITLE" width="720">
+                <a:hBox>
+                    <a:textField name="asset_code" bindTarget="eam0810_asset_management_result_ds"/>
+                    <a:textField name="tag_number" bindTarget="eam0810_asset_management_result_ds"/>
+                    <a:textField name="serial_number" bindTarget="eam0810_asset_management_result_ds"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:textField name="description" bindTarget="eam0810_asset_management_result_ds"/>
+                    <a:lov name="contract_name" bindTarget="eam0810_asset_management_result_ds"/>
+                    <!-- <a:comboBox name="transaction_type" bindTarget="eam0810_asset_management_result_ds" readOnly="true" >
+                        <a:events>
+                            <a:event name="focus" handler="eam0311_onTransFocusHandler"/>
+                        </a:events>
+                    </a:comboBox> -->
+                    <a:textField name="transaction_type" bindTarget="eam0810_asset_management_result_ds" readOnly="true"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:textField name="req_desc" bindTarget="eam0810_asset_management_result_ds" width="615"/>
+                </a:hBox>
+            </a:form>
+            <!-- 按钮 -->
+            <a:hBox>
+                <a:button click="eam0810_save" text="HAP_SAVE"/>
+                <a:button click="eam0810_back" text="HAP_BACK"/>
+            </a:hBox>
+            <a:tabPanel id="eam0810_asset_management_tab" height="240" width="945">
+                <a:events>
+                    <a:event name="select" handler="onCostSelectHandler"/>
+                </a:events>
+                <a:tabs>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.BASIC_INFORMATION" width="80">
+                        <a:form column="1" height="210" labelWidth="100" width="890">
+                            <a:box column="1">
+                                <a:textField name="address" bindTarget="eam0810_asset_management_result_ds" width="617"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:comboBox name="asset_source_type_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:datePicker name="date_of_purchase" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:datePicker name="gain_date" bindTarget="eam0810_asset_management_result_ds"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:datePicker name="start_use_date" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:lov name="asset_unit_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:numberField name="quantity" allowDecimals="false" allowNegative="false" bindTarget="eam0810_asset_management_result_ds"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:numberField name="price" allowDecimals="true" allowFormat="true" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:numberField name="cost" allowDecimals="true" allowFormat="true" allowNegative="false" bindTarget="eam0810_asset_management_result_ds" decimalPrecision="2"/>
+                                <a:textField name="status_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                            </a:box>
+                            <a:box column="3">
+                                <a:lov name="category_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:lov name="entity_class_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                <a:lov name="install_position" bindTarget="eam0810_asset_management_result_ds"/>
+                            </a:box>
+                            <a:box column="3">
+                                <!-- <a:textField name="location_type_desc" bindTarget="eam0810_asset_management_result_ds"/> -->
+                                <a:comboBox name="currency_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                            </a:box>
+                        </a:form>
+                    </a:tab>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.PARTNERS" ref="${/request/@context_path}/modules/eam/EAM0311/eam_asset_partner_info_update.screen" width="80"/>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.ORGANIZATIONAL_STRUCTURE" width="80">
+                        <a:form column="1" height="210" labelWidth="100" width="890">
+                            <a:fieldSet title="EAM_LOCATIONS.VALUE_MAN_ORG">
+                                <a:box column="3">
+                                    <a:lov name="value_man_company_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                    <a:lov name="value_man_unit_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                    <a:lov name="value_man_position_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                </a:box>
+                            </a:fieldSet>
+                            <a:fieldSet title="EAM_LOCATIONS.ENTITY_MAN_ORG">
+                                <a:box column="3">
+                                    <a:lov name="entity_man_company_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                    <a:lov name="entity_man_unit_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                    <a:lov name="entity_man_position_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                </a:box>
+                            </a:fieldSet>
+                            <a:fieldSet title="EAM_ASSET_HEADERS.RESPONSIBILITY_ATTRIBUTION">
+                                <a:box column="3">
+                                    <a:lov name="responsibility_company_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                    <a:lov name="responsibility_center_desc" bindTarget="eam0810_asset_management_result_ds"/>
+                                </a:box>
+                            </a:fieldSet>
+                        </a:form>
+                    </a:tab>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.PROPERTY_INFORMATION" ref="${/request/@context_path}/modules/eam/EAM0311/eam_asset_property_info_update.screen?asset_id=${/parameter/@asset_id}" width="80"/>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.INSURANCE_INFORMATION" ref="${/request/@context_path}/modules/eam/EAM0311/eam_asset_insure_info_update.screen?asset_id=${/parameter/@asset_id}" width="80"/>
+                    <!-- <a:tab height="100" prompt="EAM_ASSET_HEADERS.CHARACTERISTIC_PARAMETERS" ref="${/request/@context_path}/modules/eam/EAM0311/eam_asset_character_values_update.screen?asset_id=${/parameter/@asset_id}" width="80"/> -->
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.CHARACTERISTIC_PARAMETERS" width="80">
+                        <a:grid bindTarget="eam0810_eam_asset_character_values_result_ds" height="179" navBar="true" width="880">
+                            <a:toolBar>
+                                <!-- <a:button type="save"/> -->
+                                <a:label/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="character_desc" align="left" editor="eam0810_character_tf" width="120"/>
+                                <a:column name="value" align="left" editorFunction="eam0810ValueEdit" width="220"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="eam0810_character_tf"/>
+                                <a:textField id="eam0810_character_values_tf"/>
+                                <a:numberField id="eam0810_character_values_nf" allowDecimals="true" allowNegative="false" decimalPrecision="3"/>
+                            </a:editors>
+                        </a:grid>
+                        <script><![CDATA[
+			        	init();
+			        ]]></script>
+                    </a:tab>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.DOCUMENT_INFORMATION" ref="${/request/@context_path}/uploadFile.screen?table_name=EAM_ASSET_HEADERS&amp;header_id=${/parameter/@asset_id}" width="80"/>
+                    <!-- <a:tab height="100" prompt="EAM_ASSET_HEADERS.SHARING_ALLOCATION" ref="${/request/@context_path}/modules/eam/EAM0311/eam_asset_allocations_update.screen?asset_id=${/parameter/@asset_id}" width="80"/> -->
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.SHARING_ALLOCATION" width="80">
+                        <a:form column="1" height="20" labelWidth="100" width="860">
+                            <a:box column="2">
+                                <a:comboBox name="allocate_element_type_desc" bindTarget="eam0810_asset_management_result_ds" prompt="EAM_ASSET_HEADERS.ALLOCATE_ELEMENT_TYPE"/>
+                                <a:textField name="allocate_element_name" bindTarget="eam0810_asset_management_result_ds" prompt="EAM_ASSET_HEADERS.ALLOCATE_ELEMENT_NAME"/>
+                            </a:box>
+                        </a:form>
+                        <a:grid bindTarget="eam0810_eam_asset_allocations_result_ds" height="140" navBar="true" width="880">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <!-- <a:button click="onSave" icon="${/request/@context_path}/images/save.gif" text="HAP_SAVE"/> -->
+                                <a:button type="clear"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="company_desc" align="left" editor="eam0810_allocations_company_desc_lv" width="120"/>
+                                <a:column name="responsibility_center_desc" align="left" editor="eam0810_allocations_resp_desc_lv" width="200"/>
+                                <a:column name="quantity" align="right" editor="eam0810_allocations_quantity_nf" width="120"/>
+                                <a:column name="memo" align="left" editor="eam0810_allocations_memo_tf" width="400"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="eam0810_allocations_company_desc_lv"/>
+                                <a:lov id="eam0810_allocations_resp_desc_lv"/>
+                                <a:numberField id="eam0810_allocations_quantity_nf"/>
+                                <a:textField id="eam0810_allocations_memo_tf"/>
+                            </a:editors>
+                            <a:events>
+                                <a:event name="cellclick" handler="gridAllocationsCellClick"/>
+                            </a:events>
+                        </a:grid>
+                        <script><![CDATA[
+                allocation_init();
+            ]]></script>
+                    </a:tab>
+                    <a:tab id="eam_asset_code_sources" height="100" prompt="EAM_ASSET_COST_SOURCES" width="80">
+                        <a:grid bindTarget="eam0311_cost_source_ds" height="180" navBar="true" width="880">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <!-- <a:button type="save"/> -->
+                                <a:button type="clear"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="source_type_desc" align="center"/>
+                                <a:column name="source_asset_code" align="center" editor="eam0310_asset_lov"/>
+                                <a:column name="source_asset_name" align="center"/>
+                                <a:column name="source_asset_cost" align="center"/>
+                                <a:column name="source_asset_sum_cost" align="center"/>
+                                <a:column name="cost_value_type_desc" align="center" editor="eam0310_asset_comboBox"/>
+                                <a:column name="cost" align="center" editor="eam0310_numField"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="eam0310_asset_lov"/>
+                                <a:numberField id="eam0310_numField" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="2"/>
+                                <a:comboBox id="eam0310_asset_comboBox"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

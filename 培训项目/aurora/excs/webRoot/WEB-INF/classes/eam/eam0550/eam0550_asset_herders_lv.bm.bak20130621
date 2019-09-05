@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-4-7 上午10:50:34  
+    $Revision: 1.0  
+    $Purpose: 资产lov
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select * from (select h.asset_id,
+			       h.asset_code,
+			       h.asset_name,
+			       h.category_id,
+			       (select c.description from eam_asset_categories_vl c where c.category_id = h.category_id) as category_desc,
+			       h.entity_class_id,
+			       (select e.description from eam_asset_entity_classes_vl e where e.class_id = h.entity_class_id) as entity_class_desc,
+			       h.status,
+			       (select s.code_value_name from sys_service_lookup_v s where s.code = 'EAM_ASSET_STATUS' AND s.language= ${/session/@lang} AND s.code_value = h.STATUS) as status_desc,
+			       to_char(h.start_use_date,'yyyy-mm-dd') as start_use_date,
+			       h.location_id current_location_id,
+			       (select l.DESCRIPTION from eam_locations_vl l where l.location_id = h.location_id) as current_location_desc,
+			       i.finance_class_id,
+			       (select f.description from eam_asset_fin_classes_vl f where f.class_id = i.finance_class_id) finance_class_name,
+			       l.location_id,
+			       l.description,
+			       erl.partner_name,
+			       erl.contract_id,
+			       (select h.contract_number from con_contract_headers h where h.contract_header_id=erl.contract_id) as contract_name,
+			       to_char(erl.start_date,'yyyy-mm-dd') as start_date,
+			       to_char(erl.end_date,'yyyy-mm-dd') as end_date,
+			       erl.pl_amount
+			  from eam_asset_headers_vl h, eam_locations_vl l,
+			  eam_requisition_lines erl,eam_asset_rent_his earh,eam_asset_finance_info i 
+			 where  erl.asset_id = h.asset_id
+			   and erl.to_location_id = l.location_id
+			   and h.lock_flag = 'N'
+			   and h.status in ('RENTED','LENDED')
+			   and earh.asset_id = h.asset_id
+			   and earh.rent_document_line_id = erl.requisition_line_id
+			   and earh.back_flag = 'N'
+			   and h.asset_id = i.asset_id
+			   and exists
+			 (select 1
+			          from eam_requisition_types t, eam_req_type_ref_asset_types rt
+			         where rt.ast_requisition_type_id = t.ast_requisition_type_id
+			           and t.ast_requisition_type_id = ${@ast_requisition_type_id}
+			           and rt.entity_class_id = h.entity_class_id)
+              AND EXISTS (SELECT 1
+               FROM exp_employee_assigns eea,
+                    exp_org_position eop
+              WHERE eea.employee_id = ${@employee_id}
+                AND eea.enabled_flag = 'Y'
+                and eea.position_id = eop.position_id
+                and eop.enabled_flag = 'Y'
+                and eop.unit_id = earh.rent_unit_id))v
+           #WHERE_CLAUSE#
+   ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="asset_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="ASSET_ID"/>
+        <bm:field name="asset_code" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="ASSET_CODE" prompt="EAM_ASSET_HEADERS.ASSET_CODE"/>
+        <bm:field name="asset_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DESCRIPTION_TEXT" prompt="EAM_ASSET_HEADERS.DESCRIPTION"/>
+        <bm:field name="location_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="LOCATION_ID"/>
+        <bm:field name="description" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DESCRIPTION" prompt="EAM_LOCATIONS.DESCRIPTION"/>
+        <bm:field name="partner_name" prompt="EAM_REQUISITION_LINES.PARTNER_NAME"/>
+        <bm:field name="contract_id"/>
+        <bm:field name="contract_name" prompt="CON_CONTRACT_HEADERS.DOCUMENT_DESC"/>
+        <bm:field name="start_date" prompt="EAM_REQUISITION_LINES.START_DATE"/>
+        <bm:field name="end_date" prompt="EAM_REQUISITION_LINES.END_DATE"/>
+        <bm:field name="pl_amount" prompt="EAM_REQUISITION_LINES.AMOUNT"/>
+        <bm:field name="category_id"/>
+        <bm:field name="category_desc" prompt="EAM_ASSET_HEADERS.CATEGORY_ID"/>
+        <bm:field name="entity_class_id"/>
+        <bm:field name="entity_class_desc" prompt="EAM_ASSET_HEADERS.ENTITY_CLASS_ID"/>
+        <bm:field name="finance_class_id"/>
+        <bm:field name="finance_class_name" prompt="EAM_ASSET_FINANCE_INFO.FINANCE_CLASS_DESC"/>
+        <bm:field name="current_location_id"/>
+        <bm:field name="current_location_desc" prompt="EAM_ASSET_LOCATION_HISTORIES.CURRENT_LOCATION_DESC"/>
+        <bm:field name="status"/>
+        <bm:field name="status_desc" prompt="EAM_ASSET_HEADERS.STATUS"/>
+        <bm:field name="start_use_date" prompt="EAM_ASSET_HEADERS.START_USE_DATE"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="asset_id" queryOperator="="/>
+        <bm:query-field name="asset_code" queryexpression="upper(v.asset_code) like &apos;%&apos;||upper(${@asset_code})||&apos;%&apos;"/>
+        <bm:query-field name="asset_name" queryexpression="upper(v.asset_name) like &apos;%&apos;||upper(${@asset_name})||&apos;%&apos;"/>
+        <bm:query-field name="category_id" queryexpression="v.category_id = ${/parameter/@category_id}"/>
+        <bm:query-field name="entity_class_id" queryexpression="v.entity_class_id = ${/parameter/@entity_class_id}"/>
+        <bm:query-field name="finance_class_id" queryexpression="v.finance_class_id = ${/parameter/@finance_class_id}"/>
+        <bm:query-field name="start_use_date" queryexpression="v.start_use_date = ${/parameter/@start_use_date}"/>
+        <bm:query-field name="current_location_id" queryexpression="v.current_location_id = ${/parameter/@current_location_id}"/>
+        <bm:query-field name="status" queryexpression="v.status = ${/parameter/@status}"/>
+    </bm:query-fields>
+</bm:model>

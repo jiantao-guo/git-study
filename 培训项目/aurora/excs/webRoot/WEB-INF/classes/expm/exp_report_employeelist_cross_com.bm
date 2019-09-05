@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT DISTINCT
+                    temp.employee_id,
+                    temp.EMPLOYEENAME,
+                    temp.code,
+                    temp.name,
+                    temp.position_primary
+                FROM
+                    (SELECT DISTINCT
+                        v.employee_id ,
+                        v.position_id,
+                        emp.employee_code
+                        ||' - '
+                        ||emp.name EMPLOYEENAME,
+                        emp.employee_code code,
+                        emp.name name,
+                        (SELECT
+                            t2.description_text
+                        FROM
+                            FND_DESCRIPTIONS T2
+                        WHERE
+                            T2.DESCRIPTION_ID =
+                            (SELECT
+                                t1.description_id
+                            FROM
+                                EXP_ORG_POSITION t1
+                            WHERE
+                                t1.position_id=
+                                (SELECT
+                                    t.position_id
+                                FROM
+                                    exp_employee_assigns t
+                                WHERE
+                                    t.company_id           = ${@company_id} AND
+                                    t.employee_id          =v.employee_id AND
+                                    t.primary_position_flag='Y' AND
+                                    t.ENABLED_FLAG         = 'Y'
+                                )
+                            ) AND
+                            T2.LANGUAGE = 'ZHS'
+                        ) position_primary
+                    FROM
+                        exp_employee_assigns v ,
+                        exp_employees emp
+                    WHERE
+                        v.employee_id  = emp.employee_id AND
+                        v.enabled_flag = 'Y' AND
+                        v.company_id   = ${@company_id} 
+                        and exists(
+			               select 1
+			               from exp_org_unit eou,exp_org_position eop
+			               WHERE eop.position_id = v.position_id
+			               AND eou.unit_id = eop.unit_id
+			               and  (eou.unit_id =  ${@unit_id} OR EXISTS
+		                        (SELECT 1
+		                           FROM exp_org_unit eoup
+		                          WHERE eoup.unit_id = ${@unit_id}
+		                            AND eoup.company_id = eou.company_id
+		                            AND eoup.unit_code = eou.first_unit_code) )
+			               UNION ALL
+		                   SELECT 1
+		                   FROM exp_org_unit eou 
+		                   WHERE eou.unit_id = ${@unit_id}
+		                   AND eou.unit_code = '0'
+           )
+                    )temp #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="employee_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="EMPLOYEE_ID"/>
+        <bm:field name="code" displayWidth="210" forDisplay="true" forQuery="true" prompt="EXP_EMPLOYEES.EMPLOYEE_CODE"/>
+        <bm:field name="name" displayWidth="210" forDisplay="true" forQuery="true" prompt="EXP_EMPLOYEE.EMPLOYEE_NAME"/>
+        <bm:field name="employeename" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="EMPLOYEENAME"/>
+        <!-- <bm:field name="position_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="POSITION_ID"/> -->
+        <bm:field name="position_primary"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="code" queryOperator="like"/>
+        <bm:query-field field="name" queryOperator="like"/>
+        <bm:query-field name="emp_code_name" queryExpression="(code like ${@emp_code_name}||&apos;%&apos; or name like &apos;%&apos;||${@emp_code_name}||&apos;%&apos;)"/>
+    </bm:query-fields>
+</bm:model>

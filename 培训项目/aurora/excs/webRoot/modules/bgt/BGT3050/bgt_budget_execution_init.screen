@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="keep_alive_link" model="bgt.BGT3030.keep_alive" modelaction="query"/>
+        <a:link id="get_init_status_link" model="db.bgt_execution_utl_pkg.get_init_status" modelaction="execute"/>
+        <a:link id="job_init_link" model="db.bgt_execution_utl_pkg.job_init" modelaction="execute"/>
+        <script><![CDATA[
+            //初始化基础数据
+            
+            function initData() {
+                Aurora.showConfirm('提示', '确定进行初始化？初始化会导致目前正在运行的查询出错并且初始化需要执行较长时间！如果需要调整初始化的年份请在功能:系统设置=>参数指定修改预算进度初始化年份参数', function() {
+                    /* if (headerReacord.get('period_from') > headerReacord.get('period_to')) {
+                     Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PERIOD_NAME_CHECK}');
+                     return;
+                     } */
+                    $('initBtn').disable();
+                    startClock();
+                    Aurora.request({
+                        url: $('job_init_link').getUrl(),
+                        success: function() {
+                            Aurora.showMessage('${l:PROMPT}', '${l:SUCCESSFUL_OPERATION}');
+                            $('initBtn').enable();
+                            stopClock();
+                        },
+                        failure: function() {
+                            stopClock();
+                        },
+                        error: function() {
+                            stopClock();
+                        },
+                        scope: this
+                    });
+                }, null, 350, 150);
+            }
+            
+            
+            //设置Ajax超时时间为不超时
+            Ext.Ajax.timeout = 99999999999;
+            
+            var startTime;
+            window.runInitClock = {
+                run: function() {
+                    var currentTime = new Date();
+                    var costTime = currentTime - startTime;
+                    var hour = parseInt((costTime / 3600000));
+                    var min = parseInt((costTime - hour * 3600000) / 60000);
+                    var sec = parseInt((costTime - hour * 3600000 - min * 60000) / 1000);
+                    Ext.fly('init_masker_p').dom.innerHTML = '正在初始化中，请稍候!已执行' + hour + '小时' + min + '分' + sec + '秒';
+                },
+                interval: 1000
+            };
+            
+            function startClock() {
+                startTime = new Date();
+                Aurora.Masker.mask(Ext.getBody(), '<p id="init_masker_p" style="margin-top:0px;">正在初始化中，请稍候!已执行0小时0分0秒</p>');
+                Ext.TaskMgr.start(window.runInitClock);
+            
+            }
+            
+            function stopClock() {
+                Aurora.Masker.unmask(Ext.getBody());
+                Ext.TaskMgr.stop(window.runInitClock);
+            }
+            
+            
+            window.keepAlive = {
+                run: function() {
+                    Aurora.request({
+                        url: $('keep_alive_link').getUrl()
+                    });
+                },
+                interval: 60000
+            };
+            
+            Ext.TaskMgr.start(window.keepAlive);
+            
+            window.monitorInit = {
+                run: function() {
+                    Aurora.request({
+                        url: $('get_init_status_link').getUrl(),
+                        success: function(resp) {
+                            if (resp && resp.result && resp.result.return_value) {
+                                if (resp.result.return_value == 'SUCCESS') {
+                                    Aurora.showInfoMessage('提示', '初始化成功！');
+                                    stopClock();
+                                    Ext.TaskMgr.stop(window.monitorInit);
+                                } else if (resp.result.return_value == 'FAILED') {
+                                    Aurora.showInfoMessage('提示', '初始化失败，请联系管理员!');
+                                    stopClock();
+                                    Ext.TaskMgr.stop(window.monitorInit);
+                                } else if (resp.result.return_value == 'NONE') {
+                                    Aurora.showInfoMessage('提示', '尚未进行过初始化，请联系管理员!！');
+                                    stopClock();
+                                    Ext.TaskMgr.stop(window.monitorInit);
+                                } else if (resp.result.return_value == 'PROCESSING') {
+                                    null;
+                                }
+                            }
+                        }
+                    });
+                },
+                interval: 60000
+            }
+            
+            function initStatusQuery() {
+                startClock();
+                Ext.TaskMgr.start(window.monitorInit);
+            }
+        ]]></script>
+        <a:screenBody>
+            <span><![CDATA[
+        		
+        		<h1>初始化声明：</h1>
+        		<p>1、每日凌晨5点、中午12点、下午3点各进行一次自动初始化</p>
+        		<p>2、初始化年份调整在 系统设置 => 参数设置 => 预算进度初始化年份，支持多年初始化，单年格式为2014，多年格式2014,2015</p>
+        		<p>3、请尽量减少初始化年份，避免无谓的性能浪费</p>
+        		<p>4、初始化过程中之前执行的查询会报错，请注意!</p>
+        		
+        	]]></span>
+            <a:hBox>
+                <a:button id="initBtn" click="initData" text="初始化" width="120"/>
+            </a:hBox>
+        </a:screenBody>
+        <script><![CDATA[
+        	
+        		initStatusQuery();
+        	
+        ]]></script>
+    </a:view>
+</a:screen>

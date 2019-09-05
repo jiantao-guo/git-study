@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-7-16 下午7:18:38  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<ns1:model xmlns:ns1="http://www.aurora-framework.org/schema/bm">
+    <ns1:operations>
+        <ns1:operation name="query">
+            <ns1:query-sql><![CDATA[
+							SELECT * FROM (
+                SELECT h.asset_id,
+				       h.asset_code,
+				       h.asset_name,
+				       h.category_id,
+			           (SELECT c.description FROM eam_asset_categories_vl c WHERE c.category_id = h.category_id) as category_desc,
+			           h.entity_class_id,
+			           (SELECT e.description FROM eam_asset_entity_classes_vl e WHERE e.class_id = h.entity_class_id) as entity_class_desc,
+			           h.status,
+			           (SELECT s.code_value_name FROM sys_service_lookup_v s WHERE s.code = 'EAM_ASSET_STATUS' AND s.language= ${/session/@lang} AND s.code_value = h.STATUS) as status_desc,
+			           to_char(h.start_use_date, 'yyyy-mm-dd') start_use_date,
+				       h.location_id current_location_id,
+				       (SELECT l.DESCRIPTION FROM eam_locations_vl l WHERE l.location_id = h.location_id) as current_location_desc,
+				       efi.finance_class_id,
+				       (SELECT f.description FROM eam_asset_fin_classes_vl f WHERE f.class_id = efi.finance_class_id) finance_class_name,
+				       efi.current_cost, 
+				       efi.life_in_month,
+				       (efi.life_in_month-efi.remaining_life_in_month) used_month,
+				       (efi.current_cost - efi.accumulated_dep_amt - efi.impairment_loss_amt) current_value 
+				  FROM eam_asset_headers_vl      h, 
+				       eam_asset_finance_info efi,
+				       eam_asset_entity_classes eac,
+				       eam_locations l
+				 WHERE efi.asset_id = h.asset_id 
+				       AND h.entity_class_id = eac.class_id
+			   		   AND l.location_id = h.location_id
+				       AND h.lock_flag = 'N'
+				       AND h.status in ('INSTORE', 'USING','SCRAPPED')
+				   and not exists (select 1 from eam_requisition_lines ls where ls.requisition_header_id = ${@requisition_header_id}
+                   and ls.asset_id = h.ASSET_ID)
+				   AND EXISTS (SELECT 1
+				          FROM eam_requisition_types        t,
+				               eam_req_type_ref_asset_types rt
+				         WHERE rt.ast_requisition_type_id = t.ast_requisition_type_id
+				               AND t.ast_requisition_type_id = ${@ast_requisition_type_id}
+				               AND rt.entity_class_id = h.entity_class_id)
+		              AND EXISTS (SELECT 1
+		               FROM exp_employee_assigns eea,
+		                    exp_org_position eop,
+		                    fnd_companies fc
+		              WHERE eea.employee_id = ${@employee_id}
+		                AND eea.enabled_flag = 'Y'
+		                and eea.position_id = eop.position_id
+		                and eop.enabled_flag = 'Y'
+		                AND fc.company_id = eea.company_id
+                    	AND eea.company_id = eop.company_id
+                        AND (CASE WHEN fc.company_code = '08710101' AND
+		                             (eop.unit_id = eac.entity_man_unit_id and eac.entity_man_company_id = l.entity_man_company_id)
+		                          THEN 1
+		                        WHEN fc.company_code != '08710101' AND
+		                             (eop.unit_id = l.entity_man_unit_id OR eop.unit_id = eac.entity_man_unit_id)
+		                          THEN 1
+		                        ELSE 0
+		                     END) = 1))t
+			  #WHERE_CLAUSE#
+	             order by t.ASSET_CODE
+  ]]></ns1:query-sql>
+        </ns1:operation>
+    </ns1:operations>
+    <ns1:fields>
+        <ns1:field name="asset_id"/>
+        <ns1:field name="asset_code" forDisplay="true" forQuery="true" prompt="EAM_ASSET_HEADERS.ASSET_CODE"/>
+        <ns1:field name="asset_name" forDisplay="true" forQuery="true" prompt="EAM_ASSET_HEADERS.DESCRIPTION"/>
+        <ns1:field name="status"/>
+        <ns1:field name="status_desc" forDisplay="true" prompt="EAM_ASSET_HEADERS.STATUS"/>
+        <ns1:field name="current_location_id"/>
+        <ns1:field name="current_location_desc" prompt="EAM_ASSET_HEADERS.LOCATION_ID"/>
+    </ns1:fields>
+    <ns1:query-fields>
+        <ns1:query-field name="asset_code_from" queryExpression="upper(t.asset_code) &gt;= upper(${@asset_code_from})"/>
+        <ns1:query-field name="asset_code_to" queryExpression="upper(t.asset_code) &lt;= upper(${@asset_code_to})"/>
+        <ns1:query-field field="asset_code" queryOperator="="/>
+        <ns1:query-field field="asset_name" queryExpression="t.asset_name like &apos;%&apos;||${@asset_name}||&apos;%&apos;"/>
+    </ns1:query-fields>
+</ns1:model>

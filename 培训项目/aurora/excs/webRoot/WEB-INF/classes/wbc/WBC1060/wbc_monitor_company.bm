@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Mouse Chow  
+    $Date: 2012-7-13 下午05:08:54  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    ( WITH
+                    comp_temp AS
+                    (SELECT
+                        fc.company_id
+                    FROM
+                        fnd_companies fc
+                    WHERE
+                        fc.company_id = ${/session/@company_id}
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id  = ${/session/@company_id} AND
+                        ${@include_child_flag} = 'Y'
+                    UNION ALL
+                    SELECT
+                        fc2.company_id
+                    FROM
+                        fnd_companies fc2
+                    WHERE
+                        fc2.parent_company_id IN
+                        (SELECT
+                            fc3.company_id
+                        FROM
+                            fnd_companies fc3
+                        WHERE
+                            fc3.parent_company_id = ${/session/@company_id}
+                        ) AND
+                        ${@include_child_flag} = 'Y'
+                    )
+                SELECT
+                    h.document_num,
+                    dt.doc_category_name,
+                    dt.doc_category,
+                    h.dispatching_header_id,
+                    h.submited_position_id,
+                    (SELECT
+                        pv.description
+                    FROM
+                        exp_org_position_vl pv
+                    WHERE
+                        pv.position_id = h.submited_position_id
+                    ) AS submited_position_name,
+                    h.submited_by,
+                    (SELECT ee.name FROM exp_employees ee WHERE h.submited_by = ee.employee_id
+                    ) AS submited_by_name,
+                    TO_CHAR(h.start_time, 'yyyy-mm-dd hh24:mi:ss') AS start_time,
+                    h.business_node_id,
+                    bn.business_node_description,
+                    bn.assign_id,
+                    h.state,
+                    ws.state_name,
+                    (SELECT
+                        ee.name
+                    FROM
+                        wbc_dispatch_pool_lines l,
+                        exp_employees ee
+                    WHERE
+                        l.dispatch_header_id = h.dispatching_header_id AND
+                        l.status            IN ('IN_PROGRESS', 'REQUIRE_RETURN') AND
+                        l.handler_id         = ee.employee_id
+                    ) AS handler_name,
+                    wbc_common_pkg.get_doc_page(h.dispatching_header_id)
+                    || '?'
+                    || wbc_common_pkg.get_doc_param_name(h.dispatching_header_id)
+                    || '='
+                    || h.document_id AS service_name
+                FROM
+                    wbc_dispatch_pool_headers h,
+                    (SELECT
+                        scv.code_Value doc_category,
+                        scv.code_value_name AS doc_category_name
+                    FROM
+                        sys_codes sc,
+                        sys_code_values_vl scv
+                    WHERE
+                        sc.code_id = scv.code_id AND
+                        sc.code    = 'EXP_DOCUMENT_CATEGORY'
+                    ) dt,
+                    (SELECT
+                        scv.code_Value state,
+                        scv.code_value_name AS state_name
+                    FROM
+                        sys_codes sc,
+                        sys_code_values_vl scv
+                    WHERE
+                        sc.code_id = scv.code_id AND
+                        sc.code    = 'NODE_STATE'
+                    ) ws,
+                    wbc_business_nodes bn
+                WHERE
+                    h.doc_category     = dt.doc_category AND
+                    h.business_node_id = bn.business_node_id AND
+                    h.state            = ws.state AND
+                    h.state !='REJECT' AND
+                    h.doc_company_id  IN
+                    (SELECT * FROM comp_temp
+                    )
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    start_time DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="document_num" prompt="WBC_MONITOR.DOCUMENT_NUM"/>
+        <bm:field name="doc_category_name" prompt="WBC_BUSINESS_TYPE_ASSIGN.BUSINESS_TYPE"/>
+        <bm:field name="dispatching_header_id"/>
+        <bm:field name="submited_position_id"/>
+        <bm:field name="submited_by"/>
+        <bm:field name="submited_by_name" prompt="WBC_MONITOR.SUBMIT_BY"/>
+        <bm:field name="start_time" prompt="WBC_MONITOR.SUBMITED_DATE"/>
+        <bm:field name="business_node_id"/>
+        <bm:field name="business_node_description" prompt="WBC_MONITOR.CURRENT_NODE"/>
+        <bm:field name="state"/>
+        <bm:field name="state_name" prompt="WBC_MONITOR.CURRENT_STATE"/>
+        <bm:field name="handler_name" prompt="WBC_MONITOR.CURRENT_HANDLER"/>
+        <bm:field name="service_name"/>
+        <bm:field name="assign_id"/>
+        <bm:field name="doc_category"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="assign_id" queryOperator="="/>
+        <bm:query-field field="business_node_id" queryOperator="="/>
+        <bm:query-field field="submited_by_name" queryOperator="like"/>
+        <bm:query-field field="doc_category" queryOperator="="/>
+        <bm:query-field field="document_num" queryOperator="like"/>
+        <bm:query-field field="submited_by_name" queryOperator="like"/>
+        <bm:query-field name="start_time_from" queryExpression="start_time &gt;= ${@start_time_from} "/>
+        <bm:query-field name="start_time_to" queryExpression="start_time &lt;= ${@start_time_to} "/>
+        <bm:query-field field="state" queryOperator="="/>
+        <bm:query-field field="handler_name" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select t.*,
+       decode(t.last_approve_name,
+              null,
+              null,
+              to_char(t.LAST_UPDATE_DATE, 'yyyy-mm-dd hh24:mi')) LAST_UPDATE_DATE_desc
+  from (select rs.*,
+               to_char(rs.creation_date, 'yyyy-mm-dd hh24:mi') creation_date_desc,
+               (select code_value_name
+                  from sys_code_values_v
+                 where code = 'WFL_WORKFLOW_INSTANCE_STATUS'
+                   and code_value = to_char(rs.status)) status_name,
+               wfl_common_pkg.get_current_node(rs.workflow_id,
+                                               rs.instance_id,
+                                               rs.current_node) curr_approve_name,
+               wfl_common_pkg.get_wfl_user_name(rs.created_by) create_by_name,
+               wfl_common_pkg.get_wfl_user_name((select r.created_by
+                                                  from wfl_approve_record r
+                                                 where r.record_id =
+                                                       (select max(record_id)
+                                                          from wfl_approve_record
+                                                         where instance_id =
+                                                               rs.instance_id))) last_approve_name,
+               (select wdr.document_desc
+                  from wfl_document_reference_vl wdr
+                 where rs.workflow_category = wdr.workflow_category) ORDER_TYPE,
+               to_char((select max(nr.date_limit)
+                         from wfl_instance_node_recipient nr,
+                              wfl_workflow_node           n
+                        where nr.instance_id = rs.instance_id
+                          and nr.node_id = n.node_id
+                          and n.sequence_num = rs.current_node),
+                       'yyyy-mm-dd hh24:mi') date_limit
+          from (select a.*,
+                       a.document_number ORDER_NO,
+                       b.name workflow_name,
+                       b.workflow_category
+                  from wfl_workflow_instance a, wfl_workflow_vl b
+                 where a.created_by = ${/session/@user_id}
+                   and a.status in (10,-1,-2)
+                   and a.workflow_id = b.workflow_id
+                                                 
+                 order by a.creation_date desc) rs) t
+         #WHERE_CLAUSE# ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="creation_date_from" datatype="java.util.Date" queryexpression="t.creation_date &gt; to_date(${@creation_date_from}, &apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_to" datatype="java.lang.String" queryexpression="t.creation_date &lt; to_date(${@creation_date_to}, &apos;yyyy-mm-dd&apos;) + 1"/>
+        <bm:query-field name="workflow_status" datatype="java.lang.String" queryexpression="t.status = ${@workflow_status}"/>
+        <bm:query-field name="order_type" datatype="java.lang.String" queryexpression="t.workflow_category = ${@order_type}"/>
+        <bm:query-field name="create_by_name" datatype="java.lang.String" queryexpression="t.create_by_name like ${@create_by_name}"/>
+        <bm:query-field name="approver" datatype="java.lang.String" queryexpression="t.curr_approve_name like ${@approver}"/>
+        <bm:query-field name="workflow_name" datatype="java.lang.String" queryexpression="t.workflow_name like ${@workflow_name}"/>
+        <bm:query-field name="order_no" datatype="java.lang.String" queryexpression="t.order_no like upper(${@order_no})"/>
+    </bm:query-fields>
+</bm:model>

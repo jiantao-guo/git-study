@@ -1,0 +1,445 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<p:procedure xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application"  xmlns:rs="aurora.database.rsconsumer" xmlns:p="uncertain.proc" trace="true">
+    <s:server-script import="composite_map_util.js"/>
+    <s:server-script import="ebank_util.js"/>
+    <s:server-script import="gz_unionpay_util.js"/>
+    <s:server-script><![CDATA[
+            function doSend() {
+                //生成EbankUtil实例
+                var eUtil = new EbankUtil();
+                var logger = Packages.org.apache.log4j.Logger.getLogger('wbSend');
+                try {
+                    eUtil.dolock('WEIBAO_PAY');
+                    eUtil.log({
+                        ref_table: 'wbSend',
+                        log_text: '微保-批量代付-锁表'
+                    });
+                    //生成WeibaoUtil实例
+                    var wbUtil = new WeibaoUtil();
+                    eUtil.log({
+                        ref_table: 'wbSend',
+                        log_text: '微保-批量代付-生成微保工具包实例'
+                    });
+                    //生成CmUTIL包实例
+                    var cmUtil = new CmUtil();
+                    eUtil.log({
+                        ref_table: 'wbSend',
+                        log_text: '微保-批量代付-生成CompositeMap工具包实例'
+                    });
+                    try {
+                        var errorMsg;
+                        var batchOrderNo = wbUtil.getBatchOrderNo();
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付请求发起'
+                        });
+                        var needPayRecords = wbUtil.getNeedPayRecords();
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付-获取待支付记录'
+                        });
+                        var totalLength = 0;
+                        var totalSum = 0;
+                        for (var i = 0;i < needPayRecords.length;i++) {
+                            totalLength++;
+                            //处理为两位小数
+                            totalSum += parseFloat(needPayRecords[i]['amount'].toFixed(2));
+                        }
+            
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: String('微保-批量代付-本次总支付条数为:' + totalLength + '条,总支付金额为:' + totalSum + '元')
+                        });
+            
+                        if (totalLength == 0) {
+                            eUtil.log({
+                                ref_table: 'wbSend',
+                                log_text: String('微保-批量代付-本次总支付条数为0条,退出')
+                            });
+            
+                            //解除锁表
+                            eUtil.unlock('WEIBAO_PAY');
+                            eUtil.log({
+                                ref_table: 'wbSend',
+                                log_text: '微保-批量代付-解锁'
+                            });
+            
+                            return;
+                        }
+            
+                        //根节点生成
+                        var tRequest = cmUtil.createNode({
+                            tag: 'TRequest'
+                        });
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付-报文基础结构生成完成'
+                        });
+                        /*******************************************************************
+                         *配置信息生成
+                         ********************************************************************/
+                        /**
+                         *字段ID:Version
+                         *字段名称:版本
+                         *取值:3.0
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'Version',
+                            text: '3.0'
+                        });
+                        /**
+                         *字段ID:InputCharset
+                         *字段名称:字符集
+                         *取值:GB2312
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'InputCharset',
+                            text: 'GB2312'
+                        });
+                        /**
+                         *字段ID:SignType
+                         *字段名称:数据格式
+                         *取值:MD5
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'SignType',
+                            text: 'MD5'
+                        });
+                        /**
+                         *字段ID:CustomerNo
+                         *字段名称:客户号
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'CustomerNo',
+                            text: wbUtil.customerNo
+                        });
+                        /**
+                         *字段ID:GoodNo
+                         *字段名称:商品号
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'GoodNo',
+                            text: wbUtil.goodNo
+                        });
+                        /**
+                         *字段ID:BatchOrderNo
+                         *字段名称:批量订单号
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'BatchOrderNo',
+                            text: batchOrderNo
+                        });
+                        /**
+                         *字段ID:TotalNum
+                         *字段名称:总笔数
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'TotalNum',
+                            text: totalLength
+                        });
+                        /**
+                         *字段ID:TotalPrice
+                         *字段名称:总金额
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'TotalPrice',
+                            text: totalSum
+                        });
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付-报文配置部分生成'
+                        });
+                        logger.info('微保-批量代付-报文配置部分生成,报文内容为:' + tRequest.toXML());
+            
+                        /*******************************************************************
+                         *明细信息生成
+                         ********************************************************************/
+                        var allOrderInfoStr = '';
+                        for (var i = 0;i < needPayRecords.length;i++) {
+                            var payRec = needPayRecords[i];
+                            eUtil.log({
+                                ref_table: 'wbSend',
+                                log_text: '微保-批量代付-明细信息新增一条记录'
+                            });
+                            var orderInfoStr = '';
+                            //OrderNo              	String(32)	必填	商户订单号
+                            orderInfoStr += payRec['detail_id'] + '^';
+                            //OrderAmount	Decimal(10,2)	必填	商户订单金额，单位元,格式：100.00
+                            orderInfoStr += parseFloat(payRec['amount'].toFixed(2)) + '^';
+                            //BankCode	String(50)	必填	银行编码，编码表见附彔
+                            orderInfoStr += payRec['payee_bank_code'] + '^';
+                            //BankCardType	String(1)	必填	0 银行卡，1 存折，2 信用卡
+                            orderInfoStr += 0 + '^';
+                            //BankCardNo	String(50)	必填	卡号
+                            orderInfoStr += payRec['payee_account_number'] + '^';
+                            //BankCardName	String(50)	必填	开户姓名
+                            orderInfoStr += payRec['payee_account_name'] + '^';
+                            //CertType	String(2)		证件类型：身份证1；护照2；军官证3；士兵证4；回乡证5；临时身份证6；户口簿7；警官证8；台胞证9；其它证件11信用卡代扣必填
+                            orderInfoStr += '^';
+                            //CertId	String(50)		证件号信用卡代扣必填
+                            orderInfoStr += '^';
+                            //Mobile	string(20)		银行账户绑定的手机号码信用卡代扣必填
+                            orderInfoStr += '^';
+                            //CreditValid	String(4)		信用卡有效期,YYMM，信用卡代扣必填
+                            orderInfoStr += '^';
+                            //CreditCvv2	String(3)		信用卡CVV,3位数字，信用卡代扣必填
+                            orderInfoStr += '^';
+                            //BankProvince	String(50)		收款行：省名
+                            orderInfoStr += '^';
+                            //BankCity	String(50)		收款行：城市
+                            orderInfoStr += '^';
+                            //BankName	String(200)		收款行：开户行名称
+                            orderInfoStr += '^';
+                            //ActName	String(200)		付款人：名称
+                            orderInfoStr += '^';
+                            //ActId	String(50)		付款人：账号
+                            orderInfoStr += '^';
+                            //ProductName	String(100)	必填	商品名称(保单号) ,在银行允许下为银行摘要
+                            orderInfoStr += ('描述信息为:' + ('' + (payRec['description'] ? payRec['description'] : '')).substr(0, 50) + '^');
+            
+                            if (i == 0) {
+                                allOrderInfoStr += orderInfoStr;
+                            } else {
+                                allOrderInfoStr += '|' + orderInfoStr;
+                            }
+                        }
+            
+                        /**
+                         *字段ID:OrderInfos
+                         *字段名称:交易信息
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'OrderInfos',
+                            text: allOrderInfoStr
+                        });
+            
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付-支付信息生成完成'
+                        });
+            
+            
+                        //生成待签名字符串
+                        var needSignStr = 'Version=3.0&InputCharset=GB2312&CustomerNo=' + wbUtil.customerNo + '&GoodNo=' + wbUtil.goodNo + '&BatchOrderNo=' + batchOrderNo + '&TotalNum=' + totalLength + '&TotalPrice=' + totalSum + '&OrderInfos=' + allOrderInfoStr;
+                        logger.info(needSignStr);
+                        try {
+                            //签名计算
+                            var signStr = wbUtil.sign(needSignStr);
+                            logger.info(signStr);
+                        } catch (e) {
+                            eUtil.log({
+                                ref_table: 'wbSend',
+                                log_text: String('微保-批量代付-签名计算部分出现异常，异常信息为:' + e.message)
+                            });
+                            errorMsg = String('签名计算部分出现异常:' + e.message);
+                            throw new Error('SIGN_ERROR');
+                        }
+            
+                        /**
+                         *字段ID:Sign
+                         *字段名称:签名信息
+                         */
+                        cmUtil.addChild(tRequest, {
+                            tag: 'Sign',
+                            text: signStr
+                        });
+            
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付-签名信息生成完成'
+                        });
+            
+                        var xmlStr = '<?xml version="1.0" encoding="GBK"?>\n' + String(tRequest.toXML());
+                        //xmlStr = xmlStr.replace(/\<\!\[CDATA\[/g, '').replace(/\]\]\>/g, '');
+                        logger.info(String('微保-批量代付-报文生成完成,报文内容为:\n' + xmlStr));
+            
+                        //Http传输之前先修改本次待发送数据的接口状态和支付状态，避免出现接口传输成功，但是应用服务器宕机，导致无法正确回写支付状态
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付-开始执行HTTP传输操作'
+                        });
+            
+                        var data = [];
+                        for (var i = 0;i < needPayRecords.length;i++) {
+                            data.push({
+                                detail_id: needPayRecords[i].detail_id,
+                                payment_status: 'PAY_SENT',
+                                interface_status: 'UNKNOWN',
+                                status_desc: '报文拼接完成，进入接口调用步骤',
+                                _status: 'update'
+                            });
+                        }
+            
+                        //HTTP传输操作
+                        try {
+                            var result = wbUtil.invokeInterface(String(xmlStr), 'SEND');
+                        } catch (e) {
+                            eUtil.log({
+                                ref_table: 'wbSend',
+                                log_text: String('微保-批量代付-执行HTTP传输操作部分出现异常，异常信息为:' + e.message)
+                            });
+                            errorMsg = String('执行HTTP传输操作部分出现异常:' + e.message);
+                            throw new Error('HTTP_TRANS_ERROR');
+                        }
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付-结束执行HTTP传输操作'
+                        });
+                        logger.info(String('微保-批量代付-结束执行HTTP传输操作，返回结果为:' + result));
+            
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付-开始执行返回信息转换操作'
+                        });
+                        try {
+                            // 修改xml头上的编码格式，CompositeMapLocator转换时根据头上的encoding进行转换
+                            result = result.replace('encoding="gb2312"', 'encoding="UTF-8"');
+                            var resultMap = cmUtil.parseXml(result);
+                        } catch (e) {
+                            eUtil.log({
+                                ref_table: 'wbSend',
+                                log_text: String('微保-批量代付-执行返回信息转换操作部分出现异常，异常信息为:' + e.message)
+                            });
+                            errorMsg = String('执行返回信息转换操作部分出现异常:' + e.message);
+                            throw new Error('PARSE_XML_ERROR');
+                        }
+                        eUtil.log({
+                            ref_table: 'wbSend',
+                            log_text: '微保-批量代付-结束执行返回信息转换操作'
+                        });
+                        //查看整批支付状态
+                        //T 接受成功
+                        //F 接受失败
+                        var resultInfoNode = resultMap.getChild('ResultInfo');
+                        if (resultInfoNode && resultInfoNode.getChild('ResultCode')) {
+                            //微保接受成功
+                            if (resultInfoNode.getChild('ResultCode').getText() == 'T') {
+                                eUtil.log({
+                                    ref_table: 'wbSend',
+                                    log_text: '微保-批量代付-传输成功，修改该批次资金接口支付状态为：支付传送[PAY_SENT],接口状态为:已发送:[SENT]'
+                                });
+                                throw new Error('TRANSFER_SUCCESS');
+                            }
+                            //微保接受失败
+                            else {
+                                eUtil.log({
+                                    ref_table: 'wbSend',
+                                    log_text: '微保-批量代付-微保接受失败，修改该批次资金接口支付状态为：支付失败[PAY_FAILED],接口状态为:传送失败:[FAILED]'
+                                });
+                                errorMsg = String(resultInfoNode.getChild('ErrCode').getText() + '-' + resultInfoNode.getChild('Description').getText());
+                                throw new Error('ACCESS_FAILED');
+                            }
+                        } else {
+                            eUtil.log({
+                                ref_table: 'wbSend',
+                                log_text: '微保-批量代付-返回结果格式错误'
+                            });
+                            errorMsg = '返回结果格式错误';
+                            throw new Error('RESULT_FORMAT_ERROR');
+                        }
+                    } catch (e) {
+                        //签名异常，修改支付状态为等待发送[WAITING_SEND],接口状态为未发送[UNSENT]
+                        if (e.message == 'SIGN_ERROR') {
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'WAITING_SEND',
+                                    interface_status: 'UNSENT',
+                                    status_desc: '报文加密阶段出现异常',
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                        //HTTP传输异常|返回结果验证异常|XML转换异常|返回结果格式异常，修改支付状态为支付传送[PAY_SENT],接口状态为传送状态未知[UNKNOWN]
+                        else if (e.message == 'HTTP_TRANS_ERROR' || e.message == 'PARSE_XML_ERROR' || e.message == 'RESULT_FORMAT_ERROR') {
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'PAY_SENT',
+                                    interface_status: 'UNKNOWN',
+                                    hec_batch_num: batchOrderNo,
+                                    hec_detail_num: needPayRecords[i].detail_id,
+                                    status_desc: String(e.message + '-' + errorMsg),
+                                    itf_pay_date: eUtil.getTime(),
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                        //微保接收失败，修改支付状态为支付失败[PAY_FAILED],接口状态为传送失败[FAILED]
+                        else if (e.message == 'ACCESS_FAILED') {
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'PAY_FAILED',
+                                    interface_status: 'FAILED',
+                                    hec_batch_num: batchOrderNo,
+                                    hec_detail_num: needPayRecords[i].detail_id,
+                                    status_desc: String(e.message + '-' + errorMsg),
+                                    itf_pay_date: eUtil.getTime(),
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                        //传输成功，微保接收成功，修改支付状态为支付传送[PAY_SENT]，接口状态为已发送[SENT]
+                        else if (e.message == 'TRANSFER_SUCCESS') {
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'PAY_SENT',
+                                    interface_status: 'SENT',
+                                    hec_batch_num: batchOrderNo,
+                                    hec_detail_num: needPayRecords[i].detail_id,
+                                    status_desc: '',
+                                    itf_pay_date: eUtil.getTime(),
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                        //其他异常情况，认为支付信息已发送[PAY_SENT]，接口状态未知[UNKNOWN]
+                        else {
+                            eUtil.log({
+                                ref_table: 'wbSend',
+                                log_text: String('微保-批量代付-出现异常，异常信息为:' + e.message)
+                            });
+                            var data = [];
+                            for (var i = 0;i < needPayRecords.length;i++) {
+                                data.push({
+                                    detail_id: needPayRecords[i].detail_id,
+                                    payment_status: 'PAY_SENT',
+                                    interface_status: 'UNKNOWN',
+                                    hec_batch_num: batchOrderNo,
+                                    hec_detail_num: needPayRecords[i].detail_id,
+                                    status_desc: String(e.message),
+                                    itf_pay_date: eUtil.getTime(),
+                                    _status: 'update'
+                                });
+                            }
+                            eUtil.paySendUpdateTrans(data);
+                        }
+                    }
+                } catch (e) {
+                    eUtil.log({
+                        ref_table: 'wbSend',
+                        log_text: String('微保-批量代付-最外层出现异常，异常信息为:' + e.message)
+                    });
+                } finally {
+                    //解除锁表
+                    eUtil.unlock('WEIBAO_PAY');
+                    eUtil.log({
+                        ref_table: 'wbSend',
+                        log_text: '微保-批量代付-解锁'
+                    });
+                }
+            }
+            
+            doSend();
+    ]]></s:server-script>
+</p:procedure>

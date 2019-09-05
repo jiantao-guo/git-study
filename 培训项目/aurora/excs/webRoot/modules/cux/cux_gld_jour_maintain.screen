@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure><![CDATA[
+   ]]></a:init-procedure>
+    <a:view>
+        <a:link id="cux_gld_jour_deleteall_link" model="cux.cux_gld_jour_header_update" modelaction="batch_update"/>
+        <a:link id="cux_gld_jour_readonly_link" url="${/request/@context_path}/modules/cux/cux_gld_jour_readonly.screen"/>
+        <a:link id="cux_gld_jour_update_link" url="${/request/@context_path}/modules/cux/cux_gld_jour_update.screen"/>
+        <script><![CDATA[
+            function queryFunction() {
+                $('cux_gld_jour_result_ds').query();
+            }
+            
+            function resetFunction() {
+                $('cux_gld_jour_query_ds').getCurrentRecord().getField('payee_name').setReadOnly(true);
+                $('cux_gld_jour_query_ds').reset();
+            }
+            
+            function updateFunction(dataSet, record, name, value) {}
+            
+            function reqNumRenderer(value, record, name) {
+                var page;
+                if (record.get('status') == 'GENERATE' || record.get('status') == 'REJECTED' || record.get('status') == 'TAKEN_BACK') {
+                    page = $('cux_gld_jour_update_link').getUrl();
+                    return '<a href="javascript:reqNumUpdateNewWindow(' + record.get('gld_jour_headers_id') + ',\'' + page + '\');">' + value + '</a>';
+                } else {
+                    page = $('cux_gld_jour_readonly_link').getUrl();
+                    return '<a href="javascript:reqNumReadOnlyNewWindow(' + record.get('gld_jour_headers_id') + ',\'' + page + '\');">' + value + '</a>';
+                }
+            
+            }
+            
+            function reqNumUpdateNewWindow(gld_jour_headers_id, pageName) {
+                new Aurora.Window({
+                    url: '' + pageName + '?gld_jour_headers_id=' + gld_jour_headers_id,
+                    fullScreen: true,
+                    width: 1024,
+                    height: 620
+                });
+            }
+            
+            function reqNumReadOnlyNewWindow(gld_jour_headers_id, pageName) {
+                new Aurora.Window({
+                    url: pageName + '?gld_jour_headers_id=' + gld_jour_headers_id + '&canUploadFlag=false',
+                    fullScreen: true,
+                    width: 1024,
+                    height: 620
+                });
+            }
+            
+            function deleteFunction() {
+                var records = $('cux_gld_jour_result_ds').getSelected();
+                if (records.length > 0) {
+                    var msgBox = Aurora.showConfirm('${l:PROMPT}', '确定删除此总账凭证？', function() {
+                        msgBox.close();
+                        processDeleteFunction();
+                    }, null, 250, 100);
+                } else {
+                    Aurora.showWarningMessage("${l:PROMPT}", "请选择一条记录!");
+                    return;
+                }
+            }
+            
+            function processDeleteFunction() {
+                var param = $('cux_gld_jour_result_ds').getJsonData(true);
+                for (var i = 0;i < param.length;i++) {
+                    param[i]._status = 'delete';
+                }
+                Aurora.request({
+                    para: param,
+                    url: /*${/request/@context_path}/autocrud/expm.exp_requisition_deleteall/batch_update*/
+                    $('cux_gld_jour_deleteall_link').getUrl(),
+                    success: function() {
+                        $('cux_gld_jour_result_ds').query();
+                    },
+                    scope: this
+                });
+            }
+            
+            function checkNotEmpty(obj) {
+                return typeof(obj) != 'undefined' && !Ext.isEmpty(obj);
+            }
+            
+            function dateValidator(record, name, value) {
+                if (name == 'gld_jour_date_from' || name == 'gld_jour_date_to') {
+                    var start_date = record.get('gld_jour_date_from');
+                    var end_date = record.get('gld_jour_date_to');
+                    if (checkNotEmpty(start_date) && checkNotEmpty(end_date) && (start_date > end_date)) {
+                        return '开始日期不能大于结束日期';
+                    }
+                }
+                return true;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="status_list_ds" lookupCode="CUX_GLD_STATUS"/>
+            <a:dataSet id="cux_gld_jour_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="gld_jour_type_desc" defaultValue="${/model/headrecord/record/@gld_jour_type_desc}" lovGridHeight="340" lovHeight="500" lovService="cux.cux_accounting_doc_type_lov" lovWidth="550" prompt="单据类型" title="单据类型">
+                        <a:mapping>
+                            <a:map from="description" to="gld_jour_type_desc"/>
+                            <a:map from="accounting_doc_type_id" to="gld_jour_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="gld_jour_date_from" prompt="会计日期(从)" validator="dateValidator"/>
+                    <a:field name="gld_jour_date_to" prompt="会计日期(到)" validator="dateValidator"/>
+                    <a:field name="gld_jour_number" prompt="单据编号"/>
+                    <a:field name="title" prompt="摘要"/>
+                    <a:field name="status_display" displayField="code_value_name" options="status_list_ds" prompt="状态" returnField="status" valueField="code_value"/>
+                    <a:field name="status"/>
+                    <a:field name="company_name" lovGridHeight="340" lovHeight="500" lovService="cux.cux_accounting_doc_type_companies_vl_lov" lovWidth="550" prompt="公司" title="BGT_JOURNAL_LINES.COMPANY_ID">
+                        <a:mapping>
+                            <a:map from="company_short_name" to="company_name"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id"/>
+                    <a:field name="amount_from" prompt="金额从"/>
+                    <a:field name="amount_to" prompt="金额到"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="cux_gld_jour_result_ds" autoQuery="true" model="cux.cux_gld_jour_header_query" queryDataSet="cux_gld_jour_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="gld_jour_number" prompt="单据编号"/>
+                    <a:field name="gld_jour_type_desc" prompt="单据类型"/>
+                    <a:field name="gld_jour_date" prompt="会计日期"/>
+                    <a:field name="title" prompt="摘要"/>
+                    <a:field name="status_display" prompt="状态"/>
+                    <a:field name="gld_jour_headers_id"/>
+                    <a:field name="amount" prompt="金额"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form column="4" labelWidth="85" marginWidth="20" title="总账凭证维护">
+                <a:lov name="gld_jour_type_desc" bindTarget="cux_gld_jour_query_ds"/>
+                <a:lov name="company_name" bindTarget="cux_gld_jour_query_ds"/>
+                <a:datePicker name="gld_jour_date_from" bindTarget="cux_gld_jour_query_ds"/>
+                <a:datePicker name="gld_jour_date_to" bindTarget="cux_gld_jour_query_ds"/>
+                <a:textField name="gld_jour_number" bindTarget="cux_gld_jour_query_ds"/>
+                <a:textField name="title" bindTarget="cux_gld_jour_query_ds"/>
+                <a:comboBox name="status_display" bindTarget="cux_gld_jour_query_ds"/>
+                <a:numberField name="amount_from" bindTarget="cux_gld_jour_query_ds"/>
+                <a:numberField name="amount_to" bindTarget="cux_gld_jour_query_ds"/>
+            </a:form>
+            <a:hBox style="margin:10px;">
+                <a:button click="queryFunction" text="PROMPT.QUERY"/>
+                <a:button click="resetFunction" text="PROMPT.RESET"/>
+            </a:hBox>
+            <a:grid bindTarget="cux_gld_jour_result_ds" marginHeight="180" marginWidth="20" navBar="true">
+                <a:toolBar>
+                    <a:button click="deleteFunction" icon="${/request/@context_path}/images/remove.gif" text="PROMPT.DELETE"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="gld_jour_number" align="center" renderer="reqNumRenderer" width="150"/>
+                    <a:column name="company_desc" align="center" prompt="公司" width="120"/>
+                    <a:column name="amount" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="gld_jour_type_desc" align="center" width="150"/>
+                    <a:column name="gld_jour_date" align="center" width="150"/>
+                    <a:column name="title" align="left" width="200"/>
+                    <a:column name="status_display" align="center" width="100"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        ]]></script>
+    </a:view>
+</a:screen>

@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="eam.eam0020.eam0020_asset_books_lov" queryOrderBy="asset_book_code" rootPath="eam0710_asset_books_list"/>
+        <a:model-query defaultWhereClause="t1.code in (&apos;EAM_ASSET_COUNTING_PLAN_STATUS&apos;,&apos;CONTRACT_STATUS&apos;)     and t1.language=${/session/@lang}     and t1.code_value in (&apos;NEW&apos;,&apos;TAKE_BACK&apos;)" fetchAll="true" model="sys.sys_service_lookup_v" queryOrderBy="code_value" rootPath="eam0710_status_list"/>
+        <a:model-query fetchAll="true" model="eam.eam0710.eam0710_default_status" rootPath="default_status_list"/>
+        <a:model-query fetchAll="true" model="eam.eam_asset_sysdate_query" rootPath="sysdate_query"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="eam0710_countting_plan_lines_link" url="${/request/@context_path}/modules/eam/EAM0710/eam_asset_counting_plan_lines.screen"/>
+        <script><![CDATA[
+	        function eam0710_query(){
+	            $('eam0710_asset_counting_plan_result_ds').query();
+	        }
+	        
+	        function submit_success() {
+                $('eam0710_asset_counting_plan_result_ds').query();
+            }
+            
+	        function gridCellClick(grid, row, name, record) {
+                if (name == 'employee_desc') {
+                    if (record.get('asset_book_id') != undefined && record.get('asset_book_id') != '' && record.get('asset_book_id') != null) {
+                        record.getMeta().getField('employee_desc').setReadOnly(false);
+                        record.getField("employee_desc").setLovPara('asset_book_id', record.get('asset_book_id'));
+                    }
+                }
+            }
+            
+            //下达
+            function eam0710_released(){
+                var records = $('eam0710_asset_counting_plan_result_ds').getSelected();
+                if (records.length < 1) {
+                    Aurora.showWarningMessage('${l:PROMPT}', '${l:AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+                
+                var data = [];
+    			    for(var i=0; i<records.length; i++) {
+    			        var para = {};
+    			        para.counting_plan_header_id = records[i].data.counting_plan_header_id;
+    			        data.push(para);
+    			    }
+                Aurora.request({
+                    url: '${/request/@context_path}/modules/eam/EAM0710/eam_asset_counting_plan_released.svc',
+                    para: data,
+                    success: function() {
+                        eam0710_query();
+                    }
+                });
+            }
+            
+            //删除计划
+            function eam0710_delete_schedule(){
+                var records = $('eam0710_asset_counting_plan_result_ds').getSelected();
+                var all = $('eam0710_asset_counting_plan_result_ds').getAll();
+                if (records.length < 1) {
+                    Aurora.showWarningMessage('${l:PROMPT}', '${l:AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+
+                var confirm = window.confirm('${l:EAM_COUNTING_PLAN_HEADERS.SURE_DELETE_SCHEDULE}');
+                if (!confirm) {
+                    return false;
+                }
+                
+                var data = [];
+                var count = 0;
+			    for(var i=0; i<records.length; i++) {
+			        if(!records[i].isNew){
+    			        var para = {};
+    			        para.counting_plan_header_id = records[i].data.counting_plan_header_id;
+    			        data.push(para);
+    			        count++;
+			        }
+			    }
+			    if(count > 0){
+	    			Aurora.request({
+	                    url: '${/request/@context_path}/modules/eam/EAM0710/eam_asset_counting_plan_delete_schedule.svc',
+	                    para: data,
+	                    success: function() {
+	                        eam0710_query();
+	                    }
+	                });
+			    }else{
+			       eam0710_query(); 	
+			    }
+            }
+            
+            function countingPlanLinesAssign(value, record, name){
+                var plan_header_id = record.get('counting_plan_header_id');
+                if (!record.isNew) {
+                    return '<a href="javascript:countingPlanLinesAssignInfo(' + plan_header_id + ')">${l:EAM_COUNTING_PLAN_HEADERS.COUNTING_PLAN_LINES}</a>';
+                }
+            }
+            
+            function countingPlanLinesAssignInfo(plan_header_id) {
+                new Aurora.Window({
+                    id: 'eam0710_countting_plan_lines_window',
+                    url: $('eam0710_countting_plan_lines_link').getUrl() + '?plan_header_id=' + plan_header_id,
+                    fullScreen:true,
+                    title: '${l:EAM_COUNTING_PLAN_HEADERS.COUNTING_PLAN_LINES}'/* ,
+                    height: 467,
+                    width: 650 */
+                });
+            }
+            
+            function eam0710_download(){
+                Aurora.go('${/request/@context_path}/modules/download/asset_excel_template.xls');
+            }
+		]]></script>
+        <a:dataSets>
+            <a:dataSet id="eam0710_asset_books_ds">
+                <a:datas dataSource="/model/eam0710_asset_books_list"/>
+            </a:dataSet>
+            <a:dataSet id="eam0710_asset_counting_plan_status_ds">
+                <a:datas dataSource="/model/eam0710_status_list"/>
+            </a:dataSet>
+            <a:dataSet id="eam0710_asset_counting_plan_query_ds">
+                <a:fields>
+                    <a:field name="asset_book_desc" displayField="asset_book_desc" options="eam0710_asset_books_ds" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" returnField="asset_book_id" valueField="asset_book_id"/>
+                    <a:field name="req_date_from" defaultValue="${/model/sysdate_query/record/@q_from_date}" prompt="EXP_REQUISITION_LINES.DATE_FROM" required="true"/>
+                    <a:field name="req_date_to" defaultValue="${/model/sysdate_query/record/@q_to_date}" prompt="EXP_REQUISITION_LINES.DATE_TO" required="true"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="employee_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0710.eam0710_exp_employee_lov" lovWidth="550" prompt="EAM_COUNTING_PLAN_HEADERS.EMPLOYEE_ID" title="EXP_EMPLOYEES.QUERY">
+                        <a:mapping>
+                            <a:map from="employee_id" to="employee_id"/>
+                            <a:map from="name" to="employee_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="counting_name" prompt="EAM_COUNTING_PLAN_HEADERS.COUNTING_NAME"/>
+                    <a:field name="status_desc" displayField="code_value_name" options="eam0710_asset_counting_plan_status_ds" prompt="EAM_COUNTING_PLAN_HEADERS.STATUS" returnField="status" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="eam0710_asset_counting_plan_result_ds" autoQuery="true" fetchAll="false" model="eam.eam0710.eam0710_counting_plan_headers_query" queryDataSet="eam0710_asset_counting_plan_query_ds" selectable="true" submitUrl="${/request/@context_path}/autocrud/eam.eam0710.eam0710_counting_plan_headers_edit/batch_update">
+                <a:fields>
+                    <a:field name="counting_plan_header_id"/>
+                    <a:field name="asset_book_id" defaultValue="${/model/eam0710_asset_books_list/record/@asset_book_id}"/>
+                    <a:field name="asset_book_desc" defaultValue="${/model/eam0710_asset_books_list/record/@asset_book_desc}" displayField="asset_book_desc" options="eam0710_asset_books_ds" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" required="true" returnField="asset_book_id" valueField="asset_book_id"/>
+                    <a:field name="counting_plan_number"/>
+                    <a:field name="counting_name" required="true"/>
+                    <a:field name="plan_date" required="true"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="employee_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0710.eam0710_exp_employee_lov" lovWidth="550" prompt="EAM_COUNTING_PLAN_HEADERS.EMPLOYEE_ID" readOnly="true" required="true" title="EXP_EMPLOYEES.QUERY">
+                        <a:mapping>
+                            <a:map from="employee_id" to="employee_id"/>
+                            <a:map from="name" to="employee_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="status" defaultValue="${/model/default_status_list/record/@code_value}"/>
+                    <a:field name="status_desc" defaultValue="${/model/default_status_list/record/@code_value_name}" displayField="code_value_name" options="eam0710_asset_counting_plan_status_ds" prompt="EAM_COUNTING_PLAN_HEADERS.STATUS" returnField="status" valueField="code_value"/>
+                    <a:field name="description"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="submit_success"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form row="2" title="EAM_COUNTING_PLAN_HEADERS.TITLE" width="800">
+                <a:comboBox name="asset_book_desc" bindTarget="eam0710_asset_counting_plan_query_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0710_query"/>
+                    </a:events>
+                </a:comboBox>
+                <a:datePicker name="req_date_from" bindTarget="eam0710_asset_counting_plan_query_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0710_query"/>
+                    </a:events>
+                </a:datePicker>
+                <a:datePicker name="req_date_to" bindTarget="eam0710_asset_counting_plan_query_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0710_query"/>
+                    </a:events>
+                </a:datePicker>
+                <a:lov name="employee_desc" bindTarget="eam0710_asset_counting_plan_query_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0710_query"/>
+                    </a:events>
+                </a:lov>
+                <a:textField name="counting_name" bindTarget="eam0710_asset_counting_plan_query_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0710_query"/>
+                    </a:events>
+                </a:textField>
+                <a:comboBox name="status_desc" bindTarget="eam0710_asset_counting_plan_query_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0710_query"/>
+                    </a:events>
+                </a:comboBox>
+            </a:form>
+            <a:hBox>
+                <a:button click="eam0710_query" text="HAP_QUERY"/>
+                <a:button click="eam0710_released" text="EAM_COUNTING_PLAN_HEADERS.RELEASED"/>
+                <a:button click="eam0710_delete_schedule" text="EAM_COUNTING_PLAN_HEADERS.DELETE_SCHEDULE"/>
+                <a:button click="eam0710_download" text="下载模板"/>
+            </a:hBox>
+            <a:grid bindTarget="eam0710_asset_counting_plan_result_ds" height="400" navBar="true" width="1100">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="save"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="asset_book_desc" align="center" editor="eam0710_asset_book_cb" width="120"/>
+                    <a:column name="counting_plan_number" align="center" width="150"/>
+                    <a:column name="counting_name" align="center" editor="eam0710_counting_name_tf" width="200"/>
+                    <a:column name="plan_date" align="center" editor="eam0710_plan_date_dp" renderer="Aurora.formatDate" width="100"/>
+                    <a:column name="employee_desc" align="center" editor="eam0710_emloyee_lv" width="100"/>
+                    <a:column name="status_desc" align="center" width="80"/>
+                    <a:column name="description" align="center" editor="eam0710_desc_tf" prompt="描述" width="260"/>
+                    <a:column align="center" renderer="countingPlanLinesAssign" width="80"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="eam0710_desc_tf"/>
+                    <a:textField id="eam0710_counting_name_tf"/>
+                    <a:comboBox id="eam0710_asset_book_cb"/>
+                    <a:datePicker id="eam0710_plan_date_dp"/>
+                    <a:lov id="eam0710_emloyee_lv"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="gridCellClick"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

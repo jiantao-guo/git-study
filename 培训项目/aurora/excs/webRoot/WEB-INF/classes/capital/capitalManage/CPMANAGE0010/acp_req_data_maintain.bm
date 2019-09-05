@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Rick   
+    $Date: 2016-6-2 21:39:04 
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        t.cux_pay_trans_details_id,
+                        t.payment_number,
+                        t.trade_code,
+                        t.bill_number,
+                        t.document_type,
+                        DECODE(t.document_type, 'EXP_REPORT', '报销单', 'PAYMENT_REQUISITION', '借款单', 'CP_ADJUST', '资金调拨') document_type_cn,
+                        TO_CHAR(t.payment_date, 'yyyy-mm-dd') payment_date,
+                        t.amount,
+                        t.payee_category,
+                        DECODE(t.payee_category, 'EMPLOYEE', '员工', 'VENDER', '供应商') payee_category_desc,
+                        t.payee_id,
+                        t.gather_account,
+                        t.gather_account_name,
+                        t.gather_bank_class,
+                        (SELECT
+                            c.bank_name
+                        FROM
+                            csh_banks_vl c
+                        WHERE
+                            c.bank_code = t.gather_bank_class
+                        ) gather_bank_class_desc,
+                        t.gather_bank_name,
+                        t.gather_bank_number,
+                        t.gather_province,
+                        t.gather_city,
+                        t.gather_province_name,
+                        t.gather_city_name,
+                        t.inter_status,
+                        DECODE(t.inter_status, '0', '已发送', '1', '已读回', '2', '未发送') inter_status_cn,
+                        t.pay_flag,
+                        DECODE(t.pay_flag, '00', '抽档失败', '0', '支付成功', '1', '支付中', '2', '落地', '3', '支付失败', '4', '未知', '9', '未支付') pay_flag_cn,
+                        t.error_message,
+                        t.refund_status,
+                        DECODE(t.refund_status, '1', '未退票', '2', '已退票') refund_status_cn,
+                        t.refund_info,
+                        TO_CHAR(t.refund_date, 'yyyy-mm-dd') refund_date,
+                        t.ori_detail_id,
+                        t.repay_status,
+                        DECODE(t.repay_status, 'N', '否', '是') repay_status_cn,
+                        TO_CHAR(t.CREATION_DATE, 'yyyy-mm-dd') CREATION_DATE,
+                        t.created_by,
+                        t.payment_account,
+                        t.payment_account_name,
+                        t.acp_equisition_number,
+                        t.simulate_post_gl_flag,
+                        decode(t.simulate_post_gl_flag,'Y','是','否') simulate_post_gl_flag_desc
+                    FROM
+                        cux_pay_trans_details t
+                    ) o #WHERE_CLAUSE#
+                ORDER BY
+                    cux_pay_trans_details_id DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[   
+            begin
+				cux_wlzq_payment_pkg.ge_repay_data(p_inter_id => ${@cux_pay_trans_details_id}, 
+														p_user_id  => ${/session/@user_id}); 
+			 end;
+	 		]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[   
+            begin
+				cux_wlzq_payment_pkg.update_account_info(p_inter_id       => ${@cux_pay_trans_details_id},
+							                                p_account_number =>   ${@gather_account},
+							                                p_account_name   =>   ${@gather_account_name},
+							                                p_payee_id       =>   ${@payee_id},
+							                                p_user_id        =>   ${/session/@user_id});
+			 end;
+	 		]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[   
+            begin
+				cux_wlzq_payment_pkg.resent_pay_data(p_inter_id       => ${@cux_pay_trans_details_id},
+							                              p_user_id        =>   ${/session/@user_id});
+			 end;
+	 		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="user_id" queryExpression="created_by like ${/session/@user_id}"/>
+        <bm:query-field name="payment_number" queryExpression="payment_number like ${@payment_number}"/>
+        <bm:query-field name="trade_code" queryExpression="trade_code like ${@trade_code}"/>
+        <bm:query-field name="bill_number" queryExpression="bill_number like ${@bill_number}"/>
+        <bm:query-field name="payee_category" queryExpression="payee_category = ${@payee_category}"/>
+        <bm:query-field name="inter_status" queryExpression="inter_status = ${@inter_status}"/>
+        <bm:query-field name="pay_flag" queryExpression="pay_flag = ${@pay_flag}"/>
+        <bm:query-field name="refund_status" queryExpression="refund_status = ${@refund_status}"/>
+        <bm:query-field name="payment_date_from" queryExpression="payment_date &gt;= ${@payment_date_from}"/>
+        <bm:query-field name="payment_date_to" queryExpression="payment_date &lt;= ${@payment_date_to}"/>
+        <bm:query-field name="creation_date_from" queryExpression="creation_date &gt;= ${@creation_date_from}"/>
+        <bm:query-field name="creation_date_to" queryExpression="creation_date &lt;= ${@creation_date_to}"/>
+        <bm:query-field name="amount_from" queryExpression="amount &gt;= ${@amount_from}"/>
+        <bm:query-field name="amount_to" queryExpression="amount &lt;= ${@amount_to}"/>
+        <bm:query-field name="update_flag" queryExpression="((${@update_flag} = &apos;Y&apos; AND created_by = ${/session/@user_id} AND bill_number not like &apos;ZJDB%&apos;) or ${@update_flag} = &apos;N&apos;) "/>
+    </bm:query-fields>
+</bm:model>

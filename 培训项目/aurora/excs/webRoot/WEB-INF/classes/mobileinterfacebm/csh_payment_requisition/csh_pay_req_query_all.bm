@@ -1,0 +1,410 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    (
+                        CASE
+                            WHEN v.payed_amount = v.total_amount
+                            THEN '已支付'
+                            WHEN v.payed_amount < v.total_amount AND
+                                v.payed_amount  > 0
+                            THEN '部分支付'
+                            ELSE '未支付'
+                        END ) pay_status
+                FROM
+                    (SELECT
+                        (SELECT
+                            '当前审批人:'
+                            ||wfl_common_pkg.get_current_node(wwi.workflow_id, wwi.instance_id, wwi.current_node)
+                        FROM
+                            wfl_workflow_instance wwi
+                        WHERE
+                            wwi.document_number = cprh.requisition_number AND
+                            wwi.status          = 1
+                        ) curr_approve_name,
+                        (SELECT
+                            wwi.instance_id
+                        FROM
+                            wfl_workflow_instance wwi
+                        WHERE
+                            wwi.document_number = cprh.requisition_number AND
+                            wwi.status          = 1
+                        ) instance_id,
+                        NVL(
+                        (SELECT
+                            ss.user_name
+                        FROM
+                            wfl_approve_record r,
+                            sys_user ss
+                        WHERE
+                            ss.user_id  = r.created_by AND
+                            r.record_id =
+                            (SELECT
+                                MAX(record_id)
+                            FROM
+                                wfl_approve_record war,
+                                wfl_workflow_instance wwi
+                            WHERE
+                                war.instance_id     = wwi.instance_id AND
+                                wwi.document_number = cprh.requisition_number AND
+                                wwi.status          = 1
+                            )
+                        ),'null') last_approve_name,
+                        'No.'
+                        ||cprh.requisition_number requisition_number,
+                        (SELECT
+                            cprtv.description
+                        FROM
+                            csh_pay_req_types_vl cprtv
+                        WHERE
+                            cprtv.type_id=cprh.payment_req_type_id
+                        ) document_type,
+                        cprh.payment_req_type_id,
+                        (SELECT
+                            cprt.report_name
+                        FROM
+                            csh_pay_req_types cprt
+                        WHERE
+                            cprt.type_id = cprh.payment_req_type_id
+                        ) report_name,
+                        (SELECT
+                            sr.param_name
+                        FROM
+                            csh_pay_req_types cprt,
+                            sys_reports sr
+                        WHERE
+                            cprt.report_name = sr.report_name AND
+                            cprt.type_id     = cprh.payment_req_type_id AND
+                            rownum           = 1
+                        ) report_param_name,
+                        cprh.payment_method_id,
+                        (SELECT
+                            cpmv.description
+                        FROM
+                            CSH_PAYMENT_METHODS_VL cpmv
+                        WHERE
+                            cpmv.payment_method_id = cprh.payment_method_id
+                        ) payment_method,
+                        cprh.payment_requisition_header_id,
+                        cprh.employee_id,
+                        (SELECT
+                            ee.name
+                            || '-'
+                            || ee.employee_code
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id = cprh.employee_id
+                        ) requisitor,
+                        TO_CHAR(cprh.requisition_date, 'YYYY-MM-DD') requisition_date,
+                        cprh.currency_code,
+                        gld.currency_name,
+                        cprh.amount,
+                        cprh.partner_category,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'PAYMENT_OBJECT' AND
+                            b.code_value = cprh.partner_category
+                        ) p_partner_category,
+                        cprh.partner_id,
+                        DECODE(cprh.partner_category, 'EMPLOYEE',
+                        (SELECT
+                            ee.employee_code
+                            || '-'
+                            || ee.name
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id = cprh.partner_id
+                        ), 'VENDER',
+                        (SELECT
+                            svv.vender_code
+                            || '-'
+                            || svv.description
+                        FROM
+                            pur_system_venders_vl svv
+                        WHERE
+                            svv.vender_id = cprh.partner_id
+                        ), 'CUSTOMER',
+                        (SELECT
+                            scv.customer_code
+                            || '-'
+                            || scv.description
+                        FROM
+                            ord_system_customers_vl scv
+                        WHERE
+                            scv.customer_id = cprh.partner_id
+                        )) payee_name,
+                        cprh.description,
+                        (SELECT
+                            NVL(SUM(ef.amount),0)
+                        FROM
+                            csh_payment_requisition_refs ef,
+                            csh_transaction_v ct,
+                            csh_payment_requisition_lns cprl
+                        WHERE
+                            ef.payment_requisition_line_id     = cprl.payment_requisition_line_id AND
+                            ef.csh_transaction_line_id         = ct.transaction_line_id AND
+                            ct.posted_flag                     = 'Y' AND
+                            cprl.payment_requisition_header_id = cprh.payment_requisition_header_id
+                        ) payed_amount,
+                        NVL(
+                        (SELECT
+                            SUM(nvl(l.amount,0))
+                        FROM
+                            csh_payment_requisition_lns l
+                        WHERE
+                            l.payment_requisition_header_id = cprh.payment_requisition_header_id
+                        ),0)total_amount,
+                        DECODE(
+                        (SELECT
+                            v.code_value_name FROM sys_code_values_vl v,
+                            sys_codes_vl t WHERE t.code = 'PAYMENT_REQUISITION_STATUS' AND
+                            t.code_id                   = v.code_id AND
+                            v.code_value                = cprh.status
+                        ),'提交','领导审批','审批','审批完成',
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_code_values_vl v,
+                            sys_codes_vl t
+                        WHERE
+                            t.code       = 'PAYMENT_REQUISITION_STATUS' AND
+                            t.code_id    = v.code_id AND
+                            v.code_value = cprh.status
+                        ))status_des,
+                        cprh.status,
+                        cprh.closed_date,
+                        cprh.source_type,
+                        --核销金额
+                        --减去退款金额
+                        (
+                        (
+                        SELECT
+                            NVL(SUM(cwo.csh_write_off_amount), 0)
+                        FROM
+                            csh_write_off cwo,
+                            csh_transaction_headers f,
+                            csh_transaction_lines t
+                        WHERE
+                            NVL(CWO.gld_interface_flag,'N') ='P' AND
+                            cwo.write_off_type              = 'PREPAYMENT_EXPENSE_REPORT' AND
+                            cwo.csh_transaction_line_id     = t.transaction_line_id AND
+                            f.transaction_header_id         =t.transaction_header_id AND
+                            f.source_payment_header_id     IN
+                            (SELECT
+                                vf.transaction_header_id
+                            FROM
+                                csh_payment_requisition_refs cpr,
+                                csh_transaction_headers vf,
+                                csh_transaction_lines tf ,
+                                csh_payment_requisition_lns lns,
+                                csh_payment_requisition_hds hds
+                            WHERE
+                                cpr.csh_transaction_line_id       = tf.transaction_line_id AND
+                                vf.transaction_header_id          =tf.transaction_header_id AND
+                                cpr.payment_requisition_line_id   = lns.payment_requisition_line_id AND
+                                lns.payment_requisition_header_id = hds.payment_requisition_header_id AND
+                                hds.payment_requisition_header_id = cprh.payment_requisition_header_id
+                            )
+                        ) -
+                        (SELECT
+                            NVL(SUM(cwo.csh_write_off_amount), 0)
+                        FROM
+                            csh_write_off cwo,
+                            csh_transaction_headers f,
+                            csh_transaction_lines t,
+                            csh_transaction_headers f1
+                        WHERE
+                            NVL(CWO.gld_interface_flag, 'N') = 'P' AND
+                            cwo.write_off_type               = 'PAYMENT_PREPAYMENT' AND
+                            cwo.source_csh_trx_line_id       = t.transaction_line_id AND
+                            f.transaction_header_id          = t.transaction_header_id AND
+                            f.source_payment_header_id       = f1.transaction_header_id AND
+                            f1.returned_flag                 = 'R' AND
+                            cwo.csh_transaction_line_id     IN
+                            (SELECT
+                                tf.transaction_line_id
+                            FROM
+                                csh_payment_requisition_refs cpr,
+                                csh_transaction_headers vf,
+                                csh_transaction_lines tf ,
+                                csh_payment_requisition_lns lns,
+                                csh_payment_requisition_hds hds
+                            WHERE
+                                cpr.csh_transaction_line_id       = tf.transaction_line_id AND
+                                cpr.payment_requisition_line_id   = lns.payment_requisition_line_id AND
+                                vf.transaction_header_id          =tf.transaction_header_id AND
+                                lns.payment_requisition_header_id = hds.payment_requisition_header_id AND
+                                hds.payment_requisition_header_id = cprh.payment_requisition_header_id
+                            )
+                        ))AS write_off_amount,
+                        --未核销金额 = 已付金额 - 已核销金额
+                        (
+                        SELECT
+                            NVL(SUM(ef.amount),0)
+                        FROM
+                            csh_payment_requisition_refs ef,
+                            csh_transaction_v ct,
+                            csh_payment_requisition_lns cprl
+                        WHERE
+                            ef.payment_requisition_line_id     = cprl.payment_requisition_line_id AND
+                            ef.csh_transaction_line_id         = ct.transaction_line_id AND
+                            ct.posted_flag                     = 'Y' AND
+                            cprl.payment_requisition_header_id = cprh.payment_requisition_header_id
+                        )-(
+                        (SELECT
+                            NVL(SUM(cwo.csh_write_off_amount), 0)
+                        FROM
+                            csh_write_off cwo,
+                            csh_transaction_headers f,
+                            csh_transaction_lines t
+                        WHERE
+                            NVL(CWO.gld_interface_flag,'N') ='P' AND
+                            cwo.write_off_type              = 'PREPAYMENT_EXPENSE_REPORT' AND
+                            cwo.csh_transaction_line_id     = t.transaction_line_id AND
+                            f.transaction_header_id         =t.transaction_header_id AND
+                            f.source_payment_header_id     IN
+                            (SELECT
+                                vf.transaction_header_id
+                            FROM
+                                csh_payment_requisition_refs cpr,
+                                csh_transaction_headers vf,
+                                csh_transaction_lines tf ,
+                                csh_payment_requisition_lns lns,
+                                csh_payment_requisition_hds hds
+                            WHERE
+                                cpr.csh_transaction_line_id       = tf.transaction_line_id AND
+                                vf.transaction_header_id          =tf.transaction_header_id AND
+                                cpr.payment_requisition_line_id   = lns.payment_requisition_line_id AND
+                                lns.payment_requisition_header_id = hds.payment_requisition_header_id AND
+                                hds.payment_requisition_header_id = cprh.payment_requisition_header_id
+                            )
+                        ) -
+                        (SELECT
+                            NVL(SUM(cwo.csh_write_off_amount), 0)
+                        FROM
+                            csh_write_off cwo,
+                            csh_transaction_headers f,
+                            csh_transaction_lines t,
+                            csh_transaction_headers f1
+                        WHERE
+                            NVL(CWO.gld_interface_flag, 'N') = 'P' AND
+                            cwo.write_off_type               = 'PAYMENT_PREPAYMENT' AND
+                            cwo.source_csh_trx_line_id       = t.transaction_line_id AND
+                            f.transaction_header_id          = t.transaction_header_id AND
+                            f.source_payment_header_id       = f1.transaction_header_id AND
+                            f1.returned_flag                 = 'R' AND
+                            cwo.csh_transaction_line_id     IN
+                            (SELECT
+                                tf.transaction_line_id
+                            FROM
+                                csh_payment_requisition_refs cpr,
+                                csh_transaction_headers vf,
+                                csh_transaction_lines tf ,
+                                csh_payment_requisition_lns lns,
+                                csh_payment_requisition_hds hds
+                            WHERE
+                                cpr.csh_transaction_line_id       = tf.transaction_line_id AND
+                                cpr.payment_requisition_line_id   = lns.payment_requisition_line_id AND
+                                vf.transaction_header_id          =tf.transaction_header_id AND
+                                lns.payment_requisition_header_id = hds.payment_requisition_header_id AND
+                                hds.payment_requisition_header_id = cprh.payment_requisition_header_id
+                            )
+                        )) AS unwrite_off_amount
+                    FROM
+                        csh_payment_requisition_hds cprh,
+                        gld_currency_vl gld,
+                        csh_pay_req_types_vl cprtv,
+                        (SELECT DISTINCT
+                            t2.employee_id
+                        FROM
+                            exp_document_authorities a,
+                            exp_employee_assigns t,
+                            exp_employee_assigns t2,
+                            exp_org_position p,
+                            exp_org_unit u,
+                            sys_user su
+                        WHERE
+                            su.user_id      = ${@user_id} AND
+                            a.document_type = '04' AND
+                            (
+                                a.granted_position_id IS NULL OR
+                                a.granted_position_id  = t.position_id AND
+                                t.enabled_flag         = 'Y' AND
+                                t.company_id           = a.company_id AND
+                                t.employee_id          = su.employee_id
+                            )
+                            AND
+                            NVL(a.granted_employee_id, su.employee_id ) = su.employee_id AND
+                            t2.enabled_flag                             = 'Y' AND
+                            p.enabled_flag                              = 'Y' AND
+                            u.enabled_flag                              = 'Y' AND
+                            p.position_id                               = t2.position_id AND
+                            u.unit_id                                   = p.unit_id AND
+                            a.start_date                               <= sysdate AND
+                            (
+                                a.end_date    IS NULL OR
+                                a.end_date +1 >= sysdate
+                            )
+                            AND
+                            a.query_authority = 'Y' AND
+                            t2.company_id     = a.company_id AND
+                            (
+                                a.org_unit_id IS NULL OR
+                                a.org_unit_id  = u.unit_id
+                            )
+                            AND
+                            (
+                                a.position_id IS NULL OR
+                                a.position_id  = p.position_id
+                            )
+                            AND
+                            (
+                                a.employee_id IS NULL OR
+                                a.employee_id  = t2.employee_id
+                            )
+                        UNION
+                        SELECT su2.employee_id FROM sys_user su2 WHERE su2.user_id = ${@user_id}
+                        ) x
+                    WHERE
+                        cprh.employee_id         = x.employee_id AND
+                        cprh.currency_code       =gld.currency_code(+) AND
+                        cprh.payment_req_type_id = cprtv.type_id AND
+                        cprtv.mobile_fill        = 'Y' AND
+                        (
+                            (
+                                ${@status_csh} = 'new' AND
+                                cprh.status   IN ('GENERATE','REJECTED','TAKEN_BACK')
+                            )
+                            OR
+                            (
+                                ${@status_csh} = 'submit'AND
+                                cprh.status   IN ('SUBMITTED')
+                            )
+                            OR
+                            (
+                                ${@status_csh} = 'pass'AND
+                                cprh.status   IN ('APPROVED','CLOSED')
+                            )
+                        )
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    requisition_number DESC
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="@company_id"/>
+                <bm:parameter inputPath="@user_id"/>
+                <bm:parameter input="true" inputPath="@status"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

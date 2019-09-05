@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: liangying  
+    $Date: 2013-11-4 下午4:22:05  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="capital.capitalManage.CPMANAGE0030.adjust_get_sys_import_head_id" rootPath="header"/>
+        <a:import-excel header_id="${/model/header/record/@header_id}" separator="," status_field="/parameter/@ImportSuccess" template_code="CSHIMPORT" user_id="${/session/@user_id}"/>
+        <a:model-query defaultWhereClause="header_id=${/model/header/record/@header_id} and TEMPLATE_CODE = &apos;CSHIMPORT&apos;" model="capital.capitalManage.CPMANAGE0030.adjust_import_get_status" rootPath="status"/>
+        <a:model-query autoCount="false" defaultWhereClause="header_id=${/model/header/record/@header_id} order by line_id" fetchAll="true" model="capital.capitalManage.CPMANAGE0030.fee_import_get_fnd_data" rootPath="importData"/>
+        <a:model-query autoCount="false" defaultWhereClause="header_id=${/model/header/record/@header_id} order by line_id" fetchAll="true" model="capital.capitalManage.CPMANAGE0030.get_count_fnd_data" rootPath="importDataCount"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="list_link" url="${/request/@context_path}/modules/capital/capitalManage/CPMANAGE0030/bankmutual_account_lmp.screen"/>
+        <a:link id="import_save_data_link" url="${/request/@context_path}/modules/capital/capitalManage/CPMANAGE0030/import_save_date.svc"/>
+        <script src="${/request/@context_path}/javascripts/util.js" type="text/javascript"/>
+        <script><![CDATA[
+        	var aa = '20160704';
+            function loadComplete() {
+                var count = $('fnd_count').getAll()[0].get('count');
+            	if(count > 2001){
+            	    Aurora.showWarningMessage("${l:PROMPT.WARN}", "记录数不能超过2000！");
+            	    return;
+            	}
+                if ('${/model/status/record/@status}' == 'NEW') {
+                    var importData = $('adjust_data_ds').getAll();
+                    var param = {};
+                    var saveData = [];
+                    var errorData = "";
+                    var importFlag = true;
+                    param['batch_id'] = '${/parameter/@batch_id}';
+                    var errorInfo = "";
+                    
+                    for (var j = 1;j < importData.length;j++) {
+                        	if(!importData[j].get('attribute_1')){
+                        	    break;
+                        	}
+                            var lineData = {};
+                            lineData['bank_account'] = trim(importData[j].get('attribute_1'));
+                            lineData['currency'] = importData[j].get('attribute_2');
+                            lineData['trade_number'] = trim(importData[j].get('attribute_3'));
+                            //var account_date = importData[j].get('attribute_4');
+                            //var acc_date = new Date(account_date);
+                            //account_date = acc_date.format("yyyy-mm-dd");
+                            lineData['account_date'] = importData[j].get('attribute_4');
+                            lineData['right_timestamp'] = importData[j].get('attribute_4');
+                            lineData['debit_amount'] = importData[j].get('attribute_5');
+                            lineData['credit_amount'] = importData[j].get('attribute_6');
+                            lineData['since_amount'] = importData[j].get('attribute_7');
+                            lineData['other_account'] = importData[j].get('attribute_8');
+                            if(lineData['other_account']){
+                                lineData['other_account'] = trim(lineData['other_account']);
+                            }
+                            lineData['other_account_name'] = importData[j].get('attribute_9');
+                            lineData['summary'] = trim(importData[j].get('attribute_10'));
+                            lineData['use'] = importData[j].get('attribute_11');
+                            lineData['postscript'] = importData[j].get('attribute_12');
+                            lineData['right_date'] = importData[j].get('attribute_13');
+                            lineData['bcdl_flag'] = importData[j].get('attribute_14');
+                            
+                            
+                            if(!lineData['bank_account']){
+                                break;
+                            }
+                            if(!lineData['currency']){
+                                importFlag = false;
+                            	errorInfo += "币种不能为空;";
+                            	errorData += importData[j].get('line_id') + ",";
+                            }
+                            var account_date = format_date(lineData['account_date']);
+                            if(!account_date){
+                                importFlag = false;
+                            	errorInfo += "交易时间不能为空;";
+                            	errorData += importData[j].get('line_id') + ",";
+                            }else if(account_date === 'F'){
+                                errorData += importData[j].get('line_id') + ",";
+	                            importFlag = false;
+	                            errorInfo += "交易时间日期格式不对,<br>正确的格式如：2013-12-12"; 
+                            }
+                            lineData['account_date'] = account_date;
+                            
+                            var right_date = format_date(lineData['right_date']);
+                            if(!right_date){
+                                importFlag = false;
+                            	errorInfo += "对账单日期不能为空;";
+                            	errorData += importData[j].get('line_id') + ",";
+                            }else if(right_date === 'F'){
+                                errorData += importData[j].get('line_id') + ",";
+	                            importFlag = false;
+	                            errorInfo += "对账时间日期格式不对,<br>正确的格式如：2013-12-12";
+                            }
+                            lineData['right_date'] = right_date;
+	                       
+                            if(lineData['bcdl_flag'] != 'Y' && lineData['bcdl_flag'] != 'N'){
+                                errorData += importData[j].get('line_id') + ",";
+                                importFlag = false;
+                                errorInfo += "银企标志可选标志为N或Y！";
+                            }
+                            if(!lineData['debit_amount'] || !trim(lineData['debit_amount'])){
+                                lineData['debit_amount'] = '0';
+                            }
+                            lineData['debit_amount'] = trim(lineData['debit_amount'].replaceAll(",",""));
+                            if(!lineData['credit_amount'] || !trim(lineData['credit_amount'])){
+                                lineData['credit_amount'] = '0';
+                            }
+                            lineData['credit_amount'] = trim(lineData['credit_amount'].replaceAll(",",""));
+                            
+                            if(!lineData['since_amount'] || !trim(lineData['credit_amount'])){
+                            	lineData['since_amount'] = '0';
+                            }
+                            lineData['since_amount'] = trim(lineData['since_amount'].replaceAll(",",""));
+                            if(!isNumber(lineData['debit_amount'])){
+                                importFlag = false;
+                            	errorInfo += "借方金额为无效数字;";
+                            	errorData += importData[j].get('line_id') + ",";
+                            }
+                             if(!isNumber(lineData['credit_amount'])){
+                                importFlag = false;
+                            	errorInfo += "贷方金额为无效数字;";
+                            	errorData += importData[j].get('line_id') + ",";
+                            }
+                               if(!isNumber(lineData['since_amount'])){
+                                importFlag = false;
+                            	errorInfo += "余额为无效数字;";
+                            	errorData += importData[j].get('line_id') + ",";
+                            }
+                            lineData['cover'] = 'N';
+                            saveData.push(lineData);
+                    }
+                    
+                    if (importFlag) {
+                        param['details'] = saveData;
+                        Aurora.request({
+                            url: $('import_save_data_link').getUrl(),
+                            para: param,
+                            success: function() {
+                                Ext.get('failure_form').setStyle('display', 'none');
+                                Ext.get('success_form').setStyle('visibility', 'visible');
+                            },
+                            failure: function(args) {
+                                Aurora.showWarningMessage("${l:PROMPT.WARN}", "操作失败！");
+                                return;
+                            },
+                            error: function(args) {
+                                Aurora.showWarningMessage("${l:PROMPT.WARN}", "操作错误！");
+                                return;
+                            },
+                            scope: this
+                        });
+                    } else {
+                        Aurora.showMessage('导入失败', errorInfo);
+                        errorData = errorData.substr(0, errorData.length - 1);
+                        Ext.get('success_form').setStyle('display', 'none');
+                        Ext.get('failure_form').setStyle('visibility', 'visible');
+                        $('error_ds').setQueryParameter('errorData', errorData);
+                        $('error_ds').query();
+                    }
+                } else {
+                    Ext.get('success_form').setStyle('display', 'none');
+                    Ext.get('failure_form').setStyle('visibility', 'visible');
+                }
+            }
+            
+            function back() {
+                window.location.href = $('list_link').getUrl();
+            }
+            
+            function isDateFormat(sDate) {
+                var mp = /\d{4}-\d{2}-\d{2}/;
+            
+                var matchArray = sDate.match(mp);
+                if (matchArray == null) {
+                    return false;
+                }
+                var iaMonthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+                var iaDate = new Array(3);
+                var year, month, day;
+            
+                iaDate = sDate.split("-");
+                year = parseFloat(iaDate[0]);
+                month = parseFloat(iaDate[1]);
+                day = parseFloat(iaDate[2]);
+                if (year < 1900 || year > 2100) {
+                    return false;
+                }
+                if (((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0)) {
+                    iaMonthDays[1] = 29;
+                }
+                if (month < 1 || month > 12) {
+                    return false;
+                }
+                if (day < 1 || day > iaMonthDays[month - 1]) {
+                    return false;
+                }
+                return true;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="adjust_data_ds">
+                <a:datas dataSource="/model/importData"/>
+            </a:dataSet>
+            <a:dataSet id="fnd_count">
+                <a:datas dataSource="/model/importDataCount"/>
+            </a:dataSet>
+            <a:dataSet id="error_ds" model="capital.capitalManage.CPMANAGE0030.check_import_get_error_data">
+                <a:fields>
+                    <a:column name="bank_account" prompt="银行账号"/>
+                    <a:column name="currency" prompt="币种"/>
+                    <a:column name="trade_number" prompt="交易序号"/>
+                    <a:column name="right_timestamp" prompt="交易时间"/>
+                    <a:column name="debit_amount" prompt="借方金额"/>
+                    <a:column name="credit_amount" prompt="贷方金额"/>
+                    <a:column name="since_amount" prompt="账务发生后余额"/>
+                    <a:column name="other_account" prompt="对方账号"/>
+                    <a:column name="other_account_name" prompt="对方户名"/>
+                    <a:column name="summary" prompt="说明"/>
+                    <a:column name="use" prompt="用途"/>
+                    <a:column name="postscript" prompt="附言"/>
+                    <a:column name="right_date" prompt="对账单日期"/>
+                    <a:column name="bcdl_flag" prompt="银企标志"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form id="success_form" style="visibility:hidden" title="IMPORT_SUCCESS" width="400"><![CDATA[
+            ]]></a:form>
+            <a:hBox>
+                <a:button click="back" text="HAP_BACK"/>
+            </a:hBox>
+            <a:form id="failure_form" height="400" style="visibility:hidden" title="ERROR_MESSAGE" width="980">
+                <a:grid bindTarget="error_ds" height="340" navBar="true" width="980">
+                    <a:columns>
+                        <a:column name="bank_account"/>
+                        <a:column name="currency"/>
+                        <a:column name="trade_number"/>
+                        <a:column name="right_timestamp"/>
+                        <a:column name="debit_amount"/>
+                        <a:column name="credit_amount"/>
+                        <a:column name="since_amount"/>
+                        <a:column name="other_account"/>
+                        <a:column name="other_account_name"/>
+                        <a:column name="summary"/>
+                        <a:column name="use"/>
+                        <a:column name="postscript"/>
+                        <a:column name="right_date"/>
+                        <a:column name="bcdl_flag"/>
+                    </a:columns>
+                </a:grid>
+            </a:form>
+        </a:screenBody>
+        <script><![CDATA[
+	  		loadComplete();
+	  	]]></script>
+    </a:view>
+</a:screen>

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    p_requisited_amount,
+                    p_need_pay_amount - p_requisited_amount - p_c_r_amount p_need_payment_amount,
+                    p_requisited_amount - p_requisited_payment_amount p_requisited_unpayment_amount
+                FROM
+                    (SELECT
+                        erh.exp_requisition_header_id,
+                        erh.exp_requisition_number,
+                        erh.employee_id,
+                        erh.currency_code,
+                        erh.exp_requisition_type_id,
+                        (SELECT
+                            NVL (SUM (erl.requisition_amount), 0)
+                        FROM
+                            exp_requisition_lines erl
+                        WHERE
+                            erl.exp_requisition_header_id = erh.exp_requisition_header_id AND
+                            erl.payment_flag              = 'Y'
+                        ) p_need_pay_amount,
+                        (SELECT
+                            NVL (SUM (cprl.amount), 0)
+                        FROM
+                            csh_payment_requisition_lns cprl,
+                            csh_payment_requisition_hds cprh
+                        WHERE
+                            cprl.ref_document_id               = erh.exp_requisition_header_id AND
+                            cprh.payment_requisition_header_id = cprl.payment_requisition_header_id AND
+                            cprh.status                       IN ('SUBMITTED', 'APPROVED')
+                        ) p_requisited_amount,
+                        (SELECT
+                            NVL (SUM (r.amount), 0)
+                        FROM
+                            csh_payment_requisition_refs r,
+                            csh_payment_requisition_lns lns,
+                            csh_payment_requisition_hds cprh
+                        WHERE
+                            lns.payment_requisition_line_id    = r.payment_requisition_line_id AND
+                            lns.ref_document_id                = erh.exp_requisition_header_id AND
+                            cprh.payment_requisition_header_id = lns.payment_requisition_header_id AND
+                            cprh.status                       IN ('CLOSED')
+                        ) p_c_r_amount,
+                        (SELECT
+                            NVL (SUM (cprr.amount), 0)
+                        FROM
+                            csh_payment_requisition_lns cprl,
+                            csh_payment_requisition_hds cprh,
+                            csh_payment_requisition_refs cprr,
+                            csh_transaction_lines ctl,
+                            csh_transaction_headers cth
+                        WHERE
+                            cprl.ref_document_id               = erh.exp_requisition_header_id AND
+                            cprh.payment_requisition_header_id = cprl.payment_requisition_header_id AND
+                            cprl.payment_requisition_line_id   = cprr.payment_requisition_line_id AND
+                            cprr.csh_transaction_line_id       = ctl.transaction_line_id AND
+                            ctl.transaction_header_id          = cth.transaction_header_id AND
+                            cth.posted_flag                    = 'Y' AND
+                            cprh.status NOT                   IN ('CLOSED')
+                        ) p_requisited_payment_amount,
+                        (SELECT
+                            COUNT (flw.document_id) cont
+                        FROM
+                            con_document_flows flw,
+                            exp_requisition_lines erl
+                        WHERE
+                            flw.document_type             = 'CON_CONTRACT' AND
+                            flw.source_document_type      = 'EXP_REQUISITION_LINES' AND
+                            flw.source_document_id        = erl.exp_requisition_header_id AND
+                            erh.exp_requisition_header_id = erl.exp_requisition_header_id
+                        ) cont_flag,
+                        erh.company_id
+                    FROM
+                        exp_requisition_headers erh
+                    WHERE
+                        erh.audit_flag         = 'Y' AND
+                        erh.employee_id        = ${@employee_id} AND
+                        erh.currency_code      = ${@currency_code} AND
+                        erh.requisition_status = 'COMPLETELY_APPROVED' AND
+                        erh.company_id         = ${/session/@company_id} AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            exp_requisition_release err
+                        WHERE
+                            err.exp_requisition_header_id = erh.exp_requisition_header_id AND
+                            err.document_type             = 'EXP_REPORT' AND
+                            err.doc_release_amount       >= err.req_release_amount
+                        ) AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            exp_requisition_dists dist,
+                            exp_requisition_lines erl
+                        WHERE
+                            dist.close_flag               = 'N' AND
+                            dist.exp_requisition_line_id  = erl.exp_requisition_line_id AND
+                            erl.exp_requisition_header_id = erh.exp_requisition_header_id
+                        )
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    exp_requisition_number
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="exp_requisition_number" forDisplay="true" forQuery="true" prompt="CSH_DOC_PAYMENT_COMPANY.DOCUMENT_ID"/>
+        <bm:field name="exp_requisition_header_id"/>
+        <bm:field name="p_need_payment_amount" forDisplay="true" prompt="CSH_PAYMENT_REQUISITION_LNS.NEED_PAYMENT_AMOUNT"/>
+        <bm:field name="cont_flag"/>
+        <bm:field name="p_requisited_amount" forDisplay="true" prompt="EXP_REQUISITION_HEADERS.REQUISITED_AMOUNT"/>
+        <bm:field name="p_requisited_unpayment_amount" forDisplay="true" prompt="EXP_REQUISITION_HEADERS.REQUISITED_UNPAYMENT_AMOUNT"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="exp_requisition_number" dataType="java.lang.String" queryExpression=" exp_requisition_number like &apos;%&apos;||${@exp_requisition_number}||&apos;%&apos;"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="p_need_pay_amount &gt; 0"/>
+    </bm:data-filters>
+</bm:model>

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select v.*,  
+		             (select name from (select employee_id id, employee_code code, name, partner_category
+		      from (select cev.employee_id,
+		             cev.name || '-' || cev.employee_code name,
+		             cev.employee_code,
+		             'EMPLOYEE' partner_category
+		          from exp_company_employees_v cev
+		         where cev.employee_enabled_flag = 'Y'
+		           and cev.company_id = ${/session/@company_id}
+		        union
+		        select svv.vender_id,
+		             svv.description || '-' || svv.vender_code,
+		             svv.vender_code,
+		             'VENDER' partner_category
+		          from pur_company_venders cv, pur_system_venders_vl svv
+		         where cv.company_id = ${/session/@company_id}
+		           and cv.vender_id = svv.vender_id
+		           and cv.enabled_flag = 'Y'
+		        union
+		        select cv.customer_id,
+		             cv.description || '-' || cv.customer_code,
+		             cv.customer_code,
+		             'CUSTOMER' partner_category
+		          from ord_company_customers cc, ord_system_customers_vl cv
+		         where cc.company_id = ${/session/@company_id}
+		           and cc.customer_id = cv.customer_id
+		           and cc.enabled_flag = 'Y') cat) 
+		         where partner_category = v.partner_category
+		         and   id = v.partner_id)  p_partner_name,
+		          (select b.code_value_name 
+		                 from sys_codes_vl a, sys_code_values_vl b
+		                where a.code_id = b.code_id
+		                  and a.code = 'PAYMENT_REQUISITION_STATUS'
+		                  and b.code_value = v.p_status
+		                  )  status_name ,
+		           
+		          ( select count(flw.document_id) cont 
+		   from  con_document_flows   flw
+		   where flw.document_type ='CON_CONTRACT'
+		   and   flw.source_document_type ='CSH_PAYMENT_REQUISITION_LNS' 
+		   and   flw.source_document_id = ${/parameter/@payment_requisition_header_id}) cont_flag        
+		        from (select cprh.employee_id,
+		        	   (select employee_code||'-'||name from exp_employees ee where ee.employee_id = cprh.employee_id) employee_id_display,
+		        	   (select name from exp_employees ee where ee.employee_id = cprh.employee_id) payment_requisition_create_by,
+		               to_char(cprh.requisition_date, 'YYYY-MM-DD') requisition_date,
+		               cprh.currency_code,
+		               gld.currency_name,
+		               gld.currency_name as currency_code_display,
+		               cprh.requisition_number,
+		               cprh.partner_category,
+		               (select code_value_name from sys_codes sc,sys_code_values_vl scvv where scvv.code_id = sc.code_id and sc.code = 'PAYMENT_OBJECT' and scvv.code_value = cprh.partner_category) partner_category_display,
+		               cprh.partner_id,
+		               cprh.amount,
+		               cprh.payment_method_id,
+		               (select description from CSH_PAYMENT_METHODS_VL cpmv where cpmv.payment_method_id = cprh.payment_method_id) payment_method_id_display,
+		               cprh.description,
+		               cprh.operation_unit_id,
+		               cprh.payment_requisition_header_id,
+									cprh.position_id,     
+									(select description from exp_org_position_vl eopv where eopv.position_id = cprh.position_id) position_id_display,
+									 (select (t.description||'-'||t.position_code) parent_pos_desc
+		                              from exp_org_position_vl t  
+		                             where t.enabled_flag ='Y'
+		                               and t.position_id = cprh.position_id
+		                               and t.company_id = cprh.company_id                              
+		                              )  pos_desc  ,
+		                               
+		                           (select (t.description||'-'||t.position_code) parent_pos_desc
+		                              from exp_org_position_vl t  ,exp_employee_assigns_v emp
+		                             where t.enabled_flag ='Y'
+		                               and t.position_id = emp.position_id
+		                               and t.company_id = cprh.company_id
+		                               and emp.employee_id =  cprh.employee_id
+		                               and emp.primary_position_flag = 'Y'
+		                               and emp.assign_enabled_flag = 'Y'
+		                   						 and emp.employee_enabled_flag = 'Y')  parent_pos_desc ,	   
+									cprh.status p_status, 
+									cprh.payment_req_type_id ,
+									(select description from csh_pay_req_types_vl cprt where cprt.type_id = cprh.payment_req_type_id ) as csh_type_id_display,
+									cprh.source_type,
+									cprh.attachment_num payment_requisition_attach_id,
+									(select cc.COMPANY_SHORT_NAME from fnd_companies_vl cc where cc.COMPANY_ID = cprh.company_id) company_short_name
+							  from csh_payment_requisition_hds cprh,gld_currency_vl gld
+							 where cprh.payment_requisition_header_id = ${/parameter/@payment_requisition_header_id} and gld.currency_code(+)=cprh.currency_code) v
+					 ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@company_id"/>
+                <bm:parameter inputPath="/parameter/@payment_requisition_header_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

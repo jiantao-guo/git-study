@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: ldd  
+    $Date: 2012-3-6 下午12:16:26  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[SELECT * FROM ( select req.EXP_REQUISITION_HEADER_ID,
+          req.exp_requisition_number,
+          req.exp_requisition_type_id,
+          (select erpv.DESCRIPTION
+          from exp_expense_req_types_vl erpv
+         where erpv.EXPENSE_REQUISITION_TYPE_ID = req.exp_requisition_type_id) type_description,
+          to_char(req.requisition_date,'yyyy-mm-dd') requisition_date,
+          req.employee_id,
+          (select name
+          from exp_employees es
+         where es.employee_id = req.employee_id) employee_name,
+          req.payee_category,
+         (select code_value_name
+            from sys_code_values_vl b, sys_codes a
+           where b.code_id = a.code_id
+             and a.code = 'PAYMENT_OBJECT'
+             and code_value=req.payee_category) payee_category_name,
+         req.payee_id,
+         decode (req.PAYEE_CATEGORY,
+                 'EMPLOYEE' ,
+                  (select name||'-'||employee_code  
+                     from exp_employees ee where ee.employee_id=req.payee_id),
+                 'CUSTOMER',
+                  (select vc.DESCRIPTION||'-'||vc.CUSTOMER_CODE from ord_system_customers_vl vc where vc.CUSTOMER_ID=req.payee_id ),
+                 (select vv.DESCRIPTION||'-'||vv.VENDER_CODE from pur_system_venders_vl vv where vv.VENDER_ID=req.payee_id ))  payee_name,
+         req.currency_code,
+         req.description,
+         req.requisition_status,
+         (select b.code_value_name
+          from sys_codes_vl a, sys_code_values_vl b
+         where a.code_id = b.code_id
+           and a.code = 'EXP_EXPENSE_REPORT_STATUS'
+           and b.code_value = req.requisition_status) REQUISITION_STATUS_DESC,
+         (select b.code_value_name
+    from sys_code_values_vl b, sys_codes a
+   where b.code_id = a.code_id
+     and a.code = 'EXP_REQUISITION_CLOSE_STATUS'
+     and b.code_value = exp_report_util_pkg.get_exp_req_closed_status(req.exp_requisition_header_id)) ISCLOSE,
+          (select sum(t.requisition_amount)
+          from exp_requisition_lines t
+         where t.exp_requisition_header_id = req.exp_requisition_header_id) QUARTER_NUM,
+       (select sum(t.requisition_functional_amount)
+          from exp_requisition_lines t
+         where t.exp_requisition_header_id = req.exp_requisition_header_id) QUARTER_NUM_FUN,
+         to_char(req.creation_date,'yyyy-mm-dd') creation_date
+     from  exp_requisition_headers req  
+ where  req.company_id = ${/session/@company_id}
+   and  exists ( select 1
+             from exp_requisition_release  r where r.document_type = 'EXP_REPORT' 
+              and r.document_id =  ${@head_id}
+              and r.exp_requisition_header_id = req.exp_requisition_header_id
+              and r.company_id = req.company_id
+            ) 
+  ORDER BY exp_requisition_number desc) v ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@company_id"/>
+                <bm:parameter name="head_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

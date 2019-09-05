@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    ( SELECT DISTINCT
+                        s.employee_id,
+                        emp.employee_code,
+                        emp.name,
+                        emp.employee_code
+                        ||' - '
+                        ||emp.name namecode,
+                        emp.bank_of_deposit bank_branch_code,
+                        emp.bank_account bank_account_code,
+                        (SELECT
+                            t2.description_text
+                        FROM
+                            FND_DESCRIPTIONS T2
+                        WHERE
+                            T2.DESCRIPTION_ID =
+                            (SELECT
+                                t1.description_id
+                            FROM
+                                EXP_ORG_POSITION t1
+                            WHERE
+                                t1.position_id=
+                                (SELECT
+                                    t.position_id
+                                FROM
+                                    exp_employee_assigns t
+                                WHERE
+                                    t.company_id           =${@company_id} AND
+                                    t.employee_id          =s.employee_id AND
+                                    t.primary_position_flag='Y'
+                                )
+                            ) AND
+                            T2.LANGUAGE = 'ZHS'
+                        ) position_primary,
+                        (select t.position_id
+                           from exp_employee_assigns t
+                          where t.company_id = ${@company_id}
+                            and t.employee_id = s.employee_id
+                            and t.primary_position_flag = 'Y') position_primary_id
+                    FROM
+                        exp_employee_assigns s,
+                        exp_employees emp ,
+                        (SELECT
+                            t2.employee_id
+                        FROM
+                            exp_document_authorities a,
+                            exp_employee_assigns t,
+                            exp_employee_assigns t2,
+                            exp_org_position p,
+                            exp_org_unit u,
+                            sys_user su
+                        WHERE
+                            su.user_id      = ${/session/@user_id} AND
+                            a.document_type = '01' AND
+                            (
+                                a.granted_position_id IS NULL OR
+                                a.granted_position_id  = t.position_id AND
+                                t.enabled_flag         = 'Y' AND
+                                t.company_id           = a.company_id AND
+                                t.employee_id          = su.employee_id
+                            )
+                            AND
+                            NVL(a.granted_employee_id, su.employee_id ) = su.employee_id AND
+                            t2.enabled_flag                             = 'Y' AND
+                            p.enabled_flag                              = 'Y' AND
+                            u.enabled_flag                              = 'Y' AND
+                            p.position_id                               = t2.position_id AND
+                            u.unit_id                                   = p.unit_id AND
+                            a.start_date                               <= sysdate AND
+                            (
+                                a.end_date IS NULL OR
+                                a.end_date + 1 >= sysdate
+                            )
+                            AND
+                            a.query_authority = 'Y' AND
+                            t2.company_id     = a.company_id AND
+                            (
+                                a.org_unit_id IS NULL OR
+                                a.org_unit_id  = u.unit_id
+                            )
+                            AND
+                            (
+                                a.position_id IS NULL OR
+                                a.position_id  = p.position_id
+                            )
+                            AND
+                            (
+                                a.employee_id IS NULL OR
+                                a.employee_id  = t2.employee_id
+                            )
+                        GROUP BY
+                            t2.employee_id
+                        UNION
+                        SELECT
+                            su2.employee_id
+                        FROM
+                            sys_user su2
+                        WHERE
+                            su2.user_id = ${/session/@user_id}
+                        ) x
+                    WHERE
+                        s.employee_id  = emp.employee_id AND
+                        s.enabled_flag = 'Y' AND
+                        s.company_id   = ${/session/@company_id} AND
+                        s.employee_id  = x.employee_id
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="employee_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="EMPLOYEE_ID"/>
+        <bm:field name="employee_code" forDisplay="true" forQuery="true" prompt="EXP_EMPLOYEE.EMPLOYEE_CODE"/>
+        <bm:field name="name" forDisplay="true" forQuery="true" prompt="EXP_EMPLOYEE.EMPLOYEE_NAME"/>
+        <bm:field name="namecode"/>
+        <bm:field name="position_primary"/>
+        <bm:field name="position_primary_id"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="employee_code" queryExpression="(v.employee_code like &apos;%&apos;||${@employee_code}||&apos;%&apos; or v.name like &apos;%&apos;||${@employee_code}||&apos;%&apos;)"/>
+        <bm:query-field name="name" queryExpression="v.name like &apos;%&apos;||${@name}||&apos;%&apos;"/>
+        <bm:query-field name="namecode" queryExpression="v.employee_code ||&apos; - &apos;||v.name like &apos;%&apos;||${@namecode}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

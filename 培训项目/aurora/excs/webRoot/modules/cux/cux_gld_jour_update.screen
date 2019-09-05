@@ -1,0 +1,865 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: kevin  
+    $Date: 2014-6-23 下午02:41:46  
+    $Revision: 1.0  
+    $Purpose: 总账主界面/修改 
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="cux.cux_gld_jour_header_update" rootPath="headrecord"/>
+        <a:model-query autoCount="false" defaultwhereclause="enabled_flag=&apos;Y&apos;" fetchAll="true" model="gld.gld_currency" rootPath="currency_list"/>
+        <!--<a:model-query fetchAll="true" model="cux.yingxiang_upload" rootpath="yx_data"/>
+        <a:model-query fetchAll="true" model="WS.yx.hec_yx_ip" rootpath="yx_ip"/>-->
+        <a:model-query autoCount="false" model="sys.get_sys_birt_report_url" rootPath="birt_report_url"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="gld_jour_uploadFile_link" url="${/request/@context_path}/uploadFile.screen"/>
+        <a:link id="cux_gld_jour_update_control_link" url="${/request/@context_path}/modules/cux/cux_gld_jour_update_control.svc"/>
+        <a:link id="cux_gld_jour_submit_control_link" url="${/request/@context_path}/modules/cux/cux_gld_jour_submit_control.svc"/>
+        <a:link id="cux_gld_jour_update_link1" url="${/request/@context_path}/modules/cux/cux_gld_jour_update.screen"/>
+        <a:link id="cux_gld_jour_update_history_link" url="${/request/@context_path}/modules/cux/cux_gld_jour_query_history.screen"/>
+        <a:link id="cux_gld_jour_update_upload_link" url="${/request/@context_path}/modules/cux/cux_gld_jour_import.screen"/>
+        <a:link id="cux_gld_jour_maintain_link" url="${/request/@context_path}/modules/cux/cux_gld_jour_maintain.screen"/>
+        <a:link id="cux_gld_jour_update_self_link" url="${/request/@context_path}/modules/cux/cux_gld_jour_update.screen"/>
+        <a:link id="cux_gld_delete_link" model="cux.cux_gld_jour_import_delete" modelaction="delete"/>
+        <link href="${/request/@context_path}/css/page_title.css" rel="stylesheet" type="text/css"/>
+        <a:link id="load_image_link" model="fnd.update_image_barcode" modelaction="update"/>
+        <a:link id="rescan_link" model="expm.image.rescan_image" modelaction="update"/>
+        <script src="${/request/@context_path}/javascripts/MD5.js" type="text/javascript"/>
+        <a:screen-include screen="modules/public/sys_document_images.screen"/>
+        <script><![CDATA[
+            var lineNum = 0;
+            var index = 1;
+            var saveFlag = true;
+            
+            /*
+             * 四则运算精度修正函数
+             * m  数值1(number)
+             * n  数值2(number)
+             * op 操作符(string)
+             */
+            
+            function fixMath(m, n, op) {
+                var a = (m + "");
+                var b = (n + "");
+                var x = 1;
+                var y = 1;
+                var c = 1;
+                if (a.indexOf(".") > 0) {
+                    x = Math.pow(10, a.length - a.indexOf(".") - 1);
+                }
+                if (b.indexOf(".") > 0) {
+                    y = Math.pow(10, b.length - b.indexOf(".") - 1);
+                }
+                switch (op) {
+                case '+':
+                   case '-':
+                    c = Math.max(x, y);
+                    m = Math.round(m * c);
+                    n = Math.round(n * c);
+                    break;
+                case '*':
+                    c = x * y;
+                    m = Math.round(m * x);
+                    n = Math.round(n * y);
+                    break;
+                case '/':
+                    c = Math.max(x, y);
+                    m = Math.round(m * c);
+                    n = Math.round(n * c);
+                    c = 1;
+                    break;
+                }
+                return eval("(" + m + op + n + ")/" + c);
+            }
+            
+            function loadComplete() {
+                lineNum = $('cux_gld_jour_update_ds').getAt(0).get('line_number');
+                lineNum = Number(lineNum);
+                var headerRecord = $('cux_gld_jour_update_ds').getAt(0);
+                headerRecord.set('_status', 'update');
+            }
+            
+            function saveFunction() {
+                resetLineNumber();
+                if (!$('cux_gld_jour_update_ds').validate() || !$('cux_gld_jour_line_update_ds').validate()) {
+                    return;
+                }
+                //$('saveButton').disable();
+                var recordsData = $('cux_gld_jour_line_update_ds').getJsonData(false);
+                var param = $('cux_gld_jour_update_ds').getJsonData(false)[0] || [];
+                param['detail'] = recordsData;
+                Aurora.request({
+                    url: $('cux_gld_jour_update_control_link').getUrl(),
+                    para: param,
+                    success: dispatch_create,
+                    failure: dispatch_flase,
+                    error: dispatch_flase,
+                    scope: this
+                });
+            
+            }
+            
+            //保存刷新当前页面
+            
+            function dispatch_create(res) {
+                var gld_jour_headers_id = $('cux_gld_jour_update_ds').getAt(0).get('gld_jour_headers_id');
+                Aurora.post($('cux_gld_jour_update_self_link').getUrl() + '?gld_jour_headers_id=' + gld_jour_headers_id);
+            }
+            
+            function dispatch_flase() {
+                saveFlag = false;
+                alert("保存不成功,请联系系统管理员!");
+            }
+            
+            function reloadres() {
+                //Aurora.showMessage('提示', '保存成功！');
+                saveFlag = true;
+                //enableSaveBtn();
+            }
+            
+            function submitfailed() {
+                saveFlag = true;
+            }
+            
+             //获取影像条码
+            function get_image_barcode(){
+				var image_info = $('image_ds').getCurrentRecord().data;
+				var ope_sucess = false;
+                
+                //无影像条码
+                if(!image_info.barcode){
+                        var record = $('cux_gld_jour_update_ds').getCurrentRecord();
+		                var heard_id = record.get('gld_jour_headers_id');
+		                var doc_num = record.get('gld_jour_number');
+		                var amount = '';
+		                var summary = record.get('title');
+		                if(!amount){
+		                    amount = 0;
+		                }
+		                
+		                 // 获取条码
+		                 Aurora.request({
+		                    url: $('load_image_link').getUrl(),
+		                    para: {
+		                        billType: 'FK',
+		                        token:  heard_id + ',CUX_GLD_JOUR_HEADERS'  ,
+		                        organCode: image_info.organ_code,
+		                        billDate: getCurrentDate(),
+		                        userName: image_info.user_name,
+		                        userAccount: image_info.user_account,
+		                        amount: (amount + '').replaceAll(',', ''),
+		                        billNumber: doc_num,
+		                        summary: summary,
+		                        type : 'GLD_JOUR'
+		                    },
+		                    sync: true,
+		                    success: function(args) {
+		                        ope_sucess = true;
+		                        $('image_ds').query();
+		                    },
+		                    scope: this
+		                });
+                }else{
+                    ope_sucess = true;
+                }
+                return   ope_sucess;        
+            }
+            
+            
+            function submitFunction() {
+                
+                //获取影像条码
+                /* if(!get_image_barcode()){
+                    Aurora.showInfoMessage('${l:PROMPT}', '未成功获取影像条码', null, 250, 100);
+                    return;
+                } */
+                
+                if (!$('cux_gld_jour_update_ds').validate() || !$('cux_gld_jour_line_update_ds').validate()) {
+                    return;
+                }
+                //alert($('cux_gld_jour_line_update_ds').isModified());
+                if (!saveFlag || $('cux_gld_jour_line_update_ds').isModified()) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUBMIT}', null, 250, 100);
+                    return;
+                }
+            
+                resetLineNumber();
+                //若是凭证工单则有行记录,若是派工单无行;同一公司下借贷平衡
+                var dataSet = $('cux_gld_jour_update_ds');
+                var jour_type_code = dataSet.getAt(0).get('gld_jour_type_code');
+                if (jour_type_code != 'WORK_DISTRIBUTION') {
+                    var errorMessage = checkDrCrEqual();
+                    if (errorMessage != '') {
+                        Aurora.showInfoMessage('${l:PROMPT}', errorMessage, null, 430, 200);
+                        return;
+                    }
+                }
+                //saveFunction();
+                var param = [];
+                var recordsData = $('cux_gld_jour_line_update_ds').getJsonData(false);
+                param = $('cux_gld_jour_update_ds').getJsonData(false)[0] || [];
+                param['detail'] = recordsData;
+                Aurora.request({
+                    url: $('cux_gld_jour_submit_control_link').getUrl(),
+                    para: param,
+                    success: function(args) {
+                    Aurora.showInfoMessage('提示', '提交成功', submitback, 250, 100);
+                    submitback();
+                    }
+                });
+            }
+            
+            function submitback() {
+                window.location.href = $('cux_gld_jour_maintain_link').getUrl();
+            }
+            
+            function updatelineAddFunction(ds, record, name, value, oldvalue) {
+                var headDataSet = $('cux_gld_jour_update_ds');
+                var headRecord = headDataSet.getAt(0);
+                record.set('gld_jour_headers_id', headRecord.get('gld_jour_headers_id'));
+                if (name == 'company_name') {
+                    record.set('unit_id','');
+                    record.set('unit_code','');
+                    record.set('cost_center_id', '');
+                    record.set('cost_center_desc', '');
+                    record.set('detail_account_desc', '');
+                    record.set('product_desc', '');
+                    record.set('channel_desc', '');
+                    record.set('refence_desc', '');
+                }
+            
+                //改变行本币借贷金额
+                setEnteredAmount(record, name);
+                saveFlag = false;
+            }
+            
+            function uploadFile() {
+                var url = $('gld_jour_uploadFile_link').getUrl() + '?table_name=CUX_GLD_JOUR_HEADERS&header_id=${/parameter/@gld_jour_headers_id}';
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'uploadFile_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            
+            function historyFunction() {
+                var head = '${/parameter/@gld_jour_headers_id}';
+                var url = /*exp_requestion_query_history.screen*/
+                $('cux_gld_jour_update_history_link').getUrl() + '?gld_jour_headers_id=' + head;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.HISTORY}',
+                    id: 'cux_gld_jour_update_history_screen',
+                    width: 700,
+                    height: 450
+                });
+            }
+            
+            function deleteMethod() {
+                var headerInfo = $('cux_gld_jour_update_ds').getJsonData(false)[0];
+                Aurora.request({
+                    url: $('cux_gld_delete_link').getUrl() + '?batch_id=${/parameter/@batch_id}&amp;gld_jour_headers_id=${/parameter/@gld_jour_headers_id}',
+                    para: headerInfo,
+                    success: function() {
+                        // window.location.reload();
+                        uploadFunction();
+                    },
+                    scope: this
+                }); //alert(1);alert('${/parameter/@batch_id}');alert('${/parameter/@gld_jour_headers_id}');alert('${/model/batch_id/record/@batch_id}');
+            }
+            
+            function uploadFunction() {
+            
+                var head = '${/parameter/@gld_jour_headers_id}';
+                var url = /*exp_requestion_query_history.screen*/
+                $('cux_gld_jour_update_upload_link').getUrl() + '?gld_jour_headers_id=' + head;
+            
+                new Aurora.Window({
+                    url: url,
+                    title: '总账凭证导入',
+                    id: 'cux_gld_jour_import_screen',
+                    fullScreen:true,
+                    width: 900,
+                    height: 500
+                });
+            }
+            
+            
+            function wbcSubmitback() {
+                $('gld_jour_wbc_return_screen').close();
+                $('cux_wbc_dispatch_pool_return_result_ds').query();
+            }
+            
+            function header_ds_update(ds, record, name, value, oldvalue) {
+            
+               }
+            
+            
+            function amountFunction(record, name) {
+                if (name == 'entered_amount_dr') {
+                    if ((!record.get('entered_amount_cr'))&&record.get('entered_amount_cr')!='0') {
+                        record.getMeta().getField('entered_amount_dr').setRequired(true);
+                        return 'number_update_editor';
+                    } else {
+                        record.getMeta().getField('entered_amount_dr').setRequired(false);
+                        record.getMeta().getField('entered_amount_cr').setRequired(true);
+                        return '';
+                    }
+                } else if (name == 'entered_amount_cr') {
+                    if ((!record.get('entered_amount_dr'))&&record.get('entered_amount_dr')!='0') {
+                        record.getMeta().getField('entered_amount_cr').setRequired(true);
+                        return 'number_update_editor';
+                    } else {
+                        record.getMeta().getField('entered_amount_dr').setRequired(true);
+                        record.getMeta().getField('entered_amount_cr').setRequired(false);
+                        return '';
+                    }
+                }
+            }
+            
+            function gldJourClickFunction(grid, row, name, record) {
+                var meta;
+                var field;
+                if (name == 'cost_center_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('cost_center_desc');
+                    field.setLovService('bgt.bgt_journal_responsibility_centers_combo');
+                    field.setLovPara('p_company_id', record.get('company_id'));
+                } else if (name == 'detail_account_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('detail_account_desc');
+                    field.setLovService('cux.cux_gld_jour_erp_segment_lov');
+                    field.setLovPara('type', 'DETAIL');
+                    field.setLovPara('company_id', record.get('company_id'));
+                } else if (name == 'product_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('product_desc');
+                    field.setLovService('cux.cux_gld_jour_erp_segment_lov');
+                    field.setLovPara('type', 'PRODUCT');
+                    field.setLovPara('company_id', record.get('company_id'));
+                } else if (name == 'channel_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('channel_desc');
+                    field.setLovService('cux.cux_gld_jour_erp_segment_lov');
+                    field.setLovPara('type', 'CHANNEL');
+                    field.setLovPara('company_id', record.get('company_id'));
+                    field.setLovPara('unit_id', record.get('unit_id'));
+                } else if (name == 'spare1_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('spare1_desc');
+                    field.setLovService('cux.cux_gld_jour_erp_segment_lov');
+                    field.setLovPara('type', 'SPARE1');
+                } else if (name == 'spare2_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('spare2_desc');
+                    field.setLovService('cux.cux_gld_jour_erp_segment_lov');
+                    field.setLovPara('type', 'SPARE2');
+                } else if (name == 'activity_code_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('activity_code_desc');
+                    field.setLovService('cux.cux_gld_jour_erp_segment_lov');
+                    field.setLovPara('type', 'ACTIVITY');
+                } else if (name == 'csc_code_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('csc_code_desc');
+                    field.setLovService('cux.cux_gld_jour_erp_segment_lov');
+                    field.setLovPara('type', 'CSC');
+                } else if (name == 'account_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('account_desc');
+                    field.setLovService('cux.cux_gld_jour_account_lov');
+                    var headDataSet = $('cux_gld_jour_update_ds');
+                    var headRecord = headDataSet.getAt(0);
+                    field.setLovPara('accounting_doc_type_id', headRecord.get('gld_jour_type_id'));
+                } else if (name == 'refence_desc') {
+                    meta = record.getMeta();
+                    field = meta.getField('refence_desc');
+                    field.setLovService('cux.cux_gld_jour_erp_segment_lov');
+                    field.setLovPara('type', 'REFERENCE');
+                    field.setLovPara('company_id', record.get('company_id'));
+                } else if (name == 'unit_code') {
+                    meta = record.getMeta();
+                    field = meta.getField('unit_code');
+                    field.setLovService('exp.exp_org_unit');
+                    field.setLovPara('company_id', record.get('company_id'));
+                }
+            
+            }
+            
+            function addlineAddFunction(dataSet, record, index) {
+                var headDataSet = $('cux_gld_jour_update_ds');
+                var headRecord = headDataSet.getAt(0);
+                index = index * 10 + 10;
+                record.set('line_number', index);
+                record.set('gld_jour_headers_id', headRecord.get('gld_jour_headers_id'));
+            }
+            
+            //同一公司下借贷金额不平校验
+            
+            function checkDrCrEqual() {
+                var errorMessage = '';
+                var linerecords = $('cux_gld_jour_line_update_ds').getAll();
+                var sumAmountDr = 0;
+                var sumAmountCr = 0;
+                var company_codeArr = '';
+                var company_codeDistinctArr = '';
+                var company_descDistinctArr = '';
+                //拼接所有公司
+                var company_code = '';
+                var company_desc = '';
+                var amount_dr = '';
+                var amount_cr = '';
+            
+                for (var i = 0;i < linerecords.length;i++) {
+                    company_code = linerecords[i].get('company_code');
+                    company_desc = linerecords[i].get('company_name');
+                    amount_dr = linerecords[i].get('entered_amount_dr') * 1;
+                    amount_cr = linerecords[i].get('entered_amount_cr') * 1;
+                    if (isNaN(amount_dr)) {
+                        amount_dr = 0;
+                    }
+                    if (isNaN(amount_cr)) {
+                        amount_cr = 0;
+                    }
+                    if (i == 0) {
+                        company_codeArr = company_code;
+                        company_descDistinctArr = company_desc;
+                        company_codeDistinctArr = company_code;
+                        amount_drArr = amount_dr;
+                        amount_crArr = amount_cr;
+                    } else {
+                        if (company_codeDistinctArr.indexOf(company_code) == '-1') {
+                            company_codeDistinctArr = company_codeDistinctArr + "," + company_code;
+                            company_descDistinctArr = company_descDistinctArr + "," + company_desc;
+                        }
+                        company_codeArr = company_codeArr + "," + company_code;
+                        amount_drArr = amount_drArr + "," + amount_dr;
+                        amount_crArr = amount_crArr + "," + amount_cr;
+                    }
+                }
+            
+                var companyCodeFlag = 0;
+                var sumDrAmount = 0;
+                var sumCrAmount = 0;
+                var len = company_codeDistinctArr.split(",").length;
+                var len2 = company_codeArr.split(",").length;
+                var company_codeSplit = '';
+                var company_descSplit = '';
+                for (var i = 0;i < len;i++) {
+                    company_codeSplit = company_codeDistinctArr.split(',')[i];
+                    company_descSplit = company_descDistinctArr.split(',')[i];
+                    for (var k = 0;k < len2;k++) {
+                        if (len2 == 1) {
+                            if (company_descSplit == '') {
+                                errorMessage = "凭证工单必须有行记录，且借贷平衡!";
+                            } else {
+                                errorMessage = "公司名称为:" + company_descSplit + "借贷不平!<br/>";
+            
+                            }
+                        } else if (company_codeSplit == company_codeArr.split(',')[k]) {
+                            sumDrAmount = fixMath(sumDrAmount, amount_drArr.split(',')[k] * 1, '+');
+                            sumCrAmount = fixMath(sumCrAmount, amount_crArr.split(',')[k] * 1, '+');
+                        }
+                    }
+                    if (sumDrAmount != sumCrAmount) {
+                        errorMessage = errorMessage + "公司名称为:" + company_descSplit + "借贷不平!<br/>";
+                    }
+                    sumDrAmount = 0;
+                    sumCrAmount = 0;
+                }
+                return errorMessage;
+            }
+            
+            //保存后重置行号
+            
+            function resetLineNumber() {
+                var ds = $('cux_gld_jour_line_update_ds');
+                var len = ds.getAll().length;
+                var index = 0;
+                var initLineIndex = 1;
+                var lineNum = 0;
+                for (i = 0;i < len;i++) {
+                    lineNum = (index + initLineIndex) * 10;
+                    var lineRecord = ds.getAt(i);
+                    lineRecord.set('line_number', lineNum);
+                    index = index + 1;
+                }
+            }
+            
+            //新增行之前校验是否保存
+            
+            function createLineRecord() {
+                var dataSet = $('cux_gld_jour_update_ds');
+                var lineDataSet = $('cux_gld_jour_line_update_ds');
+                var index = 1;
+                var flag = dataSet.validate();
+                if (flag) {
+                    //若是凭证工单则有行记录,若是派工单无行
+                    var jour_type_code = dataSet.getAt(0).get('gld_jour_type_code');
+                    if (jour_type_code == 'WORK_DISTRIBUTION') {
+                        Aurora.showInfoMessage('${l:PROMPT}', '派工单无单据行', null, 250, 100);
+                        return;
+                    } else {
+                        var linerecord = lineDataSet.getSelected();
+                        if (linerecord.length == 0) {
+                            $('cux_gld_jour_line_update_ds').create();
+                        } else {
+                            for (var i = 0;i < linerecord.length;i++) {
+                                var data = linerecord[i].data;
+                                var newdata = {};
+                                var len = lineDataSet.getAll().length;
+                                for (var name in data) {
+                                    //金额不复制
+                                    if (name == 'entered_amount_dr' || name == 'entered_amount_cr') {} else {
+                                        newdata[name] = data[name];
+                                    }
+                                }
+                                var record = new Aurora.Record(newdata);
+                                record.isNew = 'true';
+                                record.dirty = 'false';
+                                lineDataSet.add(record);
+                                lineNum = (index + len) * 10;
+                                var lineRecord = lineDataSet.getAt(len);
+                                lineRecord.set('line_number', lineNum);
+                                lineRecord.set('entered_amount_dr1', '');
+                                lineRecord.set('entered_amount_cr1', '');
+                                lineRecord.set('gld_jour_lines_id', '');
+                            }
+                        }
+                    }
+                }
+            }
+            
+            //改变本币借贷金额
+            
+            function setEnteredAmount(record, name) {
+                var headRecord = $('cux_gld_jour_update_ds').getAt(0);
+                var gld_jour_rate = headRecord.get('gld_jour_rate');
+                //alert(gld_jour_rate);
+                if (name == 'entered_amount_dr') {
+                    var entered_amount_dr = record.get('entered_amount_dr');
+                    record.set('entered_amount_dr1', isNaN(gld_jour_rate * entered_amount_dr) ? '' : (gld_jour_rate * entered_amount_dr).toFixed('2'));
+                } else if (name == 'entered_amount_cr') {
+                    var entered_amount_cr = record.get('entered_amount_cr');
+                    record.set('entered_amount_cr1', isNaN(gld_jour_rate * entered_amount_cr) ? '' : (gld_jour_rate * entered_amount_cr).toFixed('2'));
+                }
+            }
+            
+            function uploadImage() {
+                var document_number = '${/model/headrecord/record/@gld_jour_number}';
+                sys_upload_image(document_number, 'GL', 'modify');
+            }
+            
+            function oaFunction() {
+                var record = $('cux_gld_jour_update_ds').getAt(0);
+            
+                var url = 'http://cicoa.cic.inter/sy/comm/page/page.jsp?openTab=7b27745469746c65273a27e585b3e881944f41e5aea1e689b9e58d95e69fa5e8afa2272c27706172616d73273a7b7d2c276d656e75466c6167273a2733272c2775726c273a274f415f464f525f43575f51554552592e6c6973742e646f277d';
+                var urlsrting = url + '&order_num=' + record.get('gld_jour_number');
+                window.open(urlsrting, 'newwindow');
+            }
+            
+              // 影像上传
+            function upload_image() {
+                var image_info = $('image_ds').getCurrentRecord().data;
+                if(image_info.barcode){
+                    show_image(image_info.pic_url,image_info.barcode);
+                }
+            }
+            
+            //重新扫描影像
+             function rescan_image(){
+                 var image_info = $('image_ds').getCurrentRecord().data;
+                 if(image_info.barcode){
+                       //HEC 数据库更新
+		                Aurora.request({
+		                                url: $('rescan_link').getUrl(),
+		                                para: {
+		                                    barcode: image_info.barcode
+		                                },
+		                                lockMessage : '正在发送指令给影像系统...',
+		                                success: function(args) {
+						                       Aurora.showWarningMessage('${l:PROMPT}', '已发送重新扫描指令');
+		                    			},
+		                                sync: true,
+		                                scope: this
+		               });
+                 }
+             }
+             function printFunction(){
+                 var url = '${/model/birt_report_url/record/@url}';
+                if(!url){
+                    alert('联系管理员,在参数指定中配置打印连接!');
+                }else{
+                    /* ${/request/@context_path}/reports   http://10.1.3.173:9080/birt */ 
+	                report_name='reports/cux_gld_jour.rptdesign'; //${/request/@context_path}/reports
+					window.open(url+'/preview?__report='+report_name+'&header_id=${/parameter/@gld_jour_headers_id}'); 
+                }
+				// window.open('${/request/@context_path}/reports?__report=reports/csh_payment.rptdesign&PAYMENT_REQUISITION+_HEADER_ID=' + $('pay_req_update_header_ds').getAt(0).get('payment_requisition_header_id'));
+				}
+				
+		function sum_renderer(datas, name) {
+                if (name == 'account_desc') {
+                    return '<font color="red">合计：</font>';
+                }
+                var sum = 0;
+                for (var i = 0;i < datas.length;i++) {
+                    var r = datas[i];
+                    var d = r.get(name);
+                    var n = parseFloat(d);
+                    if (!isNaN(n)) {
+                        sum += n;
+                    }
+                }
+                var total = (typeof(sum) == 'undefined' ? '' : parseFloat(sum).toFixed(2));
+                return '<font color="red">' + Aurora.formatNumber(total) + '</font>';
+            }
+        ]]></script>
+        <a:dataSets>
+            <!-- 影像信息 -->
+            <a:dataSet id="image_ds" autoCreate="true" autoQuery="true" queryUrl="${/request/@context_path}/autocrud/fnd.get_image_info/query?doc_num=${/model/headrecord/record/@gld_jour_number}"/>
+            <a:dataSet id="currencylist_ds">
+                <a:datas dataSource="/model/currency_list"/>
+            </a:dataSet>
+            <a:dataSet id="cux_gld_jour_update_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="gld_jour_headers_id" defaultValue="${/model/headrecord/record/@gld_jour_headers_id}"/>
+                    <a:field name="exp_incmy_app_id" defaultValue="${/parameter/@exp_incmy_app_id}"/>
+                    <a:field name="gld_jour_type_desc" defaultValue="${/model/headrecord/record/@gld_jour_type_desc}" prompt="单据类型" readOnly="true"/>
+                    <a:field name="gld_jour_type_id" defaultValue="${/model/headrecord/record/@gld_jour_type_id}"/>
+                    <a:field name="gld_jour_type_code" defaultValue="${/model/headrecord/record/@gld_jour_type_code}"/>
+                    <a:field name="accounting_doc_type_id" defaultValue="${/model/headrecord/record/@accounting_doc_type_id}"/>
+                    <a:field name="gld_jour_number" defaultValue="${/model/headrecord/record/@gld_jour_number}" prompt="单据编号" readOnly="true"/>
+                    <a:field name="gld_jour_date" defaultValue="${/model/headrecord/record/@gld_jour_date}" prompt="会计日期" readOnly="true" required="true"/>
+                    <a:field name="title" defaultValue="${/model/headrecord/record/@title}" prompt="摘要"/>
+                    <a:field name="status_display" defaultValue="${/model/headrecord/record/@status_display}" prompt="状态" readOnly="true" required="true"/>
+                    <a:field name="company_desc" defaultValue="${/model/headrecord/record/@company_desc}" prompt="制单公司" readOnly="true"/>
+                    <a:field name="created_by_display" defaultValue="${/model/headrecord/record/@created_by_display}" prompt="制单" readOnly="true"/>
+                    <a:field name="line_number" defaultValue="${/model/headrecord/record/@line_number}"/>
+                    <a:field name="jour_status" defaultValue="${/model/headrecord/record/@jour_status}"/>
+                    <a:field name="gld_jour_currency_name" defaultValue="${/model/headrecord/record/@currency_code}" displayField="currency_name" options="currencylist_ds" readOnly="true" required="true" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="currency_code" defaultValue="${/model/headrecord/record/@currency_code}"/>
+                    <a:field name="gld_jour_rate" defaultValue="${/model/headrecord/record/@exchange_rate}" readOnly="true" required="true"/>
+                    <a:field name="gld_jour_rate_type_name" defaultValue="${/model/headrecord/record/@exchange_rate_type}" fetchRemote="false" lovGridHeight="320" lovHeight="460" lovWidth="550" lovservice="gld.gld_exchangerate_type_lov" readOnly="true">
+                        <a:mapping>
+                            <a:map from="type_name" to="gld_jour_rate_type_name"/>
+                            <a:map from="type_code" to="gld_jour_rate_type"/>
+                            <a:map from="rate_method_code" to="rate_method_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="amount" defaultValue="${/model/headrecord/record/@amount}" prompt="金额" readOnly="true"/>
+                    <a:field name="rate_method_code"/>
+                    <a:field name="gld_jour_rate_type" defaultValue="${/model/headrecord/record/@exchange_rate_type}"/>
+                    <a:field name="journal_date" defaultValue="${/model/headrecord/record/@journal_date}" prompt="记账日期" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="header_ds_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="cux_gld_jour_line_update_ds" autoQuery="true" model="cux.cux_gld_jour_line_save" pageSize="1000" queryUrl="${/request/@context_path}/autocrud/cux.cux_gld_jour_line_save/query?gld_jour_headers_id=${/parameter/@gld_jour_headers_id}" selectable="true">
+                <a:fields>
+                    <a:field name="line_number" prompt="行号"/>
+                    <a:field name="title" Prompt="说明"/>
+                    <a:field name="company_name" lovGridHeight="340" lovHeight="500" lovService="cux.cux_accounting_doc_type_companies_vl_lov" lovWidth="550" prompt="BGT_JOURNAL_LINES.COMPANY_ID" required="true" title="BGT_JOURNAL_LINES.COMPANY_ID">
+                        <a:mapping>
+                            <a:map from="company_short_name" to="company_name"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_code"/>
+                    <a:field name="cost_center_desc" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="bgt.bgt_journal_responsibility_centers_combo" lovWidth="550" prompt="责任中心" required="true" title="责任中心">
+                        <a:mapping>
+                            <a:map from="responsibility_center_name" to="cost_center_desc"/>
+                            <a:map from="responsibility_center_code" to="cost_center_code"/>
+                            <a:map from="responsibility_center_id" to="cost_center_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="cost_center_code"/>
+                    <a:field name="account_desc" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="cux.cux_gld_jour_account_lov" lovWidth="550" prompt="会计科目" required="true" title="会计科目">
+                        <a:mapping>
+                            <a:map from="description" to="account_desc"/>
+                            <a:map from="account_code" to="account_code"/>
+                            <a:map from="account_id" to="account_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_code"/>
+                    <a:field name="entered_amount_dr" Prompt="借方金额"/>
+                    <a:field name="entered_amount_cr" Prompt="贷方金额"/>
+                    <a:field name="entered_amount_dr1" Prompt="本币借方金额"/>
+                    <a:field name="entered_amount_cr1" Prompt="本币贷方金额"/>
+                    <a:field name="budget_item_desc" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="bgt.bgt_journal_bgt_items_combo" lovWidth="550" prompt="BGT_JOURNAL_LINES.BUDGET_ITEM_ID">
+                        <a:mapping>
+                            <a:map from="description" to="budget_item_desc"/>
+                            <a:map from="budget_item_id" to="budget_item_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="budget_item_id" defaultValue="0"/>
+                    <a:field name="detail_account_desc" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="cux.cux_gld_jour_detail_account_lov" lovWidth="550" prompt="明细" required="true" title="明细">
+                        <a:mapping>
+                            <a:map from="value" to="detail_account"/>
+                            <a:map from="description" to="detail_account_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="detail_account"/>
+                    <a:field name="channel_desc" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="cux.cux_gld_jour_erp_segment_lov" lovWidth="550" prompt="渠道" required="true" title="渠道">
+                        <a:mapping>
+                            <a:map from="value" to="channel_code"/>
+                            <a:map from="description" to="channel_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="channel_code"/>
+                    <a:field name="product_desc" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="cux.cux_gld_jour_erp_segment_lov" lovWidth="550" prompt="产品" required="true" title="产品">
+                        <a:mapping>
+                            <a:map from="value" to="product_code"/>
+                            <a:map from="description" to="product_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="product_code" defaultValue="0"/>
+                    <!-- <a:field name="project_desc" defaultValue="0-缺省" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="cux.cux_gld_jour_project_lov" lovWidth="550" prompt="项目" required="true" title="项目">
+                        <a:mapping>
+                            <a:map from="description" to="project_desc"/>
+                            <a:map from="project_code" to="project_code"/>
+                            <a:map from="project_id" to="project_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="project_code"/> -->
+                    <a:field name="refence_desc" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="cux.cux_gld_jour_erp_segment_lov" lovWidth="550" prompt="参考" required="true" title="参考">
+                        <a:mapping>
+                            <a:map from="value" to="refence_code"/>
+                            <a:map from="description" to="refence_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="refence_code"/>
+                    <!-- <a:field name="spare1_desc" defaultValue="0-缺省" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="cux.cux_gld_jour_erp_segment_lov" lovWidth="550" prompt="备用1" required="true" title="备用1">
+                        <a:mapping>
+                            <a:map from="value" to="spare1"/>
+                            <a:map from="description" to="spare1_desc"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="spare1" defaultValue="0"/>
+                    <!-- <a:field name="spare2_desc" defaultValue="0-缺省" lovGridHeight="340" lovHeight="500" lovLabelWidth="100" lovService="cux.cux_gld_jour_erp_segment_lov" lovWidth="550" prompt="备用2" required="true" title="备用2">
+                        <a:mapping>
+                            <a:map from="value" to="spare2"/>
+                            <a:map from="description" to="spare2_desc"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="spare2" defaultValue="0"/>
+                    <a:field name="gld_jour_headers_id"/>
+                    <a:field name="gld_jour_lines_id"/>
+                    <a:field name="unit_code" lovGridHeight="320" lovHeight="460" lovService="exp.exp_org_unit" lovWidth="500" prompt="预算责任部门" title="EXP_REQUISITION_LINES.UNIT_ID">
+                        <a:mapping>
+                            <a:map from="unit_code_name" to="unit_code"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="responsibility_center_name" to="cost_center_desc"/>
+                            <a:map from="responsibility_center_id" to="cost_center_id"/>
+                            <a:map from="responsibility_center_code" to="cost_center_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_id"/>
+                    <!--  <a:field name="cash_flow_desc" lovGridHeight="320" lovHeight="460" lovLabelWidth="130" lovService="cux.csh_flow_lov" lovWidth="500" prompt="现金流量" title="现金流量">
+                        <a:mapping>
+                            <a:map from="cash_flow_desc" to="cash_flow_desc"/>
+                            <a:map from="code_value" to="csc_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="csc_code"/> -->
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="reloadres"/>
+                    <a:event name="submitfailed" handler="submitfailed"/>
+                    <a:event name="add" handler="addlineAddFunction"/>
+                    <a:event name="update" handler="updatelineAddFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <div id="titles_div" align="center" style="width:96%">
+            <label><![CDATA[总账凭证]]></label>
+        </div>
+        <div id="title_div" style="width:96%">
+            <table width="100%">
+                <tr>
+                    <td width="30%">
+                        <label><![CDATA[总账凭证维护]]></label>
+                    </td>
+                    <td style="text-align:right" width="20%">
+                        <label><![CDATA[申请日期：]]></label>
+                    </td>
+                    <td width="10%">
+                        <label><![CDATA[${/model/headrecord/record/@gld_jour_date}]]></label>
+                    </td>
+                    <td style="text-align:right" width="20%">
+                        <label><![CDATA[单据编号:]]></label>
+                    </td>
+                    <td width="20%">
+                        <label id="requisition_num"><![CDATA[${/model/headrecord/record/@gld_jour_number}]]></label>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        <div id="form_field" style="width:96%">
+            <a:box column="1" row="2" style="width:100%">
+                <a:box column="4" style="width:100%">
+                    <a:lov name="gld_jour_type_desc" bindTarget="cux_gld_jour_update_ds"/>
+                    <a:lov name="company_desc" bindTarget="cux_gld_jour_update_ds"/>
+                    <a:numberField name="amount" bindTarget="cux_gld_jour_update_ds"/>
+                    <a:textField name="status_display" bindTarget="cux_gld_jour_update_ds"/>
+                    <a:datePicker name="journal_date" bindTarget="cux_gld_jour_update_ds"/>
+                    <a:textField name="barcode_desc" bindTarget="image_ds" prompt="影像" readOnly="true" width="250"/>
+                </a:box>
+                <a:box style="width:100%">
+                    <a:textArea name="title" bindTarget="cux_gld_jour_update_ds" style="width:100%"/>
+                </a:box>
+            </a:box>
+        </div>
+        <a:hBox style="margin-left:15px;margin-top:5px;">
+            <a:button id="saveButton" Text="PROMPT.SAVE" click="saveFunction"/>
+            <a:button Text="PROMPT.SUBMIT" click="submitFunction"/>
+            <a:button click="historyFunction" text="EXP_REQUESTION_CREATE_SERVICE.HISTORY"/>
+            <a:button click="uploadFile" text="EXP_REQUESTION_CREATE_SERVICE.UPLOAD"/>
+            <a:button click="deleteMethod" text="导入"/>
+            <a:button click="printFunction" text="PROMPT.PRINT"/>
+            <a:button id="uploadImageBtn" click="upload_image" text="影像"/>
+            <a:button id="rescanImageBtn" click="rescan_image" text="重新扫描影像"/>
+        </a:hBox>
+        <a:grid bindTarget="cux_gld_jour_line_update_ds" marginHeight="280" marginWidth="55" navBar="true" style="margin-left:15px;margin-top:5px;with:96%">
+            <a:toolBar>
+                <a:button click="createLineRecord" icon="${/request/@context_path}/images/add.gif" text="HAP_NEW"/>
+                <a:button type="delete"/>
+            </a:toolBar>
+            <a:columns>
+                <a:column name="line_number" align="center" width="40"/>
+                <a:column name="company_name" align="center" editor="lov_update_editor" width="120"/>
+                <a:column name="unit_code" align="center" editor="lov_update_editor" prompt="预算责任部门" width="110"/>
+                <a:column name="cost_center_desc" align="center" editor="lov_update_editor" width="80"/>
+                <a:column name="budget_item_desc" align="center" editor="lov_update_editor" prompt="预算项目" width="80"/>
+                <a:column name="account_desc" align="center" editor="lov_update_editor" prompt="会计科目" width="80"/>
+                <a:column name="entered_amount_dr" align="right" editor="number_editor" editorFunction="amountFunction" footerRenderer="sum_renderer" renderer="Aurora.formatMoney" width="80"/>
+                <a:column name="entered_amount_cr" align="right" editor="number_editor" editorFunction="amountFunction" footerRenderer="sum_renderer" renderer="Aurora.formatMoney" width="80"/>
+                <a:column name="detail_account_desc" align="center" editor="lov_update_editor" width="60"/>
+                <!-- <a:column name="project_desc" align="center" editor="lov_update_editor" width="60"/> -->
+                <a:column name="channel_desc" align="center" editor="lov_update_editor" width="60"/>
+                <a:column name="product_desc" align="center" editor="lov_update_editor" width="60"/>
+                <a:column name="refence_desc" align="center" editor="lov_update_editor" prompt="参考" width="60"/>
+                <!-- <a:column name="spare1" align="center" editor="lov_update_editor" prompt="备用1" width="60"/>
+                <a:column name="spare2" align="center" editor="lov_update_editor" prompt="备用2" width="60"/> -->
+                <!-- <a:column name="cash_flow_desc" align="center" editor="lov_update_editor" width="60"/> -->
+                <a:column name="title" align="center" editor="text_update_editor" prompt="说明" width="120"/>
+            </a:columns>
+            <a:events>
+                <a:event name="cellclick" handler="gldJourClickFunction"/>
+            </a:events>
+            <a:editors>
+                <a:comboBox id="combobox_update_editor"/>
+                <a:textField id="text_update_editor"/>
+                <a:numberField id="number_update_editor"/>
+                <a:lov id="lov_update_editor"/>
+            </a:editors>
+        </a:grid>
+        <script><![CDATA[
+            ]]></script>
+    </a:view>
+</a:screen>

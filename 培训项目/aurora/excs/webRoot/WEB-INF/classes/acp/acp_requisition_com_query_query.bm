@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+	select distinct * from (
+       select 
+		 a.acp_requisition_header_id,
+         b.requisition_number,
+         b.employee_id,
+         c.employee_code||'-'||c.name employee,
+         (select B1.CODE_VALUE_NAME
+        FROM SYS_CODES_VL A1, SYS_CODE_VALUES_VL B1
+       WHERE A1.CODE_ID = B1.CODE_ID
+			   AND A1.CODE = 'PAYMENT_OBJECT'
+         and B1.code_value = a.partner_category
+         and A1.enabled_flag = 'Y') partner_category,
+         a.partner_category partner_category1,
+         to_char(b.requisition_date,'yyyy-mm-dd') requisition_date,
+		 b.requisition_date requisition_date1,
+         b.currency_code,
+         a.amount,
+         NVL((select sum(r.amount)
+                from acp_acp_requisition_refs r, acp_acp_requisition_lns lns
+               where lns.acp_requisition_line_id = r.acp_requisition_line_id
+                 and lns.acp_requisition_header_id =
+                     a.acp_requisition_header_id),0) already_paying,
+         a.partner_id,
+         (select name
+                from (SELECT EMPLOYEE_ID ID,
+                             EMPLOYEE_CODE CODE,
+                             NAME,
+                             PARTNER_CATEGORY
+                        FROM (select t.employee_id,
+                                     t.employee_code || '-' || t.name name,
+                                     t.employee_code,
+                                     'EMPLOYEE' partner_category
+                                from exp_employees t, exp_employee_assigns a
+                               where t.employee_id = a.employee_id
+                                 and t.enabled_flag = 'Y'
+                                 and a.enabled_flag = 'Y'
+                                 and a.company_id =
+                                     ${/session/@company_id}
+                               group by t.employee_id, t.name, t.employee_code
+                              UNION
+                              SELECT SVV.VENDER_ID,
+                                     SVV.VENDER_CODE || '-' || SVV.DESCRIPTION,
+                                     SVV.VENDER_CODE,
+                                     'VENDER' PARTNER_CATEGORY
+                                FROM PUR_COMPANY_VENDERS   CV,
+                                     PUR_SYSTEM_VENDERS_VL SVV
+                               WHERE CV.COMPANY_ID =
+                                     ${/session/@company_id}
+                                 AND CV.VENDER_ID = SVV.VENDER_ID
+                                 AND CV.ENABLED_FLAG = 'Y'
+                              UNION
+                              SELECT CV.CUSTOMER_ID,
+                                     CV.CUSTOMER_CODE || '-' || CV.DESCRIPTION,
+                                     CV.CUSTOMER_CODE,
+                                     'CUSTOMER' PARTNER_CATEGORY
+                                FROM ORD_COMPANY_CUSTOMERS   CC,
+                                     ORD_SYSTEM_CUSTOMERS_VL CV
+                               WHERE CC.COMPANY_ID =
+                                     ${/session/@company_id}
+                                 AND CC.CUSTOMER_ID = CV.CUSTOMER_ID
+                                 AND CC.ENABLED_FLAG = 'Y') V) V
+               where PARTNER_CATEGORY = a.partner_category
+                 and V.ID = a.partner_id)  partner_name,
+                 (SELECT B1.CODE_VALUE_NAME 
+			  FROM SYS_CODES_VL A1, SYS_CODE_VALUES_VL B1
+			 WHERE A1.CODE_ID = B1.CODE_ID
+			   AND A1.CODE = 'PAYMENT_STATUS'
+         and B1.code_value = a.payment_status) payment_status,
+		 (select b1.code_value_name
+		  from sys_codes_vl a1, sys_code_values_vl b1
+		 where a1.code_id = b1.code_id
+		   and a1.code = 'PAYMENT_REQUISITION_STATUS'
+		   and a1.enabled_flag = 'Y'
+		   and b1.enabled_flag = 'Y'
+		   and b1.code_value = b.status) status,
+         a.payment_status payment_status1,
+         decode(b.closed_date,null,'',to_char(b.closed_date,'yyyy-mm-dd')) close_date,
+         a.line_description,
+         a.REF_DOCUMENT_LINE_ID,
+         (select e.exp_report_number
+                  from exp_report_headers e
+                 where e.exp_report_header_id =
+                       (select s.exp_report_header_id
+                          from exp_report_pmt_schedules s
+                         where s.payment_schedule_line_id =
+                               a.REF_DOCUMENT_LINE_ID)) document_number,
+                               (select s.exp_report_header_id
+                  from exp_report_pmt_schedules s
+                 where s.payment_schedule_line_id = a.REF_DOCUMENT_LINE_ID) exp_report_header_id,
+         b.status status1,
+         b.acp_req_type_id,
+         e.description  req_type,
+         f.currency_name      
+        from acp_acp_requisition_lns a,acp_acp_requisition_hds b,exp_employees c, exp_employee_assigns d, acp_sys_acp_req_types_vl e,gld_currency_vl f
+       where a.acp_requisition_header_id = b.acp_requisition_header_id
+       and b.employee_id = c.employee_id
+       and c.employee_id = d.employee_id
+       and d.company_id in (select fc.company_id
+								          from fnd_companies fc
+								         start with fc.parent_company_id = ${/session/@company_id}
+								        connect by fc.parent_company_id = prior fc.company_id
+								        union select to_number(${/session/@company_id}) as company_id from dual)
+       and b.acp_req_type_id = e.acp_req_type_id
+       and b.currency_code = f.currency_code
+) V 
+#WHERE_CLAUSE#
+order by requisition_number desc
+         ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="requisition_number" dataType="java.lang.String" queryExpression=" v.requisition_number  like &apos;%&apos;||upper(${@requisition_number})||&apos;%&apos;"/>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="v.employee_id = ${@employee_id}"/>
+        <bm:query-field name="requisition_date_f" queryExpression="v.requisition_date &gt;= ${@requisition_date_f}"/>
+        <bm:query-field name="requisition_date_t" queryExpression="v.requisition_date &lt;= ${@requisition_date_t}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="v.currency_code = ${@currency_code}"/>
+        <bm:query-field name="status" dataType="java.lang.String" queryExpression="v.status1 = ${@status}"/>
+        <bm:query-field name="partner_category" dataType="java.lang.String" queryExpression="v.partner_category = ${@partner_category}"/>
+        <bm:query-field name="partner_id" dataType="java.lang.Long" queryExpression="v.partner_id = ${@partner_id}"/>
+        <bm:query-field name="amount_f" dataType="java.lang.Double" queryExpression="v.amount &gt;= ${@amount_f}"/>
+        <bm:query-field name="amount_t" dataType="java.lang.Double" queryExpression="v.amount &lt;= ${@amount_t}"/>
+        <bm:query-field name="already_paying_f" dataType="java.lang.Double" queryExpression="v.already_paying &gt;= ${@already_paying_f}"/>
+        <bm:query-field name="already_paying_t" dataType="java.lang.Double" queryExpression="v.already_paying &lt;= ${@already_paying_t}"/>
+        <bm:query-field name="csh_type_id" dataType="java.lang.Long" queryExpression="v.acp_req_type_id = ${@csh_type_id}"/>
+        <bm:query-field name="payment_status_id" dataType="java.lang.String" queryExpression="v.payment_status1 = ${@payment_status_id}"/>
+    </bm:query-fields>
+</bm:model>

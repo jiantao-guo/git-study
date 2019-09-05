@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    r.balance_id,
+                    r.company_id,
+                    (SELECT
+                        fcv.company_code
+                        || '-'
+                        || fcv.company_short_name
+                    FROM
+                        fnd_companies_vl fcv
+                    WHERE
+                        fcv.company_id = r.company_id
+                    ) AS company_name,
+                    r.budget_item_id,
+                    (SELECT
+                        iv.budget_item_code
+                        || '-'
+                        || iv.description
+                    FROM
+                        bgt_budget_items_vl iv
+                    WHERE
+                        iv.budget_item_id = r.budget_item_id
+                    ) AS budget_item_name,
+                    r.responsibility_center_id,
+                    (SELECT
+                        cv.responsibility_center_code
+                        || '-'
+                        || cv.responsibility_center_name
+                    FROM
+                        fnd_responsibility_centers_vl cv
+                    WHERE
+                        cv.responsibility_center_id = r.responsibility_center_id
+                    ) AS resp_center_name,
+                    r.dimension10_id,
+                    (SELECT
+                        vv.dimension_value_code
+                        || '-'
+                        || vv.description
+                    FROM
+                        fnd_dimension_values_vl vv
+                    WHERE
+                        vv.dimension_value_id = r.dimension10_id
+                    ) AS d10_name,
+                    r.period_year,
+                    r.period_name,
+                    bjb.currency_code,
+                    l.amount,
+                    h.journal_header_id AS doc_id,
+                    h.budget_journal_number AS document_number,
+                    bjb.dimension2_id AS product_id,
+                    (SELECT
+                        dvv.description
+                    FROM
+                        fnd_dimension_values_vl dvv
+                    WHERE
+                        dvv.dimension_value_id = bjb.dimension2_id
+                    ) AS product_desc,
+                    bjb.dimension3_id AS channel_id,
+                    (SELECT
+                        dvv.description
+                    FROM
+                        fnd_dimension_values_vl dvv
+                    WHERE
+                        dvv.dimension_value_id = bjb.dimension3_id
+                    ) AS channel_desc,
+                    TO_CHAR(h.posted_date,'YYYY-MM-DD') AS posted_date,
+                    DECODE(h.reversed_flag, 'R', '反冲', 'W', '被反冲', h.reversed_flag) AS reversed_flag,
+                    DECODE(h.source_type, 'E', 'Excel导入', 'M', '手工录入', 'MIS', 'MIS导入', 'EBS', 'EBS导入', h.source_type) AS source_type,
+                    DECODE(h.source_type, 'MIS', 'MIS', 'EBS', 'EBS',
+                    (SELECT
+                        e.name
+                    FROM
+                        sys_user u,
+                        exp_employees e
+                    WHERE
+                        e.employee_id = u.employee_id AND
+                        u.user_id     = h.created_by
+                    )) AS created_by,
+                    h.journal_header_notes,
+                    l.journal_lines_notes,
+                    l.journal_line_id
+                FROM
+                    bgt_exec_rate_bgt_detail_rst r,
+                    bgt_journal_balances bjb,
+                    bgt_journal_headers h,
+                    bgt_journal_lines l,
+                    (SELECT
+                        bjb1.balance_id,
+                        l1.journal_line_id
+                    FROM
+                        bgt_exec_rate_bgt_detail_rst r1,
+                        bgt_journal_balances bjb1,
+                        bgt_journal_lines l1
+                    WHERE
+                        r1.batch_id   = nvl(${@session_id},${/session/@session_id}) AND
+                        r1.balance_id = bjb1.balance_id AND
+                        (
+                            (
+                                ${@period_to}  IS NULL OR
+                                r1.period_name <= ${@period_to}
+                            )
+                            AND
+                            (
+                                ${@period_from} IS NULL OR
+                                r1.period_name  >= ${@period_from}
+                            )
+                        )
+                        AND
+                        r1.period_year                = ${@period_year} AND
+                        bjb1.company_id               = l1.company_id AND
+                        bjb1.responsibility_center_id = l1.responsibility_center_id AND
+                        bjb1.budget_item_id           = l1.budget_item_id AND
+                        bjb1.dimension10_id           = l1.dimension10_id AND
+                        bjb1.period_name              = l1.line_period_name AND
+                        NVL(bjb1.dimension2_id,-1)    = NVL(l1.dimension2_id,-1) AND
+                        NVL(bjb1.dimension3_id,-1)    = NVL(l1.dimension3_id,-1)
+                    GROUP BY
+                        bjb1.balance_id,
+                        l1.journal_line_id
+                    ) temp
+                WHERE
+                    r.batch_id          = ${/session/@session_id} AND
+                    r.balance_id        = bjb.balance_id AND
+                    bjb.balance_id      = temp.balance_id AND
+                    l.journal_line_id   = temp.journal_line_id AND
+                    h.journal_header_id = l.journal_header_id
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

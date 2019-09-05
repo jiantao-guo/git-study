@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autocount="false" defaultwhereclause="exists (select bbsa.budget_structure_id       from  bgt_budget_structures_assigns  bbsa           where bbsa.budget_structure_id = T.BUDGET_STRUCTURE_ID   and bbsa.company_id = ${/session/@company_id})" fetchall="false" model="bgt.bgt_budget_structure_query" rootpath="budget_structure"/>
+        <a:model-query autocount="false" defaultwhereclause="r1.set_of_books_id=(select set_of_books_id from fnd_companies fc                where fc.company_id=${/session/@company_id})" fetchall="false" model="bgt.bgt_scenarios" rootpath="budget_scenarios"/>
+        <a:model-query autocount="false" fetchall="false" model="bgt.bgt_versions_for_company" rootpath="budget_version"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="bgt_jorunal_add_select_link_1" url="${/request/@context_path}/modules/bgt/public/bgt_jorunal_add_select.screen"/>
+        <a:link id="bgt_journal_detail_link_1" url="${/request/@context_path}/modules/bgt/public/bgt_journal_detail.screen"/>
+        <a:link id="BGT5110_set_bgt_journal_status_link" model="db.bgt_journal_pkg.set_bgt_journal_status" modelaction="batch_update"/>
+        <a:link id="bgt_journal_line_save_link_4" model="db.bgt_journal_pkg.set_bgt_journal_status_1" modelaction="batch_update"/>
+        <script><![CDATA[
+            function query() {
+                $('budget_journal_result_ds').query();
+            }
+            
+            function reset() {
+                $('budget_query_ds').reset();
+            }
+            
+            function new_company() {
+                new Aurora.Window({
+                    id: 'new_journal',
+                    url: /*bgt_jorunal_add_select.screen*/
+                    $('bgt_jorunal_add_select_link_1').getUrl(),
+                    width: 550,
+                    height: 220,
+                    title: '${l:BGT_JOURNAL_MAINTAIN_ADD}'
+                });
+            }
+            
+            function submitFunction() {
+                Aurora.Masker.mask(Ext.getBody(), '${l:BGT_JOURNAL.SUBMIT}');
+                var records = $('budget_journal_result_ds').getJsonData(true);
+                if (records.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT5110.PLEASE_SELECT_LINES}', null, 250, 100);
+                    Aurora.Masker.unmask(Ext.getBody());
+                    return;
+                }
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    datas[i] = {
+                        journal_header_id: records[i]['journal_header_id'],
+                        _status: 'update'
+                    };
+                }
+                Aurora.request({
+                    url: $('bgt_journal_line_save_link_4').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        if (res.result.record.check_result != "" && res.result.record.check_result != undefined) {
+                            var okCan = Aurora.showConfirm('提示', res.result.record.check_result, function() {
+                                nextFunction(datas);
+                            }, function() {
+                                okCan.close();
+                            }, 500, 300);
+                        } else {
+                            nextFunction(datas);
+                        }
+                    },
+                    scope: this
+                });
+                Aurora.Masker.unmask(Ext.getBody());
+            }
+            
+            function nextFunction(datas) {
+                Aurora.request({
+                    url: $('BGT5110_set_bgt_journal_status_link').getUrl(),
+                    para: datas,
+                    success: function() {
+                        query();
+                    },
+                    scope: this
+                });
+            }
+            //获取预算日记账类型对应的维护页面
+            
+            function column_detail(value, record, name) {
+                var head_id = record.get('journal_header_id');
+                return '<a href="javascript:openDetail(' + head_id + ',\'' + record.get('page_name') + '\')">' + value + '</a>';
+            }
+            
+            function openDetail(id, pageName) {
+                url = '${/request/@context_path}/' + pageName + '?journal_header_id=' + id;
+                new Aurora.Window({
+                    id: 'new_bgt_jounral_update_window',
+                    fullScreen: true,
+                    url: url,
+                    title: '${l:BGT_JOURNAL_QUERY.DETAIL}'
+                });
+            }
+            
+            function column_detail_test(value, record, name) {
+                var head_id = record.get("journal_header_id");
+                if (record.get("journal_header_id")) {
+                    return '<a href="javascript:jump_details(' + head_id + ')">' + value + '</a>';
+                }
+            }
+            
+            function jump_details(id) {
+                new Aurora.Window({
+                    id: 'win_detail',
+                    url: /*bgt_journal_detail.screen*/
+                    $('bgt_journal_detail_link_1').getUrl() + '?journal_header_id=' + id + '&head_id=' + id,
+                    title: '${l:BGT_JOURNAL_QUERY.DETAIL}',
+                    fullScreen: true
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="budget_structure_ds">
+                <a:datas datasource="/model/budget_structure"/>
+            </a:dataSet>
+            <a:dataSet id="bgt_scenarios_ds">
+                <a:datas datasource="/model/budget_scenarios"/>
+            </a:dataSet>
+            <a:dataSet id="budget_version_ds">
+                <a:datas datasource="/model/budget_version"/>
+            </a:dataSet>
+            <a:dataSet id="svc" lookupcode="BUDGET_PERIOD"/>
+            <a:dataSet id="bgt_journal_result_status_ds" loadData="false" model="bgt.BGT5110.bgt_get_journal_result_status"/>
+            <a:dataSet id="budget_query_ds">
+                <a:fields>
+                    <a:field name="journal_header_id"/>
+                    <a:field name="budget_strucutre_id_display" displayField="description" options="budget_structure_ds" prompt="BGT_JOURNAL_HEADERS.BUDGET_STRUCTURE_ID" returnField="budget_structure_id" valueField="budget_structure_id"/>
+                    <a:field name="budget_journal_number" prompt="BGT_JOURNAL_HEADERS.BUDGET_JOURNAL_NUMBER"/>
+                    <!-- <a:field name="budget_perid_name" lovHeight="550" lovLabelWidth="100" lovService="bgt.period_set_code_for_company" lovWidth="550" prompt="BGT_BUDGET_STRUCTURES.PERIOD_SET_CODE" title="BGT_BUDGET_STRUCTURES.PERIOD_SET_CODE">
+                        <a:mapping>
+                            <a:map from="bgt_period_set_code" to="b_period_set_code"/>
+                            <a:map from="description" to="budget_perid_name"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="period_strategy_name" displayfield="code_value_name" options="svc" prompt="BGT_JOURNAL_QUERY.PERIOD_STRATEGY_DESC" returnField="period_strategy" valuefield="code_value"/>
+                    <a:field name="bgt_scenarios_name" displayfield="description" options="bgt_scenarios_ds" prompt="BGT_JOURNAL_HEADERS.SCENARIO_ID" returnfield="scenario_id" valuefield="scenario_id"/>
+                    <a:field name="bgt_scenarios_id"/>
+                    <a:field name="bgt_version_name" displayfield="description" options="budget_version_ds" prompt="BGT_JOURNAL_HEADERS.VERSION_ID" returnField="version_id" valueField="version_id"/>
+                    <a:field name="bgt_version_id"/>
+                    <a:field name="bgt_version_status"/>
+                    <a:field name="status_display" displayfield="code_value_name" options="bgt_journal_result_status_ds" prompt="BGT_JOURNAL_HEADERS.STATUS" returnfield="status" valuefield="code_value"/>
+                    <a:field name="period_year" prompt="BGT_JOURNAL_HEADERS.PERIOD_YEAR"/>
+                    <a:field name="period_quarter" prompt="BGT_JOURNAL_HEADERS.PERIOD_QUARTER"/>
+                    <a:field name="period_name" prompt="BGT_JOURNAL_HEADERS.PERIOD_NAME"/>
+                    <a:field name="bgt_jour_type_desc" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="450" lovService="bgt.BGT5110.bgt_journal_typelist" lovWidth="500" prompt="BGT_JOURNAL_TYPES" title="BGT_JOURNAL_TYPES">
+                        <a:mapping>
+                            <a:map from="bgt_journal_type_id" to="bgt_journal_type_id"/>
+                            <a:map from="description" to="bgt_jour_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bgt_journal_type_id"/>
+                    <a:field name="project_name" autoComplete="true" autoCompleteField="dimension_value_code" lovGridHeight="350" lovHeight="500" lovService="bgt.bgt_budget_dim_lov?dimension_code=PROJECT" lovWidth="500" prompt="项目" title="项目">
+                        <a:mapping>
+                            <a:map from="dimension_value_code" to="project_code"/>
+                            <a:map from="description" to="project_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="budget_period_ds" loadData="true" model="bgt.period_set_code_for_company"/>
+            <a:dataSet id="budget_journal_result_ds" autoPageSize="true" autoQuery="true" model="bgt.bgt_journal_headers" queryDataSet="budget_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="period_set_name" displayField="budget_perid_name" options="budget_period_ds" prompt="BGT_BUDGET_STRUCTURES.PERIOD_SET_CODE" valueField="budget_period_ds"/>
+                    <!-- <a:field name="status_display" displayfield="code_value_name" options="bgt_journal_result_status_ds" prompt="BGT_JOURNAL_HEADERS.STATUS" returnfield="status" valuefield="code_value"/>-->
+                    <a:field name="version_name"/>
+                    <a:field name="period_strategy_name"/>
+                    <a:field name="status_display"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="reset" text="HAP_RESET" width="80"/>
+                <!-- <a:toolbarButton Text="PROMPT.SUBMIT" click="submitFunction" width="80"/> -->
+                <a:gridButton bind="grid" type="excel" width="80"/>
+                <a:gridButton bind="grid" type="delete" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="budget_query_ds" resultTarget="budget_journal_result_ds" style="width:100%;border:none">
+                <a:formToolBar labelWidth="100">
+                    <a:textField name="budget_journal_number" bindTarget="budget_query_ds"/>
+                    <a:lov name="bgt_jour_type_desc" bindTarget="budget_query_ds"/>
+                    <a:comboBox name="period_strategy_name" bindTarget="budget_query_ds"/>
+                    <a:lov name="project_name" bindTarget="budget_query_ds"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:comboBox name="status_display" bindTarget="budget_query_ds"/>
+                    <a:comboBox name="budget_strucutre_id_display" bindTarget="budget_query_ds"/>
+                    <!-- <a:lov name="budget_perid_name" bindTarget="budget_query_ds"/> -->
+                    <a:comboBox name="bgt_version_name" bindTarget="budget_query_ds"/>
+                    <a:comboBox name="bgt_scenarios_name" bindTarget="budget_query_ds"/>
+                    <a:textField name="period_year" bindTarget="budget_query_ds"/>
+                    <!-- <a:textField name="period_quarter" bindTarget="budget_query_ds"/> -->
+                </a:formBody>
+            </a:queryForm>
+            <!-- <a:hBox style="margin-top:5px;margin-left:5px;">
+				<a:button click="query" text="HAP_QUERY"/>
+				<a:button click="reset" text="HAP_RESET"/>
+				<a:button Text="PROMPT.SUBMIT" click="submitFunction"/>
+			</a:hBox> -->
+            <a:grid id="grid" bindtarget="budget_journal_result_ds" marginHeight="122" navbar="true">
+                <!-- <a:toolBar>
+					<a:button Text="PROMPT.NEW" click="new_company" icon="${/request/@context_path}/images/add.gif"/>
+					<a:button type="delete"/>
+					<a:button type="excel"/>
+				</a:toolBar> -->
+                <a:columns>
+                    <a:column name="budget_journal_number" align="center" renderer="column_detail" width="180"/>
+                    <a:column name="bgt_jour_type_desc" align="left" width="150"/>
+                    <a:column name="period_strategy_name" align="left" width="80"/>
+                    <a:column name="budget_structures_desc" align="left" width="120"/>
+                    <a:column name="period_set_name" align="left" width="120"/>
+                    <a:column name="period_year" align="center" width="50"/>
+                    <a:column name="scenario_name" align="left" width="120"/>
+                    <a:column name="version_name" align="left" width="160"/>
+                    <a:column name="status_display" align="left" prompt="状态" width="60"/>
+                    <a:column name="create_date_display" align="left" prompt="创建日期" renderer="Aurora.formatDate"/>
+                    <a:column name="journal_header_notes" align="left" width="150"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+            	function bgtJournalInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            	   $('grid').setWidth(autoWidth);                	              
+            }
+            //Ext.fly(window).on('resize', bgtJournalInitSize);
+            bgtJournalInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

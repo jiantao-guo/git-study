@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    (SELECT
+                        TO_CHAR(p.end_date, 'yyyy-mm-dd')
+                    FROM
+                        gld_periods p
+                    WHERE
+                        p.period_set_code =
+                        (SELECT
+                            s.period_set_code
+                        FROM
+                            gld_period_sets s,
+                            gld_set_of_books b
+                        WHERE
+                            s.period_set_code = b.period_set_code AND
+                            b.set_of_books_id = gld_common_pkg.get_set_of_books_id(h.company_id)
+                        ) AND
+                        p.period_name = h.period_name
+                    )schedule_due_date,
+                    TO_CHAR(h.report_date,'yyyy-mm-dd') schedule_start_date,
+                    h.exp_report_header_id exp_report_header_id,
+                    h.description,
+                    h.company_id,
+                    h.currency_code,
+                    (SELECT
+                        gcv.CURRENCY_NAME
+                    FROM
+                        GLD_CURRENCY_VL gcv
+                    WHERE
+                        gcv.CURRENCY_CODE = h.currency_code
+                    ) CURRENCY_NAME,
+                    h.exp_report_header_id head_id,
+                    (SELECT
+                        u.usedes_code
+                    FROM
+                        csh_payment_usedes u,
+                        exp_rep_ref_payment_usedes e
+                    WHERE
+                        u.usedes_id              = e.usedes_id AND
+                        e.expense_report_type_id = h.exp_report_type_id AND
+                        e.primary_flag           = 'Y'
+                    ) usedes,
+                    (SELECT
+                        u.description
+                    FROM
+                        csh_payment_usedes_vl u,
+                        exp_rep_ref_payment_usedes e
+                    WHERE
+                        u.usedes_id              = e.usedes_id AND
+                        e.expense_report_type_id = h.exp_report_type_id AND
+                        e.primary_flag           = 'Y'
+                    ) usedes_name,
+                    nvl(h.payee_category,'null') payee_category,
+                    nvl((SELECT
+                        CODE_VALUE_NAME
+                    FROM
+                        SYS_CODES_VL SC,
+                        SYS_CODE_VALUES_V SV
+                    WHERE
+                        SC.code       = 'PAYMENT_OBJECT' AND
+                        sc.code_id    = sv.code_id AND
+                        SV.code_value = h.payee_category
+                    ),'null') exp_report_payee_category_name,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        ee.employee_code
+                        || '-'
+                        || name
+                    FROM
+                        exp_employees ee
+                    WHERE
+                        ee.employee_id = h.payee_id
+                    ), 'CUSTOMER',
+                    (SELECT
+                        vc.customer_code
+                        || '-'
+                        || vc.DESCRIPTION
+                    FROM
+                        ord_system_customers_vl vc
+                    WHERE
+                        vc.CUSTOMER_ID = h.payee_id
+                    ),
+                    (SELECT
+                        vv.vender_code
+                        || '-'
+                        || vv.DESCRIPTION
+                    FROM
+                        pur_system_venders_vl vv
+                    WHERE
+                        vv.VENDER_ID = h.payee_id
+                    )),'null') exp_report_payee_name,
+                    h.payee_id payee_id,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.account_number
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        eea.employee_id  = h.payee_id AND
+                        eea.primary_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.account_number
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.account_number
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y'
+                    )),'null') account_number,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.account_name
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        eea.employee_id  = h.payee_id AND
+                        eea.primary_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.account_name
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.account_name
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y'
+                    )),'null') account_name,
+                    (SELECT
+                        description
+                    FROM
+                        csh_payment_methods_vl vv
+                    WHERE
+                        vv.payment_method_id = h.payment_method_id
+                    ) exp_report_payment_method,
+                    h.payment_method_id,
+                    'N' gather_flag,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.bank_code
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        eea.employee_id  = h.payee_id AND
+                        eea.primary_flag = 'Y' AND
+                        eea.enabled_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.bank_code
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y' AND
+                        pva.enabled_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.bank_code
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y' AND
+                        oca.enabled_flag = 'Y'
+                    )),'null') bank_code,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.bank_name
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        h.payee_id       = eea.employee_id AND
+                        eea.primary_flag = 'Y' AND
+                        eea.enabled_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.bank_name
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y' AND
+                        pva.enabled_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.bank_name
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y' AND
+                        oca.enabled_flag = 'Y'
+                    )),'null') bank_name,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.bank_location_code
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        h.payee_id       = eea.employee_id AND
+                        eea.primary_flag = 'Y' AND
+                        eea.enabled_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.bank_location_code
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y' AND
+                        pva.enabled_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.bank_location_code
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y' AND
+                        oca.enabled_flag = 'Y'
+                    )),'null') bank_location_code,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.bank_location
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        h.payee_id       = eea.employee_id AND
+                        eea.primary_flag = 'Y' AND
+                        eea.enabled_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.bank_location
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y' AND
+                        pva.enabled_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.bank_location
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y' AND
+                        oca.enabled_flag = 'Y'
+                    )),'null') bank_location_name,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.province_code
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        h.payee_id       = eea.employee_id AND
+                        eea.primary_flag = 'Y' AND
+                        eea.enabled_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.province_code
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y' AND
+                        pva.enabled_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.province_code
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y' AND
+                        oca.enabled_flag = 'Y'
+                    )),'null') province_code,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.province_name
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        h.payee_id       = eea.employee_id AND
+                        eea.primary_flag = 'Y' AND
+                        eea.enabled_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.province_name
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y' AND
+                        pva.enabled_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.province_name
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y' AND
+                        oca.enabled_flag = 'Y'
+                    )),'null') province_name,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.city_code
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        h.payee_id       = eea.employee_id AND
+                        eea.primary_flag = 'Y' AND
+                        eea.enabled_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.city_code
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y' AND
+                        pva.enabled_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.city_code
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y' AND
+                        oca.enabled_flag = 'Y'
+                    )),'null') city_code,
+                    nvl(DECODE(PAYEE_CATEGORY, 'EMPLOYEE',
+                    (SELECT
+                        eea.city_name
+                    FROM
+                        exp_employee_accounts eea
+                    WHERE
+                        h.payee_id       = eea.employee_id AND
+                        eea.primary_flag = 'Y' AND
+                        eea.enabled_flag = 'Y'
+                    ), 'VENDER',
+                    (SELECT
+                        pva.city_name
+                    FROM
+                        pur_vender_accounts pva
+                    WHERE
+                        pva.vender_id    = h.payee_id AND
+                        pva.primary_flag = 'Y' AND
+                        pva.enabled_flag = 'Y'
+                    ),
+                    (SELECT
+                        oca.city_name
+                    FROM
+                        ord_customer_accounts oca
+                    WHERE
+                        oca.customer_id  = h.payee_id AND
+                        oca.primary_flag = 'Y' AND
+                        oca.enabled_flag = 'Y'
+                    )),'null') city_name
+                FROM
+                    exp_report_headers h
+                WHERE
+                    h.exp_report_header_id = ${@head_id}
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

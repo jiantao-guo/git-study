@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            SELECT *
+  FROM (select distinct h.payment_requisition_header_id,
+                        h.requisition_number,
+                        h.employee_id,
+                        (SELECT EE.NAME || '-' || EE.EMPLOYEE_CODE
+                           FROM EXP_EMPLOYEES EE
+                          WHERE EE.EMPLOYEE_ID = H.EMPLOYEE_ID) REQUISITOR,
+                        TO_CHAR(H.REQUISITION_DATE, 'YYYY-MM-DD') REQUISITION_DATE,
+                        h.CURRENCY_CODE,
+                        gld.currency_name,
+                        h.AMOUNT,
+                        h.PARTNER_CATEGORY,
+                        (SELECT B.CODE_VALUE_NAME
+                           FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+                          WHERE A.CODE_ID = B.CODE_ID
+                            AND A.CODE = 'PAYMENT_OBJECT'
+                            AND B.CODE_VALUE = h.PARTNER_CATEGORY) P_PARTNER_CATEGORY,
+                        h.PARTNER_ID,
+                        DECODE(h.PARTNER_CATEGORY,
+                               'EMPLOYEE',
+                               (SELECT EE.EMPLOYEE_CODE || '-' || EE.NAME
+                                  FROM EXP_EMPLOYEES EE
+                                 WHERE EE.EMPLOYEE_ID = h.PARTNER_ID),
+                               'VENDER',
+                               (SELECT SVV.VENDER_CODE || '-' ||
+                                       SVV.DESCRIPTION
+                                  FROM PUR_SYSTEM_VENDERS_VL SVV
+                                 WHERE SVV.VENDER_ID = h.PARTNER_ID),
+                               'CUSTOMER',
+                               (SELECT SCV.CUSTOMER_CODE || '-' ||
+                                       SCV.DESCRIPTION
+                                  FROM ORD_SYSTEM_CUSTOMERS_VL SCV
+                                 WHERE SCV.CUSTOMER_ID = h.PARTNER_ID)) PAYEE_NAME,
+                        h.DESCRIPTION,
+                        
+                        (SELECT SUM(EF.AMOUNT)
+                           FROM CSH_PAYMENT_REQUISITION_REFS EF,
+                                CSH_TRANSACTION_V            CT,
+                                CSH_PAYMENT_REQUISITION_LNS  CPRL
+                          WHERE EF.PAYMENT_REQUISITION_LINE_ID =
+                                CPRL.PAYMENT_REQUISITION_LINE_ID
+                            AND EF.CSH_TRANSACTION_LINE_ID =
+                                CT.transaction_line_id
+                            AND CT.posted_flag = 'Y'
+                            AND CPRL.PAYMENT_REQUISITION_HEADER_ID =
+                                h.PAYMENT_REQUISITION_HEADER_ID) PAYMENTED_AMOUNT,
+                        (SELECT V.CODE_VALUE_NAME
+                           FROM SYS_CODE_VALUES_VL V, SYS_CODES_VL T
+                          WHERE T.CODE = 'PAYMENT_REQUISITION_STATUS'
+                            AND T.CODE_ID = V.CODE_ID
+                            AND V.CODE_VALUE = h.STATUS) STATUS_DES,
+                        h.STATUS,
+                        tl.transaction_line_id,
+                        tl.transaction_header_id
+          from csh_transaction_lines        tl,
+          		csh_transaction_headers		cth1,
+          		csh_transaction_headers     cth2,
+               csh_payment_requisition_refs f,
+               csh_payment_requisition_lns  l,
+               csh_payment_requisition_hds  h,
+               gld_currency_vl              gld
+           #WHERE_CLAUSE#
+           ) V
+           
+ 		ORDER BY REQUISITION_NUMBER DESC
+ 			]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="payment_requisition_header_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PAYMENT_REQUISITION_HEADER_ID" required="true"/>
+        <bm:field name="requisition_number" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="REQUISITION_NUMBER" required="true"/>
+        <bm:field name="employee_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="EMPLOYEE_ID" required="true"/>
+        <bm:field name="requisitor" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="REQUISITOR"/>
+        <bm:field name="requisition_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="REQUISITION_DATE"/>
+        <bm:field name="currency_code" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CURRENCY_CODE" required="true"/>
+        <bm:field name="amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="AMOUNT" required="true"/>
+        <bm:field name="partner_category" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PARTNER_CATEGORY" required="true"/>
+        <bm:field name="p_partner_category" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="P_PARTNER_CATEGORY"/>
+        <bm:field name="partner_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PARTNER_ID" required="true"/>
+        <bm:field name="payee_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PAYEE_NAME"/>
+        <bm:field name="description" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="DESCRIPTION"/>
+        <bm:field name="paymented_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="PAYMENTED_AMOUNT"/>
+        <bm:field name="status_des" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="STATUS_DES"/>
+        <bm:field name="status" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="STATUS"/>
+        <bm:field name="transaction_line_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="TRANSACTION_LINE_ID" required="true"/>
+        <bm:field name="transaction_header_id" databaseType="NUMBER" datatype="java.lang.Double" physicalName="TRANSACTION_HEADER_ID" required="true"/>
+        <bm:field name="currency_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CURRENCY_NAME"/>
+    </bm:fields>
+    <bm:data-filters>
+        <bm:data-filter expression="f.payment_requisition_line_id = l.payment_requisition_line_id 
+           and f.csh_transaction_line_id = tl.transaction_line_id 
+           and gld.currency_code(+) = h.currency_code 
+           and h.payment_requisition_header_id = 
+               l.payment_requisition_header_id 
+           and f.payment_requisition_line_id = l.payment_requisition_line_id 
+           and tl.transaction_header_id = cth1.transaction_header_id 
+           and cth2.source_payment_header_id = cth1.transaction_header_id"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="transaction_header_id" queryExpression="cth2.transaction_header_id = ${@transaction_header_id}"/>
+    </bm:query-fields>
+</bm:model>

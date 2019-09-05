@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2013-3-6 下午4:53:58  
+    $Revision: 1.0  
+    $Purpose: 源对象查询(抵债资产转自用)
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            
+            select * from (
+SELECT h.asset_book_id,
+       (select fd.description_text
+          from fnd_descriptions fd
+         where fd.description_id = e.description_id
+           and fd.language = ${/session/@lang}) description,
+       h.asset_id,
+       (SELECT nvl(SUM(cost), 0)
+          FROM eam_asset_cost_sources ecs
+         WHERE ecs.source_asset_id = h.asset_id
+           AND ecs.confirm_status <> 'NEW'
+           AND ecs.asset_id <> h.asset_id) source_asset_sum_cost,
+       h.status,
+       nvl(efi.current_cost, 0) + nvl(efi.scrap_amount, 0) source_asset_cost,
+       (select fd.description_text
+          from fnd_descriptions fd
+         where fd.description_id = h.description_id
+           and fd.language = ${/session/@lang}) asset_name,
+       e.asset_type,
+       h.asset_code
+  from eam_asset_headers        h,
+       eam_asset_categories     e,
+       eam_locations_vl         l,
+       eam_asset_finance_info   efi,
+       eam_asset_entity_classes eac,
+       eam_asset_fin_classes_vl fc
+ where h.category_id = e.category_id
+   and h.location_id = l.location_id(+)
+   and h.asset_id = efi.asset_id(+)
+   and efi.finance_class_id = fc.class_id(+)
+   AND h.entity_class_id = eac.class_id
+   AND e.asset_type = 'DBT'
+   AND NOT EXISTS
+ (SELECT 1
+          FROM eam_asset_cost_sources cs, eam_asset_headers eah2
+         where cs.source_asset_id = h.asset_id
+           and cs.asset_id = eah2.asset_id
+           and cs.document_type = 'EAM_REQUISITION'
+           and cs.document_id = ${@document_id}
+           and cs.document_line_id = ${@document_line_id}
+           and (cs.asset_id = nvl(${@asset_id}, 0) or eah2.status <> 'NEW'))
+   and exists
+ (SELECT 1
+          FROM eam_requisition_types t, eam_req_type_ref_asset_types rt
+         WHERE rt.ast_requisition_type_id = t.ast_requisition_type_id
+           AND t.ast_requisition_type_id = ${@ast_requisition_type_id}
+           AND rt.entity_class_id = h.entity_class_id)
+   and (exists (select p.unit_id
+                  from exp_org_position p, exp_employee_assigns a, sys_user s
+                 where p.position_id = a.position_id
+                   and p.company_id = a.company_id
+                   and p.enabled_flag = 'Y'
+                   and a.employee_id = s.employee_id
+                   and a.enabled_flag = 'Y'
+                   and s.user_id = ${/session/@user_id}
+                   and a.company_id = ${/session/@company_id}
+                   and p.unit_id = l.entity_man_unit_id) or exists
+        (select u.unit_id
+           from eam_ast_cate_refer_units u, exp_org_unit eu
+          where u.category_id = e.category_id
+            and u.unit_id = eu.unit_id
+            and u.asset_book_id = e.asset_book_id
+            and exists
+          (select p.unit_id
+                   from exp_org_position     p,
+                        exp_employee_assigns a,
+                        sys_user             s,
+                        exp_org_unit         eou
+                  where p.position_id = a.position_id
+                    and p.company_id = a.company_id
+                    and p.enabled_flag = 'Y'
+                    and a.employee_id = s.employee_id
+                    and a.enabled_flag = 'Y'
+                    and s.user_id = ${/session/@user_id}
+                    and p.unit_id = eou.unit_id
+                    and ((eou.unit_code = eu.unit_code and
+                        (p.position_id = eou.unit_asset_manager_position_id or
+                        p.position_id = eou.chief_position_id or
+                        a.employee_id = eou.unit_leader_id)) or exists
+                         (select 1
+                            from wbc_work_teams t
+                           where t.employee_id = a.employee_id
+                             and t.enabled_flag = 'Y') or exists
+                         (select 1
+                            from wbc_work_team_detail d, wbc_work_teams t
+                           where d.employee_id = a.employee_id
+                             and d.enabled_flag = 'Y'
+                             and t.work_team_id = d.work_team_id
+                             and t.enabled_flag = 'Y'))
+                    and l.entity_man_company_id in
+                        (select f.company_id
+                           from fnd_companies_vl f
+                          start with f.company_id = ${/session/@company_id}
+                         connect by prior f.company_id = f.parent_company_id))))
+
+			               ) vv
+			               #WHERE_CLAUSE#
+               
+               ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="asset_book_id"/>
+        <bm:field name="asset_code" forDisplay="true" forQuery="true" prompt="AST_ASSET_HEADERS_VL.ASSET_NUM"/>
+        <bm:field name="asset_name" forDisplay="true" forQuery="true" prompt="AST_ASSET_HEADERS.ASSET_NAME" queryExpression="v.asset_name like ${@asset_name}"/>
+        <bm:field name="asset_type"/>
+        <bm:field name="source_asset_cost" forDisplay="true" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_COST"/>
+        <bm:field name="source_asset_sum_cost" forDisplay="true" prompt="EAM_ASSET_COST_SOURCES.SOURCE_ASSET_SUM_COST"/>
+        <bm:field name="description" prompt="AST_ASSET_HEADER_DS.DESCRIPTION"/>
+        <bm:field name="asset_id"/>
+        <bm:field name="status"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="asset_book_id" queryOperator="="/>
+        <bm:query-field field="status" queryOperator="="/>
+        <bm:query-field field="asset_type" queryOperator="="/>
+        <bm:query-field field="description" queryOperator="like"/>
+        <bm:query-field field="asset_name" queryOperator="like"/>
+        <bm:query-field field="asset_code" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

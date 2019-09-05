@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t.*
+                FROM
+                    (SELECT
+                        t.exp_report_header_id,
+                        t.company_id,
+                        t.operation_unit_id,
+                        t.exp_report_number,
+                        t.exp_report_barcode,
+                        t.employee_id,
+                        ee.name employee_name,
+                        t.position_id,
+                        t.unit_id,
+                        t.payee_category,
+                        t.payee_id,
+                        t.exp_report_type_id,
+                        eet.description exp_report_type_desc,
+                        t.expense_user_group_id,
+                        t.currency_code,
+                        (SELECT
+                            currency_name
+                        FROM
+                            gld_currency_vl gcv
+                        WHERE
+                            gcv.currency_code = t.currency_code
+                        ) currency_name,
+                        t.exchange_rate_type,
+                        t.exchange_rate_quotation,
+                        t.exchange_rate,
+                        TO_CHAR(t.report_date,'yyyy-mm-dd') report_date,
+                        t.period_name,
+                        t.report_status,
+                        aa.code_value_name report_status_desc,
+                        t.je_creation_status,
+                        t.audit_flag,
+                        t.audit_date,
+                        t.gld_interface_flag,
+                        t.attachment_num,
+                        t.description,
+                        t.write_off_status,
+                        t.write_off_completed_date,
+                        t.reversed_flag,
+                        t.source_exp_rep_header_id,
+                        (SELECT
+                            SUM(erl.report_amount)
+                        FROM
+                            exp_report_lines erl
+                        WHERE
+                            erl.exp_report_header_id = t.exp_report_header_id
+                        ) report_amount
+                    FROM
+                        exp_report_headers t,
+                        exp_expense_report_types_vl eet,
+                        exp_employees ee,
+                        (SELECT
+                            scv.code_value,
+                            scv.code_value_name
+                        FROM
+                            sys_codes sc,
+                            sys_code_values_vl scv
+                        WHERE
+                            sc.code_id       =scv.code_id AND
+                            sc.code          ='EXP_EXPENSE_REPORT_STATUS' AND
+                            sc.enabled_flag  ='Y' AND
+                            scv.enabled_flag ='Y'
+                        ) aa
+                    WHERE
+                        t.reversed_flag                                                                           IS NULL AND
+                        sys_user_secure_exit_pkg.exp_report_reverse(t.exp_report_header_id,${/session/@session_id})='Y' AND
+                        t.audit_flag                                                                               ='Y' AND
+                        t.write_off_status                                                                         ='N' AND
+                        t.report_status                                                                            ='COMPLETELY_APPROVED' AND
+                        t.exp_report_type_id                                                                       = eet.expense_report_type_id(+) AND
+                        t.employee_id                                                                              = ee.employee_id(+) AND
+                        t.report_status                                                                            = aa.code_value(+)
+                        /*and exists
+                        (select 1
+                        from wbc_disp_pool_headers_his hd, wbc_dispatch_process wdp
+                        WHERE hd.dispatching_header_id = wdp.dispatch_header_id
+                        and hd.document_num = t.exp_report_number
+                        and wdp.created_by = 1)*/
+                    ) t #WHERE_CLAUSE#
+                ORDER BY
+                    exp_report_number DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+       			
+       				begin
+					  sys_user_doc_access_verify_pkg.exp_rpt_reverse_access_verify(${/session/@session_id},
+					                                                               ${@exp_report_header_id},
+					                                                               ${/session/@user_id});
+					  exp_report_pkg.reverse_expense_report(${@exp_report_header_id},
+					                                        to_date(${@journal_date},'yyyy-mm-dd'),
+					                                        ${/session/@user_id},
+					                                        ${/session/@company_id});
+					end;
+       			
+       		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="exp_report_type_id" dataType="java.lang.Long" queryExpression="t.exp_report_type_id = ${@exp_report_type_id}"/>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="t.employee_id =${@employee_id}"/>
+        <bm:query-field name="exp_report_number" dataType="java.lang.String" queryExpression="t.exp_report_number like &apos;%&apos;||${@exp_report_number}||&apos;%&apos;"/>
+        <bm:query-field name="report_date_f" dataType="java.lang.String" queryExpression="t.report_date &gt;= ${@report_date_f}"/>
+        <bm:query-field name="report_date_t" dataType="java.lang.String" queryExpression="t.report_date &lt;= ${@report_date_t}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="t.currency_code like &apos;%&apos;||${@currency_code}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

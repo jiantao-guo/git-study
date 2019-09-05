@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="transaction_header_id" datatype="java.lang.Long"/>
+        <bm:field name="transaction_num" datatype="java.lang.String" prompt="CSH_PREPAYMENT_WRITE_OFF.TRANSACTION_NUM"/>
+        <bm:field name="period_name" datatype="java.lang.String" prompt="CSH_TRANSACTION_HEADERS.PERIOD_NAME"/>
+        <bm:field name="payment_method" datatype="java.lang.String" prompt="CSH_TRANSACTION_HEADERS.PAYMENT_METHOD_ID"/>
+        <bm:field name="p_transaction_category" datatype="java.lang.String" prompt="CSH_PAYMENT_RETURN.TRANSACTION_CATEGORY"/>
+        <bm:field name="transaction_date" datatype="java.lang.String" prompt="CSH_TRANSACTION_HEADERS.TRANSACTION_DATE"/>
+        <bm:field name="transaction_line_id" datatype="java.lang.Long"/>
+        <bm:field name="transaction_amount" datatype="java.lang.Double" prompt="CSH_TRANSACTION_LINES.TRANSACTION_AMOUNT"/>
+        <bm:field name="currency_code" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.CURRENCY_CODE"/>
+        <bm:field name="exchange_rate_type" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_TYPE"/>
+        <bm:field name="exchange_rate" datatype="java.lang.Double" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE"/>
+        <bm:field name="bank_account" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.BANK_ACCOUNT_ID"/>
+        <bm:field name="document_num" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.DOCUMENT_NUM"/>
+        <bm:field name="partner_category" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.PARTNER_CATEGORY"/>
+        <bm:field name="partner" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.PARTNER_ID"/>
+        <bm:field name="bank_account_code" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.PARTNER_BANK_ACCOUNT"/>
+        <bm:field name="bank_account_name" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.BANK_ACCOUNT_NAME"/>
+        <bm:field name="reversed_date" datatype="java.util.Date"/>
+        <bm:field name="description" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.DESCRIPTION"/>
+        <bm:field name="exchange_rate_quotation" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_QUOTATION"/>
+        <bm:field name="agent_employee" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.AGENT_EMPLOYEE_ID"/>
+        <bm:field name="transaction_category" datatype="java.lang.String"/>
+        <bm:field name="contact_number" datatype="java.lang.String" prompt="CSH_PREPAYMENT_WRITE_OFF.CONTACT_NUMBER"/>
+        <bm:field name="transaction_type" datatype="java.lang.String"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	select cth.transaction_header_id,
+			           cth.transaction_num,
+			           cth.period_name,
+			           (select v.description
+			              from csh_payment_methods_vl v
+			             where v.payment_method_id = cth.payment_method_id) payment_method,
+			           (select b.code_value_name
+			              from sys_codes_vl a, sys_code_values_vl b
+			             where a.code_id = b.code_id
+			               and a.code = 'CSH_TRANSACTION_CATEGORY'
+			               and b.code_value = cth.transaction_category) p_transaction_category,
+			           to_char(cth.transaction_date, 'yyyy-mm-dd') transaction_date,
+			           ctl.transaction_line_id,
+			           ctl.transaction_amount,
+			           ctl.currency_code,
+			           (select etv.type_name
+			              from gld_exchangerate_types_vl etv
+			             where etv.enabled_flag = 'Y'
+			               and etv.type_code = ctl.exchange_rate_type) exchange_rate_type,
+			           ctl.exchange_rate,
+			           (select bav.bank_account_name || '-' || bav.bank_account_code name_code
+			              from csh_bank_accounts_vl bav
+			             where bav.bank_account_id = ctl.bank_account_id) bank_account,
+			           ctl.document_num,
+			           (select b.code_value_name
+			              from sys_codes_vl a, sys_code_values_vl b
+			             where a.code_id = b.code_id
+			               and a.code = 'PAYMENT_OBJECT'
+			               and b.code_value = ctl.partner_category) partner_category,
+			           (decode(ctl.partner_category,
+			               'EMPLOYEE',
+			               (select ee.employee_code || '-' || ee.name
+			                  from exp_employees ee
+			                 where ee.employee_id = ctl.partner_id),
+			               'VENDER',
+			               (select svv.vender_code || '-' || svv.description
+			                  from pur_system_venders_vl svv
+			                 where svv.vender_id = ctl.partner_id),
+			               'CUSTOMER',
+			               (select scv.customer_code || '-' || scv.description
+			                  from ord_system_customers_vl scv
+			                 where scv.customer_id = ctl.partner_id))) partner,
+			           bav.bank_account_code,
+			           bav.bank_account_name,
+			           cth.reversed_date,
+			           ctl.description,
+			           (select b.code_value_name
+			              from sys_codes a, sys_code_values_vl b
+			             where a.code_id = b.code_id
+			               and a.code = 'EXCHANGE_RATE_QUOTATION'
+			               and b.code_value = ctl.exchange_rate_quotation) exchange_rate_quotation,
+			           (select ee.name || '-' || ee.employee_code name_code
+			              from exp_employees ee
+			             where ee.employee_id = ctl.agent_employee_id) agent_employee,
+			           cth.transaction_category,
+			           (select cch.contract_number
+		                  from con_contract_headers cch,con_document_flows s
+		                 where contract_header_id =s.document_id
+		                   and s.document_type='CON_CONTRACT_HEADERS'
+		                   and s.source_document_type ='CSH_TRANSACTION_HEADERS'
+		                   and s.source_document_id =cth.transaction_header_id) contact_number,
+			           cth.transaction_type
+		          from csh_transaction_headers cth,
+		               csh_transaction_lines   ctl,
+		               csh_bank_accounts_vl    bav
+		         #WHERE_CLAUSE#
+	        ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="transaction_header_id" queryExpression="cth.transaction_header_id = ${@transaction_header_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="cth.transaction_header_id = ctl.transaction_header_id"/>
+        <bm:data-filter enforceOperations="query" expression="bav.bank_account_id(+) = ctl.partner_bank_account_id"/>
+    </bm:data-filters>
+</bm:model>

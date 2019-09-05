@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-4-24 上午10:00:12  
+    $Revision: 1.0  
+    $Purpose: 资产出租收回申请操作BM
+-->
+<ns1:model xmlns:ns1="http://www.aurora-framework.org/schema/bm" alias="t1" extend="eam.eam_requisition_lines" extendMode="reference">
+    <ns1:operations>
+        <ns1:operation name="query">
+            <ns1:query-sql><![CDATA[
+            SELECT t1.REQUISITION_LINE_ID,
+       t1.REQUISITION_HEADER_ID,
+       t1.LINE_NUMBER,
+       t1.TRANSACTION_TYPE_ID,
+       (SELECT f.description_text
+          FROM eam_transaction_types t, fnd_descriptions f
+         WHERE t.description_id = f.description_id
+           AND f.language = 'ZHS'
+           AND t.transaction_type_id = t1.transaction_type_id) AS trans_type_desc,
+       t1.ASSET_ID,
+       (SELECT h.asset_code
+          FROM eam_asset_headers h
+         WHERE h.asset_id = t1.asset_id) AS asset_code,
+       (SELECT f.description_text
+          FROM eam_asset_headers h, fnd_descriptions f
+         WHERE f.description_id = h.description_id
+           AND h.asset_id = t1.asset_id
+           AND f.language = 'ZHS') AS asset_name,
+       (SELECT h.current_cost
+          FROM eam_asset_finance_info h
+         WHERE h.asset_id = t1.asset_id) AS current_cost,
+       (SELECT h.accumulated_dep_amt
+          FROM eam_asset_finance_info h
+         WHERE h.asset_id = t1.asset_id) AS accumulated_dep_amt,
+       (SELECT h.impairment_loss_amt
+          FROM eam_asset_finance_info h
+         WHERE h.asset_id = t1.asset_id) AS impairment_loss_amt,
+       t1.QUANTITY,
+       t1.CURRENCY_CODE,
+       t1.PRICE,
+       t1.AMOUNT,
+       t1.FROM_LOCATION_ID,
+       (SELECT v.description
+          FROM eam_locations_vl      v
+         WHERE erl2.to_location_id = v.location_id) AS from_location_desc,
+       (select v.address from eam_asset_headers v where v.asset_id = t1.asset_id) as current_location_address,  
+       (select to_char(h.start_use_date, 'yyyy-mm-dd') from eam_asset_headers h where h.asset_id = t1.asset_id) as start_use_date,
+       t1.TO_LOCATION_ID,
+       t1.TO_LOCATION_ADDRESS,
+       t1.RENT_AREA,
+       (SELECT v.description
+          FROM eam_locations_vl v
+         WHERE v.location_id = t1.to_location_id) AS to_location_desc,
+       t1.FROM_FIN_CALSS_ID,
+       t1.TO_FIN_CLASS_ID,
+       t1.FROM_ENTITY_CLASS_ID,
+       t1.TO_ENTITY_CLASS_ID,
+       t1.DESCRIPTION,
+       t1.EXPENSE_AMOUNT,
+       t1.REVENUE_AMOUNT,
+       erl2.pl_amount,
+       t1.FROM_COST,
+       t1.TO_COST,
+       t1.COMPANY_ID,
+       t1.RESPONSIBILITY_CENTER_ID,
+       t1.OPERATION_UNIT_ID,
+       t1.UNIT_ID,
+       t1.EMPLOYEE_ID,
+       t1.POSITION_ID,
+       erl2.contract_id,
+       (SELECT h.contract_number
+          FROM con_contract_headers h
+         WHERE h.contract_header_id =
+               erl2.contract_id) AS contract_name,
+       t1.ACCEPTANCE_DATE,
+       t1.ACCPTN_CHECK_DATE,
+       TO_CHAR(erl2.start_date, 'yyyy-mm-dd') start_date,
+       TO_CHAR(erl2.end_date, 'yyyy-mm-dd') end_date,
+       erl2.partner_name
+  FROM EAM_REQUISITION_LINES t1,eam_asset_rent_his rh,eam_requisition_lines erl2,eam_asset_headers eah,eam_requisition_headers erh
+ where erh.requisition_header_id = t1.requisition_header_id
+   and t1.requisition_header_id = ${@requisition_header_id}
+   and t1.asset_id = eah.asset_id
+   and t1.asset_id = rh.asset_id
+   and (rh.back_document_line_id = t1.requisition_line_id or (rh.back_flag = 'N' and erh.requisition_status <> 'CONFIRMED'))
+   AND rh.rent_document_line_id = erl2.requisition_line_id
+			               #WHERE_CLAUSE#
+               
+               ]]></ns1:query-sql>
+        </ns1:operation>
+        <ns1:operation name="insert">
+            <ns1:parameters>
+                <ns1:parameter name="requisition_line_id" output="true" outputPath="@requisition_line_id"/>
+            </ns1:parameters>
+            <ns1:update-sql><![CDATA[
+    				BEGIN
+    					eam_requisition_pkg.insert_eam_req_line_bac(
+    									p_requisition_line_id      =>${@requisition_line_id},
+                                        p_requisition_header_id    =>${@requisition_header_id},
+                                        p_transaction_type_id      =>${@transaction_type_id},
+                                        p_asset_id                 =>${@asset_id},
+                                        p_description              =>${@description},
+                                     	p_to_location_id           =>${@to_location_id},
+                                     	p_acceptance_date		   => to_date(${@acceptance_date},'yyyy-mm-dd'),
+                                        p_company_id               =>${/session/@company_id},
+                                        p_responsibility_center_id =>${@responsibility_center_id},
+                                        p_operation_unit_id        =>${@operation_unit_id},
+                                        p_unit_id                  =>${@unit_id},
+                                        p_employee_id              =>${@employee_id},
+                                        p_position_id              =>${@position_id},
+                                        p_user_id                  =>${/session/@user_id},
+                                        p_to_location_address      =>${@to_location_address},
+                                        p_rent_area                =>${@rent_area});
+    				END;
+    			
+    		]]></ns1:update-sql>
+        </ns1:operation>
+        <ns1:operation name="update">
+            <ns1:update-sql><![CDATA[
+    				BEGIN
+    					eam_requisition_pkg.update_eam_req_line_bac(
+    									p_requisition_line_id      =>${@requisition_line_id},
+                                        p_requisition_header_id    =>${@requisition_header_id},
+                                        p_transaction_type_id      =>${@transaction_type_id},
+                                        p_asset_id                 =>${@asset_id},
+                                        p_description              =>${@description},
+                                     	p_to_location_id           =>${@to_location_id},
+                                     	p_acceptance_date		   => to_date(${@acceptance_date},'yyyy-mm-dd'),	
+                                        p_company_id               =>${/session/@company_id},
+                                        p_responsibility_center_id =>${@responsibility_center_id},
+                                        p_operation_unit_id        =>${@operation_unit_id},
+                                        p_unit_id                  =>${@unit_id},
+                                        p_employee_id              =>${@employee_id},
+                                        p_position_id              =>${@position_id},
+                                        p_user_id                  =>${/session/@user_id},
+                                        p_to_location_address      =>${@to_location_address},
+                                        p_rent_area                =>${@rent_area});
+    				END;
+    		]]></ns1:update-sql>
+        </ns1:operation>
+        <ns1:operation name="delete">
+            <ns1:update-sql><![CDATA[
+    			BEGIN
+    				eam_requisition_pkg.delete_eam_requisition_line(
+    								    p_requisition_header_id =>${@requisition_header_id},
+                                        p_requisition_line_id   =>${@requisition_line_id},
+                                        p_user_id               =>${/session/@user_id});
+    			END;
+    		]]></ns1:update-sql>
+        </ns1:operation>
+    </ns1:operations>
+    <ns1:fields>
+        <ns1:field name="requisition_line_id"/>
+        <ns1:field name="requisition_header_id"/>
+        <ns1:field name="line_number" prompt="EXP_REPORT_LINES.LINE_NUMBER"/>
+        <ns1:field name="transaction_type_id"/>
+        <ns1:field name="trans_type_desc"/>
+        <ns1:field name="asset_id"/>
+        <ns1:field name="asset_code"/>
+        <ns1:field name="asset_name"/>
+        <ns1:field name="current_cost"/>
+        <ns1:field name="accumulated_dep_amt"/>
+        <ns1:field name="impairment_loss_amt"/>
+        <ns1:field name="quantity" prompt="EXP_REPORT_LINES.PRIMARY_QUANTITY"/>
+        <ns1:field name="currency_code"/>
+        <ns1:field name="price" prompt="EXP_REPORT_DISTS.PRICE"/>
+        <ns1:field name="amount" prompt="EXP_TRAVEL_REQ_TEMPLATE.AMOUNT"/>
+        <ns1:field name="from_location_id"/>
+        <ns1:field name="from_location_desc"/>
+        <ns1:field name="to_location_id"/>
+        <ns1:field name="to_location_desc"/>
+        <ns1:field name="from_fin_calss_id"/>
+        <ns1:field name="to_fin_class_id"/>
+        <ns1:field name="from_entity_class_id"/>
+        <ns1:field name="to_entity_class_id"/>
+        <ns1:field name="description" prompt="EXP_EMPLOYEE.NOTES"/>
+        <ns1:field name="expense_amount"/>
+        <ns1:field name="revenue_amount"/>
+        <ns1:field name="pl_amount"/>
+        <ns1:field name="from_cost"/>
+        <ns1:field name="to_cost"/>
+        <ns1:field name="company_id"/>
+        <ns1:field name="responsibility_center_id"/>
+        <ns1:field name="operation_unit_id"/>
+        <ns1:field name="unit_id"/>
+        <ns1:field name="employee_id"/>
+        <ns1:field name="position_id"/>
+        <ns1:field name="contract_id"/>
+        <ns1:field name="contract_name" prompt="EAM_CONTRACT"/>
+        <ns1:field name="acceptance_date" prompt="EAM_ASSET_HEADERS.DATE_OF_PURCHASE"/>
+        <ns1:field name="accptn_check_date" prompt="EAM_REQUISITION_LINES.ACCPTN_CHECK_DATE"/>
+        <ns1:field name="start_date" prompt="EAM_REQUISITION_LINES.START_DATE"/>
+        <ns1:field name="end_date" prompt="EAM_REQUISITION_LINES.END_DATE"/>
+        <ns1:field name="partner_name"/>
+    </ns1:fields>
+</ns1:model>

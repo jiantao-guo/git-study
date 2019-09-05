@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.report_date desc,v.exp_report_number,v.line_number">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select * from
+            			(SELECT h.exp_report_header_id,
+						       h.exp_report_number, --报销单号
+						       h.exp_report_type_id,
+						       (select ert.description
+						          from exp_expense_report_types_vl ert
+						         where ert.expense_report_type_id = h.exp_report_type_id) exp_report_type_name, --报销类型
+						       h.report_status,
+						       (select scv.code_value_name
+						          from sys_codes sc, sys_code_values_vl scv
+						         where sc.code_id = scv.code_id
+						           and sc.code = 'EXP_EXPENSE_REPORT_STATUS'
+						           and scv.code_value = h.report_status) report_status_desc, --发票状态
+						       to_char(h.report_date, 'yyyy-mm-dd') report_date,
+						       (select to_char(era.journal_date,'yyyy-mm-dd')
+						          from exp_report_accounts era,
+						          	   exp_report_dists    erd 
+						         where era.exp_report_dists_id = erd.exp_report_dists_id
+								   and erd.exp_report_line_id = l.exp_report_line_id
+								   and rownum = 1) je_creation_date, --生成凭证日期
+						       nvl(h.audit_flag ,'N') audit_flag,
+						       nvl((select scv.code_value_name
+						          from sys_codes sc, sys_code_values_vl scv
+						         where sc.code_id = scv.code_id
+						           and sc.code = 'APPROVAL_STATUS'
+						           and scv.code_value = h.audit_flag), '未审核') audit_status_desc, --审核状态
+						       decode(h.je_creation_status, 'SUCCESS', 'Y', 'N') je_creation_status, --生成凭证状态
+						       h.employee_id,
+						       (select ee.name
+						          from exp_employees ee
+						         where ee.employee_id = h.employee_id) employee_name,	--报销人
+						       l.line_number, --行号
+						       l.company_id,
+						       (select fc.company_code || '-' || fc.company_short_name
+						          from fnd_companies_vl fc
+						         where fc.company_id = l.company_id) company_name, --公司
+						       l.unit_id,
+						       (select eou.UNIT_CODE || '-' || eou.DESCRIPTION
+						          from exp_org_unit_vl eou
+						         where eou.UNIT_ID = l.unit_id) unit_name, --预算责任部门
+						       l.responsibility_center_id,
+						       (select frc.responsibility_center_code || '-' ||
+						               frc.responsibility_center_name
+						          from fnd_responsibility_centers_vl frc
+						         where frc.responsibility_center_id = l.responsibility_center_id) responsibility_center_name, --成本中心
+						       l.expense_type_id,
+						       (select et.expense_type_code || '-' || et.description
+						          from exp_expense_types_vl et
+						         where et.expense_type_id = l.expense_type_id) expense_type_desc,
+						       l.expense_item_id,
+						       (select ei.expense_item_code || '-' || ei.description
+						          from exp_expense_items_vl ei
+						         where ei.expense_item_id = l.expense_item_id) expense_item_desc,
+						       l.period_name,
+						       l.invoice_number, --发票编号
+						       l.invoice_code, --发票代码
+						       to_char(l.invoice_date, 'yyyy-mm-dd') invoice_date, --发票日期
+						       l.invoice_type,
+						       /*(select yit.type_name
+						          from exp_ygz_invoice_types yit
+						         where l.invoice_type = yit.type_code)*/
+						       (select scv.code_value_name
+						          from sys_codes sc, sys_code_values_vl scv
+						         where sc.code_id = scv.code_id
+						           and sc.code = 'VMS_INVOICE_TYPE'
+						           and scv.code_value = l.invoice_type) invoice_type_desc, --发票类型
+						       l.invoice_status,
+						       (select scv.code_value_name
+						          from sys_codes sc, sys_code_values_vl scv
+						         where sc.code_id = scv.code_id
+						           and sc.code = 'VMS_INVOICE_STATUS'
+						           and scv.code_value = l.invoice_status) invoice_status_desc, --发票状态
+						       l.authentication_time, --发票认证日期
+						       l.report_amount, --含税金额
+						       nvl(l.tax_amount,0) tax, --税额
+						       nvl(l.sale_amount,l.report_amount - nvl(l.tax_amount,0)) no_tax_amount, --不含税金额
+						       l.tax_rate / 100 tax_rate, --税率
+						       --l.roll_out_amount, --转出金额
+						       l.description, --说明
+						       l.dimension2_id,
+						       (select fdv.dimension_value_code || '-' || fdv.description
+						          from fnd_dimension_values_vl fdv
+						         where fdv.dimension_value_id = l.dimension2_id) d2, --产品
+						       l.dimension3_id,
+						       (select fdv.dimension_value_code || '-' || fdv.description
+						          from fnd_dimension_values_vl fdv
+						         where fdv.dimension_value_id = l.dimension3_id) d3, --渠道
+						       -- l.dimension4_id,
+						       -- (select fdv.dimension_value_code || '-' || fdv.description
+						          -- from fnd_dimension_values_vl fdv
+						         -- where fdv.dimension_value_id = l.dimension4_id) d4,
+						       l.dimension5_id,
+						       (select fdv.dimension_value_code || '-' || fdv.description
+						          from fnd_dimension_values_vl fdv
+						         where fdv.dimension_value_id = l.dimension5_id) d5, --预算中心
+						       l.dimension6_id,
+						       (select fdv.dimension_value_code || '-' || fdv.description
+						          from fnd_dimension_values_vl fdv
+						         where fdv.dimension_value_id = l.dimension6_id) d6, --决策单元
+						       --l.used_status,
+						       --decode(l.used_status, 'Y', '已复核', 'P', '待复核', '未转出') used_status_desc, --用途类型状态
+						       l.usage_type,
+						       (select yut.type_name
+						          from exp_ygz_usage_types yut
+						         where yut.type_code = l.usage_type) usage_type_desc, --用途类型
+						       l.input_tax_structure_detail,
+						       (select tsd.type_name
+						          from exp_ygz_input_tax_struc_dtl tsd
+						         where tsd.type_code = l.input_tax_structure_detail) input_tax_struc_detail_desc, --进项结构明细
+						       (select to_char(era.journal_date, 'yyyy-mm-dd')
+						          from exp_report_accounts era
+						         where h.exp_report_header_id = era.exp_report_header_id
+						           and era.source_code = 'EXPENSE_REPORT_AUDIT'
+						           and rownum = 1) journal_date --凭证日期
+						  FROM exp_report_lines l, exp_report_headers h
+						 where h.exp_report_header_id = l.exp_report_header_id
+						   and l.company_id in (select fc.company_id from fnd_companies fc start with fc.company_id = ${/session/@company_id} connect by prior fc.company_id = fc.parent_company_id)) v
+				        	#WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="exp_report_type_id" queryExpression="v.exp_report_type_id = ${@exp_report_type_id}"/>
+        <bm:query-field name="exp_report_number" queryExpression="v.exp_report_number like &apos;%&apos;||trim(${@exp_report_number})||&apos;%&apos;"/>
+        <bm:query-field name="report_status" queryExpression="v.report_status = ${@report_status}"/>
+        <bm:query-field name="audit_flag" queryExpression="v.audit_flag = ${@audit_flag}"/>
+        <bm:query-field name="employee_id" queryExpression="v.employee_id = ${@employee_id}"/>
+        <bm:query-field name="report_date_from" queryExpression="to_date(v.report_date,&apos;yyyy-mm-dd&apos;) &gt;= to_date(trim(${@report_date_from}),&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="report_date_to" queryExpression="to_date(v.report_date,&apos;yyyy-mm-dd&apos;) &lt;= to_date(trim(${@report_date_to}),&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="period_name_from" queryExpression="v.period_name &gt;= trim(${@period_name_from})"/>
+        <bm:query-field name="period_name_to" queryExpression="v.period_name &lt;= trim(${@period_name_to})"/>
+        <bm:query-field name="je_creation_date_from" queryExpression="to_date(v.je_creation_date,&apos;yyyy-mm-dd&apos;) &gt;= to_date(trim(${@je_creation_date_from}),&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="je_creation_date_to" queryExpression="to_date(v.je_creation_date,&apos;yyyy-mm-dd&apos;) &lt;= to_date(trim(${@je_creation_date_to}),&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="company_id" queryExpression="v.company_id = ${@company_id}"/>
+        <bm:query-field name="unit_id" queryExpression="v.unit_id = ${@unit_id}"/>
+        <bm:query-field name="responsibility_center_id" queryExpression="v.responsibility_center_id = ${@responsibility_center_id}"/>
+        <bm:query-field name="report_amount_from" queryExpression="v.report_amount &gt;= ${@report_amount_from}"/>
+        <bm:query-field name="report_amount_to" queryExpression="v.report_amount &lt;= ${@report_amount_to}"/>
+        <bm:query-field name="tax_from" queryExpression="v.tax &gt;= ${@tax_from}"/>
+        <bm:query-field name="tax_to" queryExpression="v.tax &lt;= ${@tax_to}"/>
+        <bm:query-field name="tax_rate_from" queryExpression="v.tax_rate &gt;= ${@tax_rate_from}"/>
+        <bm:query-field name="tax_rate_to" queryExpression="v.tax_rate &lt;= ${@tax_rate_to}"/>
+        <bm:query-field name="invoice_number" queryExpression="v.invoice_number like &apos;%&apos;||trim(${@invoice_number})||&apos;%&apos;"/>
+        <bm:query-field name="invoice_code" queryExpression="v.invoice_number like &apos;%&apos;||trim(${@invoice_code})||&apos;%&apos;"/>
+        <bm:query-field name="invoice_date_from" queryExpression="v.invoice_date &gt;= to_date(trim(${@invoice_date_from}),&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="invoice_date_to" queryExpression="v.invoice_date &lt;= to_date(trim(${@invoice_date_to}),&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="invoice_type" queryExpression="v.invoice_type = ${@invoice_type}"/>
+        <bm:query-field name="invoice_status" queryExpression="v.invoice_status = ${@invoice_status}"/>
+        <bm:query-field name="input_tax_structure_detail" queryExpression="v.input_tax_structure_detail = ${@input_tax_structure_detail}"/>
+        <bm:query-field name="usage_type" queryExpression="v.usage_type = ${@usage_type}"/>
+        <bm:query-field name="used_status" queryExpression="v.used_status = ${@used_status}"/>
+        <bm:query-field name="roll_out_amount_from" queryExpression="v.roll_out_amount &gt;= ${@roll_out_amount_from}"/>
+        <bm:query-field name="roll_out_amount_to" queryExpression="v.roll_out_amount &lt;= ${@roll_out_amount_to}"/>
+        <bm:query-field name="dimension2_id" queryExpression="v.dimension2_id = ${@dimension2_id}"/>
+        <bm:query-field name="dimension3_id" queryExpression="v.dimension3_id = ${@dimension3_id}"/>
+        <bm:query-field name="dimension4_id" queryExpression="v.dimension4_id = ${@dimension4_id}"/>
+        <bm:query-field name="journal_date_from" queryExpression="to_date(v.journal_date,&apos;yyyy-mm-dd&apos;) &gt;= to_date(trim(${@journal_date_from}),&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="journal_date_to" queryExpression="to_date(v.journal_date,&apos;yyyy-mm-dd&apos;) &lt;= to_date(trim(${@journal_date_to}),&apos;yyyy-mm-dd&apos;)"/>
+    </bm:query-fields>
+</bm:model>

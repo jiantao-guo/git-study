@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        fv.company_id,
+                        fv.company_code,
+                        fv.company_short_name,
+                        fv.company_short_name code_name,
+                        fv.set_of_books_id,
+                        fv.end_date_active,
+                        fv.start_date_active,
+                        fv.company_type,
+                        (select fd.description_text   
+          from fnd_descriptions fd, fnd_responsibility_centers frc , exp_org_unit_vl eou
+         where frc.responsibility_center_name_id = fd.description_id
+           and fd.language = 'ZHS'
+           and frc.responsibility_center_id = eou.responsibility_center_id
+           and eou.unit_id =
+            (select sys_parameter_pkg.value('COMPANY_DEFAULT_UNIT',null,null,(select fc.company_id from fnd_companies fc where fc.company_code = fv.company_code)) from dual)) responsibility_description,
+            (select frc.responsibility_center_id   
+          from  fnd_responsibility_centers frc , exp_org_unit_vl eou
+           where  frc.responsibility_center_id = eou.responsibility_center_id
+           and eou.unit_id = 
+            (select sys_parameter_pkg.value('COMPANY_DEFAULT_UNIT',null,null,(select fc.company_id from fnd_companies fc where fc.company_code = fv.company_code)) from dual)) responsibility_center_id,
+            (select sys_parameter_pkg.value('COMPANY_DEFAULT_UNIT',null,null,(select fc.company_id from fnd_companies fc where fc.company_code = fv.company_code)) from dual) unit_id,
+            (select eou.DESCRIPTION   
+          from exp_org_unit_vl eou
+         where  eou.unit_id = 
+            (select sys_parameter_pkg.value('COMPANY_DEFAULT_UNIT',null,null,(select fc.company_id from fnd_companies fc where fc.company_code = fv.company_code)) from dual)) unit_description
+                    FROM
+                        fnd_companies_vl fv
+                    WHERE
+                        1 = (
+                            CASE
+                                WHEN NVL(${@company_flag}, 'Y') = 'Y'
+                                THEN
+                                    (SELECT
+                                        1
+                                    FROM
+                                        dual
+                                    WHERE
+                                        fv.company_id IN
+                                        (SELECT
+                                            company_id
+                                        FROM
+                                            fnd_companies f START
+                                        WITH company_id = ${@session_company_id} CONNECT BY PRIOR company_id = parent_company_id
+                                        )
+                                    )
+                                ELSE
+                                    (SELECT
+                                        1
+                                    FROM
+                                        dual
+                                    WHERE
+                                        EXISTS
+                                        (SELECT 1 FROM fnd_companies f WHERE f.company_id = fv.company_id and f.company_id=${@session_company_id}
+                                        )
+                                    )
+                            END)
+                         AND NOT EXISTS
+				         (SELECT 1
+				                  FROM fnd_dimensions fds, fnd_dimension_values fdvs
+				                 WHERE fds.dimension_id = fdvs.dimension_id
+				                   AND fds.dimension_code = 'PROJECT'
+				                   AND fdvs.enabled_flag = 'Y'
+				                   AND fdvs.dimension_value_code = fv.company_code)
+                    ORDER BY
+                        fv.company_code
+                    )v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="company_code" displayWidth="150" forDisplay="true" forQuery="true" prompt="COMPANY_CODE"/>
+        <bm:field name="company_short_name" displayWidth="280" forDisplay="true" forQuery="true" prompt="FND_COMPANIES.COMPANY_NAME"/>
+        <bm:field name="company_id"/>
+        <bm:field name="code_name"/>
+        <bm:field name="unit_description"/>
+        <bm:field name="unit_id"/>
+        <bm:field name="responsibility_description"/>
+        <bm:field name="responsibility_center_id"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="company_code" queryOperator="like"/>
+        <bm:query-field field="company_short_name" queryExpression="v.company_short_name like &apos;%&apos;||${@company_short_name}||&apos;%&apos;"/>
+        <bm:query-field name="query_param" queryExpression="v.company_short_name like &apos;%&apos;||${@query_param}||&apos;%&apos; or v.code_name like &apos;%&apos;||${@query_param}||&apos;%&apos;"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="v.company_type =1 and v.start_date_active &lt;= sysdate and (v.end_date_active is null or end_date_active &gt; sysdate) and v.set_of_books_id=(select v.set_of_books_id from fnd_companies_vl v where v.company_id=${@session_company_id})  "/>
+    </bm:data-filters>
+</bm:model>

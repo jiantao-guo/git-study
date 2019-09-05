@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    ( NVL(v.paymented_amount,0) - NVL(v.write_off_amount,0)) unwrite_off_amount
+                FROM
+                    (SELECT
+                        cprh.requisition_number,
+                        (SELECT
+                            cprtv.description
+                        FROM
+                            csh_pay_req_types_vl cprtv
+                        WHERE
+                            cprtv.type_id=cprh.payment_req_type_id
+                        ) document_type,
+                        cprh.payment_req_type_id,
+                        (SELECT
+                            cprt.report_name
+                        FROM
+                            csh_pay_req_types cprt
+                        WHERE
+                            cprt.type_id = cprh.payment_req_type_id
+                        ) report_name,
+                        (SELECT
+                            sr.param_name
+                        FROM
+                            csh_pay_req_types cprt,
+                            sys_reports sr
+                        WHERE
+                            cprt.report_name = sr.report_name AND
+                            cprt.type_id     = cprh.payment_req_type_id AND
+                            rownum           = 1
+                        ) report_param_name,
+                        cprh.payment_method_id,
+                        (SELECT
+                            cpmv.description
+                        FROM
+                            CSH_PAYMENT_METHODS_VL cpmv
+                        WHERE
+                            cpmv.payment_method_id = cprh.payment_method_id
+                        ) payment_method,
+                        cprh.payment_requisition_header_id,
+                        cprh.employee_id,
+                        (SELECT
+                            ee.name
+                            || '-'
+                            || ee.employee_code
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id = cprh.employee_id
+                        ) requisitor,
+                        TO_CHAR(cprh.requisition_date, 'YYYY-MM-DD') requisition_date,
+                        cprh.currency_code,
+                        gld.currency_name,
+                        cprh.amount,
+                        cprh.partner_category,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'PAYMENT_OBJECT' AND
+                            b.code_value = cprh.partner_category
+                        ) p_partner_category,
+                        cprh.partner_id,
+                        DECODE(cprh.partner_category, 'EMPLOYEE',
+                        (SELECT
+                            ee.employee_code
+                            || '-'
+                            || ee.name
+                        FROM
+                            exp_employees ee
+                        WHERE
+                            ee.employee_id = cprh.partner_id
+                        ), 'VENDER',
+                        (SELECT
+                            svv.vender_code
+                            || '-'
+                            || svv.description
+                        FROM
+                            pur_system_venders_vl svv
+                        WHERE
+                            svv.vender_id = cprh.partner_id
+                        ), 'CUSTOMER',
+                        (SELECT
+                            scv.customer_code
+                            || '-'
+                            || scv.description
+                        FROM
+                            ord_system_customers_vl scv
+                        WHERE
+                            scv.customer_id = cprh.partner_id
+                        )) payee_name,
+                        cprh.description,
+                        (SELECT
+                            NVL(SUM(ef.amount),0)
+                        FROM
+                            csh_payment_requisition_refs ef,
+                            csh_transaction_v ct,
+                            csh_payment_requisition_lns cprl
+                        WHERE
+                            ef.payment_requisition_line_id     = cprl.payment_requisition_line_id AND
+                            ef.csh_transaction_line_id         = ct.transaction_line_id AND
+                            ct.posted_flag                     = 'Y' AND
+                            cprl.payment_requisition_header_id = cprh.payment_requisition_header_id
+                        ) paymented_amount,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_code_values_vl v,
+                            sys_codes_vl t
+                        WHERE
+                            t.code       = 'PAYMENT_REQUISITION_STATUS' AND
+                            t.code_id    = v.code_id AND
+                            v.code_value = cprh.status
+                        ) status_des,
+                        cprh.status,
+                        cprh.closed_date,
+                        cprh.source_type,
+                        (SELECT
+                            NVL(SUM(cwo.csh_write_off_amount), 0)
+                        FROM
+                            csh_write_off cwo,
+                            csh_transaction_headers f,
+                            csh_transaction_lines t
+                        WHERE
+                            NVL(CWO.gld_interface_flag,'N') ='P' AND
+                            cwo.write_off_type              = 'PREPAYMENT_EXPENSE_REPORT' AND
+                            cwo.csh_transaction_line_id     = t.transaction_line_id AND
+                            f.transaction_header_id         =t.transaction_header_id AND
+                            f.source_payment_header_id     IN
+                            (SELECT
+                                vf.transaction_header_id
+                            FROM
+                                csh_payment_requisition_refs cpr,
+                                csh_transaction_headers vf,
+                                csh_transaction_lines tf ,
+                                csh_payment_requisition_lns lns,
+                                csh_payment_requisition_hds hds
+                            WHERE
+                                cpr.csh_transaction_line_id       = tf.transaction_line_id AND
+                                vf.transaction_header_id          =tf.transaction_header_id AND
+                                cpr.payment_requisition_line_id   = lns.payment_requisition_line_id AND
+                                lns.payment_requisition_header_id = hds.payment_requisition_header_id AND
+                                hds.payment_requisition_header_id = cprh.payment_requisition_header_id
+                            )
+                        ) write_off_amount,
+                        (SELECT
+                            e.name
+                        FROM
+                            csh_bonds_transfer_info c,exp_employees e 
+                        WHERE
+                            c.payment_requisition_header_id = cprh.payment_requisition_header_id AND
+                            e.employee_id = c.cur_employee_id
+                        ) cur_employee,
+                        (SELECT
+                            c.audit_status
+                        FROM
+                            csh_bonds_transfer_info c
+                        WHERE
+                            c.payment_requisition_header_id = cprh.payment_requisition_header_id 
+                        ) audit_status,
+                        (SELECT
+                            s.code_value_name
+                        FROM
+                            csh_bonds_transfer_info c,sys_service_lookup_v s
+                        WHERE
+                            c.payment_requisition_header_id = cprh.payment_requisition_header_id AND
+                            c.audit_status = s.code_value AND
+                            s.code ='BONDS_TRANSFER_STATUS' AND
+                            s.language = ${/session/@lang}
+                        ) audit_status_desc,
+                        (SELECT
+                            c.id
+                        FROM
+                            csh_bonds_transfer_info c
+                        WHERE
+                            c.payment_requisition_header_id = cprh.payment_requisition_header_id 
+                        ) id,
+                        (SELECT
+                            c.cur_employee_id
+                        FROM
+                            csh_bonds_transfer_info c
+                        WHERE
+                            c.payment_requisition_header_id = cprh.payment_requisition_header_id 
+                        ) cur_employee_id
+                    FROM
+                        csh_payment_requisition_hds cprh,
+                        gld_currency_vl gld
+                    WHERE
+                        cprh.currency_code =gld.currency_code(+)
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    payment_requisition_header_id DESC
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@company_id"/>
+                <bm:parameter inputPath="/session/@user_id"/>
+            </bm:parameters>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+        	 	begin
+        	 		csh_bonds_transfer_info_pkg.save_csh_bonds_transfer_info(p_header_id =>${@payment_requisition_header_id},
+                                         									 p_pre_employee_id   		     =>${@employee_id},
+                                         									 p_cur_employee_id   		     =>${@cur_employee_id},
+                                         									 p_user_id            		     =>${/session/@user_id});
+        	 	end;
+        	 ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="requisition_number" dataType="java.lang.String" queryExpression="requisition_number like &apos;%&apos;||${@requisition_number}||&apos;%&apos;"/>
+        <bm:query-field name="employee_id" dataType="java.lang.Integer" queryExpression="employee_id = ${@employee_id}"/>
+        <bm:query-field name="requisition_date_from" dataType="java.lang.String" queryExpression="(${@requisition_date_from} is null  or requisition_date &gt;= ${@requisition_date_from})"/>
+        <bm:query-field name="requisition_date_to" dataType="java.lang.String" queryExpression="(${@requisition_date_to} is null  or requisition_date &lt;= ${@requisition_date_to})"/>
+        <bm:query-field name="amount_from" dataType="java.lang.String" queryExpression="amount &gt;= ${@amount_from}"/>
+        <bm:query-field name="description" queryExpression="description like ${@description}"/>
+        <bm:query-field name="amount_to" dataType="java.lang.String" queryExpression="amount  &lt;=${@amount_to}"/>
+        <bm:query-field name="partner_category" dataType="java.lang.String" queryExpression="exists (select 1 from csh_payment_requisition_lns cprl where cprl.payment_requisition_header_id = v.payment_requisition_header_id and cprl.partner_category = ${@partner_category})"/>
+        <bm:query-field name="partner_id" dataType="java.lang.String" queryExpression="exists (select 1 from csh_payment_requisition_lns cprl where cprl.payment_requisition_header_id = v.payment_requisition_header_id and cprl.partner_id = ${@partner_id})"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="currency_code like  &apos;%&apos;||${@currency_code}||&apos;%&apos;"/>
+        <bm:query-field name="p_status" dataType="java.lang.String" queryExpression="status like  &apos;%&apos;||${@p_status}||&apos;%&apos;"/>
+        <bm:query-field name="status" dataType="java.lang.String" queryExpression="status like  &apos;%&apos;||${@status}||&apos;%&apos;"/>
+        <bm:query-field name="payment_method_id" dataType="java.lang.Long" queryExpression="payment_method_id = ${@payment_method_id}"/>
+        <bm:query-field name="payment_req_type_id" dataType="java.lang.Long" queryExpression="payment_req_type_id = ${@payment_req_type_id}"/>
+        <bm:query-field name="source_type" queryExpression="source_type = ${@source_type}"/>
+        <bm:query-field name="audit_status" queryExpression="audit_status = ${@audit_status}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="v.amount = v.paymented_amount "/>
+        <bm:data-filter enforceOperations="query" expression="exists (select 1 from sys_user s where s.user_id = ${/session/@user_id} and s.employee_id = v.cur_employee_id)"/>
+        <bm:data-filter enforceOperations="query" expression="v.audit_status =&apos;SUBMITTED&apos;"/>
+    </bm:data-filters>
+</bm:model>

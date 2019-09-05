@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+<a:service xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" final-page="true" trace="true">
+    <a:init-procedure outputPath="/parameter">
+        <a:model-update model="sys.sys_user_login"/>
+        <a:put-cookie name="JSID" value="${/parameter/@encryted_session_id}"/>
+    </a:init-procedure>
+</a:service>
+-->
+<a:service xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <!--<a:img-validate code="${/parameter/@check_code}"/>-->
+        <!-- 判断输入的账号是否需要去OA域验证用户名和密码 -->
+        <a:model-execute model="mobileinterfacebm.login.cux_oa_nocheck_account"/>
+        <!-- 打印 从数据库返回的result字段的值 -->
+        <p:echo message="${/parameter/@result}"/>
+        <p:switch test="/parameter/@result">
+            <p:case value="Y">
+                <a:model-execute model="mobileinterfacebm.login.sys_user_login_with_userid"/>
+                <a:session-clear/>
+                <a:session-write source="/session"/>
+                <a:session-write source="/parameter/@user_language" target="lang"/>
+                <a:put-cookie name="JSID" value="${/parameter/@encryted_session_id}"/>
+                <a:put-cookie name="IS_NTLM" value="N"/>
+            </p:case>
+            <p:case value="N">
+                <p:echo message="${/parameter/@provider_url}"/>
+                <p:echo message="${/parameter/@domain}"/>
+                <!-- 调用Java去域进行用户名和密码的验证 -->
+                <p:method-invoke className="com.hand.LdapAuthenticator" methodName="authenticate" resultPath="/@current_parameter/@check_result">
+                    <p:arguments>
+                        <p:argument type="java.lang.String" value="${/parameter/@user_name}"/>
+                        <p:argument type="java.lang.String" value="${/parameter/@user_password}"/>
+                        <p:argument type="java.lang.String" value="${/parameter/@provider_url}"/>
+                        <p:argument type="java.lang.String" value="${/parameter/@domain}"/>
+                    </p:arguments>
+                </p:method-invoke>
+                <!-- /@current_parameter/@check_result 为域验证的返回值 -->
+                <p:switch test="/@current_parameter/@check_result">
+                    <!-- 当为Y时，表示 域验证通过，并进行正常登录，只是不在费控里再验证密码了 -->
+                    <p:case value="Y">
+                        <a:model-execute model="mobileinterfacebm.login.sys_user_login_with_userid"/>
+                        <a:session-clear/>
+                        <a:session-write source="/session"/>
+                        <a:session-write source="/parameter/@user_language" target="lang"/>
+                        <a:put-cookie name="JSID" value="${/parameter/@encryted_session_id}"/>
+                        <a:put-cookie name="IS_NTLM" value="N"/>
+                    </p:case>
+                </p:switch>
+            </p:case>
+        </p:switch>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

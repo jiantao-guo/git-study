@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:msg="aurora.application.features.msg" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:task="aurora.application.task" xmlns:s="aurora.plugin.script" final-page="true" trace="true">
+    <a:init-procedure>
+        <s:server-script import="json.js;jms.js"><![CDATA[
+/**
+*read me
+*1.bm部分需改为相应系统的逻辑，此处逻辑为hr系统，仅供参考
+*2.调试函数:println(Object);会将Object打印在控制台（如应用服务器tomcat的控制台）。例如：println($session.toXML());会将session对象以xml格式打印出来。
+*/
+			try{
+            	var parameter = $ctx.parameter;
+            	var actions = eval(decodeURIComponent(parameter.actions));
+
+            	var result = {
+                	head: {
+                    	message: " ",
+                    	code: $ctx.success ? 'ok' : 'failure'
+                	},
+                	body: {
+                    	list: []
+                	}            
+            	};            
+				var list = result.body.list;
+				var record;//传入参数actions中的某条记录
+				//循环处理每条record   start
+				for(var i = 0;i<actions.length;i++){
+			    	record = actions[i];
+			    	//如果record中存在action字段，说明是单条审批，否则就是批量审批  start
+			    	if(record.action){
+			    	    //执行单条审批操作，如果成功，则status是S，否则捕获异常，status是F    start
+			        	try{
+			        	    
+/*单条审批逻辑，此处为hr系统的单条审批逻辑，需要修改为相应系统的单条审批逻辑               start*/			        	    
+			        		parameter.record_id = record.localId;
+			        		parameter.action_id = record.action;
+			        		parameter.comment = record.comments;   
+			        		$bm('ios.ios_wfl.wfl_workflow_approve_action_submit').update();
+/*单条审批逻辑，此处为hr系统的单条审批逻辑，需要修改为相应系统的单条审批逻辑               end*/
+
+                			list.push({
+                    			localId: record.localId,
+                    			sourceSystemName: record.sourceSystemName,
+                    			status: "S"
+                			});
+			        	}catch (e){
+                			list.push({
+                    			localId: record.localId,
+                    			sourceSystemName: record.sourceSystemName,
+                    			status: "F"
+                			});			            
+			        	}
+			        	//执行单条审批操作，如果成功，则status是S，否则捕获异常，status是F    end
+			    	}else{
+			    	    //执行批量审批操作，如果成功，status为S，否则捕获异常，status为F；现阶段暂不支持转交动作        start
+			        	try{
+			        	    //给该record的action字段赋值 ，走单条审批逻辑       start
+			        	    
+/*查询action_id逻辑，此处为hr系统的查询action_id逻辑，需要修改为相应系统的查询action_id逻辑               start*/
+			        		parameter.record_id = record.localId;
+			        		parameter.comments = record.comments;
+            				var bm = new ModelService('ios.ios_wfl.wfl_workflow_approve_action_query');            
+            				var res = bm.queryAsMap();
+/*查询action_id逻辑，此处为hr系统的查询action_id逻辑，需要修改为相应系统的查询action_id逻辑               end*/            				
+            				
+            				var arr = res.getChildren();
+            				for(var j = 0;j<arr.length;j++){
+            				    if(arr[j].ACTION_TYPE.toUpperCase() == record.actionType.toUpperCase()){
+            				        record.action = arr[j].ACTION_ID;
+            				    }
+            				}	
+            				//给该record的action字段赋值，走单条审批逻辑        end
+            				
+            				if(record.action == undefined){
+            				   throw new Error("actionType error!"); 
+            				}
+            				
+            				parameter.action_id = record.action;
+/*单条审批逻辑，此处为hr系统的单条审批逻辑，需要修改为相应系统的单条审批逻辑               start*/		        					        	 
+			        		$bm('ios.ios_wfl.wfl_workflow_approve_action_submit').update();
+/*单条审批逻辑，此处为hr系统的单条审批逻辑，需要修改为相应系统的单条审批逻辑               end*/
+			        		
+                			list.push({
+                    			localId: record.localId,
+                    			sourceSystemName: record.sourceSystemName,
+                    			status: "S"
+                			});
+			        	}catch (e){
+                			list.push({
+                    			localId: record.localId,
+                    			sourceSystemName: record.sourceSystemName,
+                    			status: "F"
+                			});			            
+			        	}
+			        	//执行批量审批操作，如果成功，status为S，否则捕获异常，status为F；现阶段暂不支持转交动作        end
+			    	}
+			    	//如果record中存在action字段，说明是单条审批，否则就是批量审批  end
+				}
+				//循环处理每条record   end
+			    
+			} catch (e) {
+                //执行catch代码，返回result对象
+				var result = catchCode(e);
+            } finally{
+            	//执行finally代码，将result对象回写
+				finallyCode(result);                
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+</a:service>

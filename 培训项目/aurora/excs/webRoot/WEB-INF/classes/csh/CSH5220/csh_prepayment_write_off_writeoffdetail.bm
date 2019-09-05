@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="transaction_header_id" datatype="java.lang.Long"/>
+        <bm:field name="exp_report_header_id" datatype="java.lang.Long"/>
+        <bm:field name="transaction_line_id" datatype="java.lang.Long"/>
+        <bm:field name="payment_schedule_line_id" datatype="java.lang.Long"/>
+        <bm:field name="write_off_type" datatype="java.lang.String" prompt="EXP_PREPAYMENT_POST.WRITE_OFF_TYPE"/>
+        <bm:field name="write_off_type_display" datatype="java.lang.String" prompt="EXP_PREPAYMENT_POST.WRITE_OFF_TYPE"/>
+        <bm:field name="transaction_date" datatype="java.lang.String"/>
+        <bm:field name="exp_report_number" datatype="java.lang.String" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER"/>
+        <bm:field name="due_amount" datatype="java.lang.Double" prompt="CSH_PREPAYMENT_POST.DUE_AMOUNT"/>
+        <bm:field name="audit_date" datatype="java.lang.String" prompt="EXP_REPORT_LINES.AUDIT_DATE"/>
+        <bm:field name="write_off_amount" datatype="java.lang.Double" prompt="EXP_PREPAYMENT_POST.NOW_WRITE_OFF_AMOUNT"/>
+        <bm:field name="unwrite_off_amount" datatype="java.lang.Double" prompt="EXP_PREPAYMENT_POST.UNWRITE_OFF_AMOUNT"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	select v.write_off_type,
+				       v.write_off_type_display,
+				       v.transaction_header_id,
+				       v.exp_report_header_id,
+				       v.transaction_line_id,
+				       v.transaction_date,
+				       v.payment_schedule_line_id,
+				       v.exp_report_number,
+				       v.due_amount,
+				       v.audit_date,
+				       v.write_off_amount,
+				       nvl(due_amount - write_off_amount, 0)as unwrite_off_amount
+				  from (select 'PREPAYMENT_EXPENSE_REPORT' write_off_type,
+				               (select b.code_value_name
+				                  from sys_codes_vl a, sys_code_values_vl b
+				                 where a.code_id = b.code_id
+				                   and a.code = 'CSH_WRITE_OFF_TYPE'
+				                   and b.code_value = 'PREPAYMENT_EXPENSE_REPORT') write_off_type_display,
+				               ctl.transaction_header_id,
+				               erh.exp_report_header_id,
+				               ctl.transaction_line_id,
+				               to_char(cth.transaction_date, 'yyyy-mm-dd') transaction_date,
+				               erps.payment_schedule_line_id,
+				               erh.exp_report_number,
+				               erps.due_amount,
+				               to_char(erh.audit_date, 'yyyy-mm-dd') audit_date,
+				               (select nvl(sum(w.document_write_off_amount), 0)
+				                  from csh_write_off w
+				                 where w.document_source = 'EXPENSE_REPORT'
+				                   and w.document_header_id = erps.exp_report_header_id
+				                   and w.document_line_id = erps.payment_schedule_line_id) write_off_amount
+				          from exp_report_pmt_schedules erps,
+				               exp_report_headers       erh,
+				               csh_transaction_lines    ctl,
+				               csh_transaction_headers  cth
+				         where (erh.reversed_flag is null or erh.reversed_flag = 'N')
+				           and erh.exp_report_header_id = erps.exp_report_header_id
+				           and ctl.transaction_header_id = cth.transaction_header_id
+				           and erps.payee_category = ctl.partner_category
+				           and erps.payee_id = ctl.partner_id
+				           and erh.audit_flag = 'Y'
+				           and erh.write_off_status != 'C'
+				           and erps.currency = ctl.currency_code
+				           and erps.company_id = ${/session/@company_id}
+				         order by erh.exp_report_number) v
+				 #WHERE_CLAUSE#
+			 ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="transaction_header_id" queryExpression="v.transaction_header_id = ${@transaction_header_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="(v.due_amount - v.write_off_amount) &gt; 0"/>
+    </bm:data-filters>
+</bm:model>

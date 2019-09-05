@@ -1,0 +1,297 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="pageLink_jobParaCreate" url="${/request/@context_path}/modules/sch/SCH111/sch_concurrent_job_para.screen"/>
+        <a:link id="bmLink_submit_cycleJob" model="sch.SCH111.sch_concurrent_job" modelaction="insert"/>
+        <a:link id="bmLink_submit_immediateJob" model="sch.SCH111.sch_concurrent_job_submit" modelaction="insert"/>
+        <a:link id="bmLink_submit_scheduleJob" model="sch.SCH111.sch_concurrent_job_submit" modelaction="update"/>
+        <style><![CDATA[
+    	#choice_1 .item-ckb-readonly-c {
+			background-position:0px -13px;
+		}
+		
+		#choice_2 .item-ckb-readonly-c {
+			background-position:0px -13px;
+		}
+		
+		#choice_3 .item-ckb-readonly-c {
+			background-position:0px -13px;
+		}
+
+        ]]></style>
+        <script><![CDATA[
+        
+        function winClose_jobCreate() {
+            $('sch_concurrent_job_create').close();
+        }
+        
+        function mask_jobCreate()
+    	{
+    	    Aurora.Masker.mask($('sch_concurrent_job_create').wrap, '正在提交..');
+    	}
+    	
+    	function unmask_jobCreate()
+    	{
+    	    Aurora.Masker.unmask($('sch_concurrent_job_create').wrap);
+    	}
+        
+        function submit_jobCreate()
+        {
+            mask_jobCreate();
+            var ds=$('jobCreateDs');
+            
+            if(!ds.validate())
+            {
+                unmask_jobCreate();
+                $('job_tabPanel').selectTab(0);
+                return;
+            }
+            
+            var paraDs=$('taskParaDs');
+			                
+            if (!paraDs.validate())
+            {
+                unmask_jobCreate();
+                $('job_tabPanel').selectTab(1);
+                return ;
+            }
+            
+            var record=ds.getAt(0);
+            
+            var submit_type =  record.get('submit_type');
+    	    var submit_url;
+    	    if(submit_type=='CYCLE')
+    	    {
+    	        submit_url = $('bmLink_submit_cycleJob').getUrl();
+    	    }
+    	    else if(submit_type=='SPECIFIED_TIME')
+    	    {
+    	        submit_url = $('bmLink_submit_scheduleJob').getUrl();
+    	    }
+    	    else if(submit_type=='IMMEDIATE')
+    	    {
+    	        submit_url = $('bmLink_submit_immediateJob').getUrl();
+    	    }
+    	    else
+    	    {
+    	        unmask_jobCreate();
+    	        return;
+    	    }
+    	    
+            var data = {
+                task_code: record.get('task_code'),
+            	schedule_code: record.get('schedule_code'),
+            	description: record.get('description'),
+            	specified_time: record.get('execute_time'),
+            	create_sub_job_flag: record.get('create_sub_job_flag')
+            };
+            
+            
+            var paraRecord = paraDs.getAt(0);
+            
+            var tmpRecords = $('taskParaTmpDs').getAll();
+            
+            for (var i=0,j=tmpRecords.length;i<j;i++)
+            {
+                var name = tmpRecords[i].get('parameter_name');
+                var n=i+1;
+                data['parameter_'+n]=paraRecord.get(name);
+            }
+            
+            unmask_jobCreate();
+            Aurora.showConfirm('${l:PROMPT}', '是否确认？', function() 
+        	{
+        	    mask_jobCreate();
+        	    
+	            Aurora.request({
+	                url: submit_url,
+	                para:data,
+	                success: function (res)
+	                {
+	                    unmask_jobCreate();
+	                    
+	                    var result=res.result;
+                        Aurora.showMessage('${l:PROMPT}', '请求提交成功!请求ID为：' + result['job_id']);
+                        winClose_jobCreate();
+	                },
+	                failure: function() {
+	                    unmask_jobCreate();
+	                },
+	                error: function() {
+	                    unmask_jobCreate();
+	                },
+	                scope: this
+	            });
+        	});
+        }
+        
+        function onUpdate_jobCreateDs(ds,record,name,value,oldvalue)
+        {
+            if(name=='submit_type')
+            {
+                if(value=='CYCLE')
+                {
+                    record.getField('cycle_flag').setReadOnly(true);
+                    
+                    record.set('specified_time_flag','N');
+                    record.getField('specified_time_flag').setReadOnly(false);
+                    
+                    record.getField('create_sub_job_flag').setReadOnly(false);
+                    
+                    record.set('immediate_flag','N');
+                    record.getField('immediate_flag').setReadOnly(false);
+                    
+                }
+                else if(value=='SPECIFIED_TIME')
+                {
+                    record.getField('specified_time_flag').setReadOnly(true);
+                    
+                    record.set('cycle_flag','N');
+                    record.getField('cycle_flag').setReadOnly(false);
+                    
+                    record.getField('create_sub_job_flag').setReadOnly(true);
+                    
+                    record.set('immediate_flag','N');
+                    record.getField('immediate_flag').setReadOnly(false);
+                }
+                else if(value=='IMMEDIATE')
+                {
+                    record.getField('immediate_flag').setReadOnly(true);
+                    
+                    record.set('cycle_flag','N');
+                    record.getField('cycle_flag').setReadOnly(false);
+                    
+                    record.getField('create_sub_job_flag').setReadOnly(true);
+                    
+                    record.set('specified_time_flag','N');
+                    record.getField('specified_time_flag').setReadOnly(false);
+                    
+                }
+                
+            }
+            if(name=='cycle_flag')
+            {
+                var field = record.getField('schedule_name');
+                if(value=='Y')
+                {
+                    record.set('submit_type','CYCLE');
+                    field.setReadOnly(false);
+                    field.setRequired(true);
+                }
+                else
+                {
+                    field.setRequired(false);
+                    field.setReadOnly(true);
+                }
+            }
+            else if(name=='specified_time_flag')
+            {
+                var field = record.getField('execute_time');
+                if(value=='Y')
+                {
+                    record.set('submit_type','SPECIFIED_TIME');
+                    field.setReadOnly(false);
+                    field.setRequired(true);
+                }
+                else
+                {
+                    field.setRequired(false);
+                    field.setReadOnly(true);
+                }
+            }
+            else if(name=='immediate_flag')
+            {
+                if(value=='Y')
+                {
+                    record.set('submit_type','IMMEDIATE');
+                }
+            }
+            else if(name=='task_name')
+            {
+                record.set('description',value);
+            }
+            else if(name=='task_code')
+            {
+                $('job_tabPanel').reloadTab(1,'${/request/@context_path}/modules/sch/SCH111/sch_concurrent_job_para.screen?maintain_type=CREATE&task_code='+value);
+            }
+        }
+        
+        
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="jobCreateDs" autoCreate="true" model="sch.SCH111.sch_concurrent_job">
+                <a:fields>
+                    <a:field name="submit_type"/>
+                    <a:field name="cycle_flag" checkedValue="Y" uncheckedValue="N"/>
+                    <a:field name="specified_time_flag" checkedValue="Y" uncheckedValue="N"/>
+                    <a:field name="immediate_flag" checkedValue="Y" uncheckedValue="N"/>
+                    <a:field name="create_sub_job_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="task_para_count"/>
+                    <a:field name="task_name" lovGridHeight="300" lovHeight="450" lovService="sch.SCH111.sch_task_for_lov" lovWidth="500" required="true" title="选择任务">
+                        <a:mapping>
+                            <a:map from="task_code" to="task_code"/>
+                            <a:map from="task_name" to="task_name"/>
+                            <a:map from="task_para_count" to="task_para_count"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="schedule_name" lovGridHeight="300" lovHeight="450" lovService="sch.SCH111.sch_schedule_for_lov" lovWidth="500" title="选择任务">
+                        <a:mapping>
+                            <a:map from="schedule_name" to="schedule_code"/>
+                            <a:map from="short_desc" to="schedule_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="description" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onUpdate_jobCreateDs"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <script><![CDATA[
+        	(function(){
+        		$('jobCreateDs').getAt(0).set('immediate_flag','Y');
+        	})();
+        ]]></script>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:gridButton click="winClose_jobCreate" text="HAP_CLOSE" width="80"/>
+                <a:gridButton click="submit_jobCreate" text="HAP_SUBMIT" width="80"/>
+            </a:screenTopToolbar>
+            <a:tabPanel id="job_tabPanel" marginHeight="98" marginWidth="28">
+                <a:tabs>
+                    <a:tab prompt="任务" selected="true" width="100">
+                        <a:form>
+                            <a:form column="3" labelWidth="100" marginWidth="95" title=" ">
+                                <a:lov name="task_name" bindTarget="jobCreateDs"/>
+                                <a:textField name="description" bindTarget="jobCreateDs"/>
+                            </a:form>
+                            <div style="height:20px;"/>
+                            <a:fieldSet column="3" height="70" labelWidth="100" marginWidth="95">
+                                <a:checkBox name="cycle_flag" id="choice_1" bindTarget="jobCreateDs" prompt="周期性" width="20"/>
+                                <div style="width:125px;"/>
+                                <a:checkBox name="create_sub_job_flag" bindTarget="jobCreateDs" prompt="创建子任务" width="20"/>
+                                <a:checkBox hidden="true" width="20"/>
+                                <div style="width:125px;"/>
+                                <a:lov name="schedule_name" bindTarget="jobCreateDs"/>
+                            </a:fieldSet>
+                            <a:fieldSet column="3" height="70" labelWidth="100">
+                                <a:checkBox name="specified_time_flag" id="choice_2" bindTarget="jobCreateDs" prompt="指定时间" width="20"/>
+                                <div style="width:125px;"/>
+                                <a:dateTimePicker name="execute_time" bindTarget="jobCreateDs" prompt="执行时间"/>
+                            </a:fieldSet>
+                            <a:fieldSet column="3" height="70" labelWidth="100">
+                                <a:checkBox name="immediate_flag" id="choice_3" bindTarget="jobCreateDs" prompt="立刻执行" width="20"/>
+                                <div style="width:125px;"/>
+                            </a:fieldSet>
+                        </a:form>
+                    </a:tab>
+                    <a:tab prompt="参数" width="100"><![CDATA[
+            			
+            		]]></a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

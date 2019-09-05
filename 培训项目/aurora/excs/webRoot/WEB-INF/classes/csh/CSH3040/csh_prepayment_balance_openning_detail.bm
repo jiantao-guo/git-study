@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="transaction_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="TRANSACTION_HEADER_ID"/>
+        <bm:field name="transaction_type" databaseType="VARCHAR" datatype="java.lang.String" prompt="CSH_PREPAYMENT_BALANCE_OPENNING_DETAIL.TRANSACTION_TYPE"/>
+        <bm:field name="transaction_num" datatype="java.lang.String" prompt="CSH_PREPAYMENT_WRITE_OFF.TRANSACTION_NUM"/>
+        <bm:field name="currency_code" databaseType="VARCHAR" datatype="java.lang.String" prompt="CSH_PAYMENT_REQUISITION_HDS.CURRENCY_CODE"/>
+        <bm:field name="transaction_date" datatype="java.lang.String" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_PAYMENT_DATE"/>
+        <bm:field name="bank_account_code" databaseType="VARCHAR" datatype="java.lang.String" prompt="CSH_BANK_ACCOUNTS.BANK_ACCOUNT_ID"/>
+        <bm:field name="bank_account_name" databaseType="VARCHAR" datatype="java.lang.String" prompt="CSH_BANK_ACCOUNTS.BANK_ACCOUNT_NAME_ID"/>
+        <bm:field name="prepayment_amount" datatype="java.lang.Double" prompt="CSH_PREPAYMENT_BALANCE_OPENNING_DETAIL.PREPAYMENT_AMOUNT"/>
+        <bm:field name="write_off_amount" datatype="java.lang.Double" prompt="CSH_PREPAYMENT_BALANCE_OPENNING_DETAIL.WRITE_OFF_AMOUNT"/>
+        <bm:field name="balance" datatype="java.lang.Double" prompt="CSH_PREPAYMENT_BALANCE_OPENNING_DETAIL.BALANCE"/>
+        <bm:field name="currency_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CURRENCY_NAME" prompt="CSH_PAYMENT_REQUISITION_HDS.CURRENCY_CODE"/>
+        <bm:field name="requisition_number" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="requisition_number" prompt="CSH_PAYMENT_REQUISITION_HDS.requisition_number"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select * from (
+            	select v.transaction_header_id,
+				       (select vv.code_value_name
+				          from sys_code_values_v vv
+				         where vv.code_value = v.transaction_type
+				           and vv.code = 'CSH_TRANSACTION_TYPE') transaction_type,
+				       v.transaction_num,
+				       v.currency_code,
+				       gld.currency_name,
+				       to_char(v.transaction_date, 'yyyy-mm-dd') transaction_date,
+				       v.bank_account_code,
+				       v.bank_account_name,
+				       x.prepayment_amount,
+				       x.write_off_amount,
+				       x.balance,
+				        (SELECT cprh.requisition_number
+                  FROM csh_transaction_v            source_pay,
+                       csh_payment_requisition_refs ef,
+                       csh_payment_requisition_lns  cprl,
+                       csh_payment_requisition_hds  cprh,
+                       csh_transaction_headers      precsh
+                 WHERE ef.csh_transaction_line_id =
+                       source_pay.transaction_line_id
+                   AND ef.payment_requisition_line_id =
+                       cprl.payment_requisition_line_id
+                   AND cprl.payment_requisition_header_id =
+                       cprh.payment_requisition_header_id
+                   AND source_pay.transaction_header_id =
+                       precsh.source_payment_header_id
+                   AND precsh.transaction_header_id = v.transaction_header_id
+                   AND rownum = 1) requisition_number
+				  from csh_transaction_v v,
+				       (select t.transaction_header_id,
+				               nvl(sum(t.openning_prepayment_amount), 0) prepayment_amount,
+				               nvl(sum(t.openning_write_off_amount), 0) write_off_amount,
+				               nvl(sum(t.openning_balance), 0) balance
+				          from csh_prepayment_balance_dtl_tmp t
+				          where t.partner_category = nvl(${@partner_category},t.partner_category)
+				          and t.partner_id = nvl(${@partner_id},t.partner_id)
+				          and t.currency_code = nvl(${@currency_code},t.currency_code)
+				          and t.employee_id = nvl(${@employee_id},t.employee_id)
+				          and t.session_id = ${/session/@session_id}
+				          and t.company_id = ${@company_id}
+				          AND t.balance_type IN ('OPENNING PREPAYMENT', 'OPENNING WRITE OFF')
+				         group by t.transaction_header_id) x,gld_currency_vl gld
+				 where v.transaction_header_id = x.transaction_header_id and v.currency_code=gld.currency_code(+)
+				 UNION ALL
+					SELECT goh.work_order_header_id,
+					       '核算工单' transaction_type,
+					       goh.work_order_number,
+					       goh.currency_code,
+					       gld.currency_name,
+					       to_char(goh.je_date, 'yyyy-mm-dd') transaction_date,
+					       '',
+					       '',
+					       x.prepayment_amount,
+					       x.write_off_amount,
+					       x.balance,
+					       ''
+					  FROM gld_work_order_headers goh,
+					       (SELECT t.transaction_header_id,
+					               nvl(SUM(t.openning_prepayment_amount), 0) prepayment_amount,
+					               nvl(SUM(t.openning_write_off_amount), 0) write_off_amount,
+					               nvl(SUM(t.openning_balance), 0) balance
+					          FROM csh_prepayment_balance_dtl_tmp t
+					         where t.partner_category = nvl(${@partner_category},t.partner_category)
+				          and t.partner_id = nvl(${@partner_id},t.partner_id)
+				          and t.currency_code = nvl(${@currency_code},t.currency_code)
+				          and t.employee_id = nvl(${@employee_id},t.employee_id)
+				          and t.session_id = ${/session/@session_id}
+				          and t.company_id = ${@company_id}
+				          AND t.balance_type IN ('OPENNING GLD')
+					         GROUP BY t.transaction_header_id) x,
+					       gld_currency_vl gld
+					 WHERE goh.work_order_header_id = x.transaction_header_id
+					   AND goh.currency_code = gld.currency_code(+)
+				) o
+				 order by o.transaction_date
+     		]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="partner_category" queryExpression="t.partner_category = ${@partner_category}"/>
+        <bm:query-field name="partner_id" queryExpression="t.partner_id = ${@partner_id}"/>
+        <bm:query-field name="currency_code" queryExpression="t.currency_code = ${@currency_code}"/>
+        <bm:query-field name="employee_id" queryExpression="t.employee_id = ${@employee_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="t.session_id = ${/session/@session_id}"/>
+        <!-- <bm:data-filter enforceOperations="query" expression="t.company_id = ${/session/@company_id}"/> -->
+        <bm:data-filter enforceOperations="query" expression="t.company_id = ${@company_id}"/>
+        <bm:data-filter enforceOperations="query" expression="t.balance_type in (&apos;OPENNING PREPAYMENT&apos;, &apos;OPENNING WRITE OFF&apos;)"/>
+    </bm:data-filters>
+</bm:model>

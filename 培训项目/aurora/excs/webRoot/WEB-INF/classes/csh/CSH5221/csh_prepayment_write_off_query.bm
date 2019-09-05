@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[	  select * from (
+		SELECT k.*
+		  FROM (SELECT V.TRANSACTION_HEADER_ID,
+					   V.TRANSACTION_HEADER_ID PAYMENT_HEADER_ID,
+					   V.TRANSACTION_NUM,
+					   V.TRANSACTION_DATE,
+					   TO_CHAR(V.TRANSACTION_DATE, 'YYYY-MM-DD') P_TRANSACTION_DATE,
+					   V.CURRENCY_CODE,
+					   V.TRANSACTION_AMOUNT,					   
+					   V.BANK_ACCOUNT_CODE,
+					     (
+				                   select distinct t.requisition_number  from csh_payment_requisition_hds t
+				                   where t.payment_requisition_header_id=
+				                   (select l.payment_requisition_header_id 
+				                    from csh_payment_requisition_lns l 
+				                    where l.payment_requisition_line_id =
+				                    (select a.payment_requisition_line_id
+				                    from csh_payment_requisition_refs a 
+				                    where a.csh_transaction_line_id = 
+				                    ( select b.transaction_line_id  from csh_transaction_lines b where
+				                    b.transaction_header_id =    (select c.source_payment_header_id 
+				                    from CSH_TRANSACTION_HEADERS c where 
+				                    c.transaction_header_id = 
+				                    (select d.transaction_header_id from  csh_transaction_lines d where
+				                    d.transaction_line_id = v.transaction_line_id ) 
+				                    )
+
+				                    )and rownum=1
+				                    )
+				                    ) 
+				                    ) doc_number,
+
+				         (
+				                   select distinct t.PAYMENT_REQUISITION_HEADER_ID  from csh_payment_requisition_hds t
+				                   where t.payment_requisition_header_id=
+				                   (select l.payment_requisition_header_id 
+				                    from csh_payment_requisition_lns l 
+				                    where l.payment_requisition_line_id =
+				                    (select a.payment_requisition_line_id
+				                    from csh_payment_requisition_refs a 
+				                    where a.csh_transaction_line_id = 
+				                    ( select b.transaction_line_id  from csh_transaction_lines b where
+				                    b.transaction_header_id =    (select c.source_payment_header_id 
+				                    from CSH_TRANSACTION_HEADERS c where 
+				                    c.transaction_header_id = 
+				                    (select d.transaction_header_id from  csh_transaction_lines d where
+				                    d.transaction_line_id = v.transaction_line_id ) 
+				                    )
+
+				                    )and rownum=1
+				                    )
+				                    ) 
+				                    ) doc_header_id,
+					   V.BANK_ACCOUNT_NAME,
+					   V.PARTNER_CATEGORY,
+					   (SELECT B.CODE_VALUE_NAME
+						  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+						 WHERE A.CODE_ID = B.CODE_ID
+						   AND A.CODE = 'PAYMENT_OBJECT'
+						   AND B.CODE_VALUE = V.PARTNER_CATEGORY) P_PARTNER_CATEGORY,
+					   V.PARTNER_ID,
+					   DECODE(V.PARTNER_CATEGORY,
+							  'EMPLOYEE',
+							  (SELECT EE.EMPLOYEE_CODE || '-' || EE.NAME
+								 FROM EXP_EMPLOYEES EE
+								WHERE EE.EMPLOYEE_ID = V.PARTNER_ID),
+							  'VENDER',
+							  (SELECT SVV.VENDER_CODE || '-' || SVV.DESCRIPTION
+								 FROM PUR_SYSTEM_VENDERS_VL SVV
+								WHERE SVV.VENDER_ID = V.PARTNER_ID),
+							  'CUSTOMER',
+							  (SELECT SCV.CUSTOMER_CODE || '-' || SCV.DESCRIPTION
+								 FROM ORD_SYSTEM_CUSTOMERS_VL SCV
+								WHERE SCV.CUSTOMER_ID = V.PARTNER_ID)) PARENER_CODE_NAME,
+					   V.DOCUMENT_NUM,
+					   V.USER_NAME,
+					   V.USER_DESC,
+					   V.PAYMENT_METHOD_ID,
+					   V.AGENT_NAME,
+					   V.POSTED_FLAG,
+					   (select cch.contract_number
+						  from con_contract_headers cch,con_document_flows s
+						 where contract_header_id =s.document_id
+						 and s.document_type='CON_CONTRACT_HEADERS'
+						 and s.source_document_type ='CSH_TRANSACTION_HEADERS'
+						 and  s.source_document_id =v.TRANSACTION_HEADER_ID) contact_number,
+					(V.TRANSACTION_AMOUNT -
+       (SELECT NVL(SUM(CWO.CSH_WRITE_OFF_AMOUNT), 0)
+           FROM CSH_WRITE_OFF CWO
+          WHERE CWO.CSH_TRANSACTION_LINE_ID = V.TRANSACTION_LINE_ID
+            AND CWO.WRITE_OFF_TYPE = 'PREPAYMENT_EXPENSE_REPORT') -
+       (SELECT NVL(SUM(CTL2.TRANSACTION_AMOUNT), 0)
+           FROM CSH_TRANSACTION_HEADERS CTH1,
+                CSH_TRANSACTION_LINES   CTL1,
+                CSH_TRANSACTION_HEADERS CTH2,
+                CSH_TRANSACTION_LINES   CTL2
+          WHERE CTL1.TRANSACTION_LINE_ID = V.transaction_line_id
+           AND  sys_user_secure_exit_pkg.csh_prepayment_write_off(CTL1.TRANSACTION_HEADER_ID ,${/session/@session_id})='Y'
+            AND CTL1.TRANSACTION_HEADER_ID = CTH1.TRANSACTION_HEADER_ID
+            AND CTH2.SOURCE_HEADER_ID = CTH1.TRANSACTION_HEADER_ID
+            AND CTH2.TRANSACTION_HEADER_ID = CTL2.TRANSACTION_HEADER_ID
+            AND CTH2.REVERSED_FLAG IS NULL)) UNWRITE_OFF_AMOUNT
+				  FROM CSH_TRANSACTION_V V
+				 WHERE V.COMPANY_ID = ${/session/@company_id}
+				   AND V.TRANSACTION_TYPE = 'PREPAYMENT'
+				   AND V.WRITE_OFF_FLAG != 'C'
+				   AND V.RETURNED_FLAG in ('N','Y')
+				   AND V.POSTED_FLAG = 'Y'
+				   AND V.REVERSED_FLAG IS NULL
+				   and v.enabled_write_off_flag='Y') k
+			where k.UNWRITE_OFF_AMOUNT != 0	 )
+
+		#WHERE_CLAUSE# ORDER BY TRANSACTION_NUM DESC]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="partner_category" queryExpression="PARTNER_CATEGORY like  &apos;%&apos;||${@partner_category}||&apos;%&apos;"/>
+        <bm:query-field name="partner_id" queryExpression="PARTNER_ID like ${@partner_id}"/>
+        <bm:query-field name="currency_code" queryExpression="CURRENCY_CODE like  &apos;%&apos;||${@currency_code}||&apos;%&apos;"/>
+        <bm:query-field name="transaction_num" queryExpression="TRANSACTION_NUM like &apos;%&apos;||${@transaction_num}||&apos;%&apos;"/>
+        <bm:query-field name="transaction_date_from" queryExpression="P_TRANSACTION_DATE &gt;= ${@transaction_date_from}"/>
+        <bm:query-field name="transaction_date_to" queryExpression="P_TRANSACTION_DATE &lt;= ${@transaction_date_to}"/>
+        <bm:query-field name="bank_account_code" queryExpression="BANK_ACCOUNT_CODE like ${@bank_account_code}"/>
+        <bm:query-field name="payment_method_id" queryExpression="PAYMENT_METHOD_ID like  &apos;%&apos;||${@payment_method_id}||&apos;%&apos;"/>
+        <bm:query-field name="user_name" queryExpression="USER_NAME like  &apos;%&apos;||${@user_name}||&apos;%&apos;"/>
+        <bm:query-field name="agent_name" queryExpression="AGENT_NAME like  &apos;%&apos;||${@agent_name}||&apos;%&apos;"/>
+        <bm:query-field name="contact_number" queryExpression="CONTACT_NUMBER like  &apos;%&apos;||${@contact_number}||&apos;%&apos;"/>
+        <bm:query-field name="number_from" queryExpression="TRANSACTION_AMOUNT &gt;= ${@number_from}"/>
+        <bm:query-field name="number_to" queryExpression="TRANSACTION_AMOUNT &lt;= ${@number_to}"/>
+        <bm:query-field name="doc_number" queryExpression="doc_number = ${@doc_number}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter><![CDATA[
+    		UNWRITE_OFF_AMOUNT > 0
+    	]]></bm:data-filter>
+    </bm:data-filters>
+</bm:model>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: majianjian  
+    $Date: 2015-4-29 下午3:07:54  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script">
+    <a:init-procedure>
+        <!-- 删除查询结果表的数据 -->
+        <a:model-delete model="es.es_test"/>
+        <!-- 去ES查询，将返回结果插入到结果表中 -->
+        <s:server-script><![CDATA[
+            // 获取查询条件，如果查询条件不为空，则进行连接ES查询。
+            (function() {
+                var desc = $ctx.getObject('parameter').desc;
+                if (desc != null) {
+                    // 进行配置，及获取ES客户端
+                    var settings = Packages.org.elasticsearch.common.settings.ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
+                    var client = new Packages.org.elasticsearch.client.transport.TransportClient(settings).addTransportAddress(new Packages.org.elasticsearch.common.transport.InetSocketTransportAddress("localhost", 9300));
+                    if (client == null) {
+                        throw java.lang.Exception('获取ES客户端失败');
+                    }
+                    //构造查询条件
+                    var qb = Packages.org.elasticsearch.index.query.QueryBuilders.multiMatchQuery(desc, 'title','content').type(Packages.org.elasticsearch.index.query.MatchQueryBuilder.Type.PHRASE);
+                    // 进行分页查询
+                    var response = client.prepareSearch('hec').setTypes('es_news').setSearchType(Packages.org.elasticsearch.action.search.SearchType.QUERY_AND_FETCH).setScroll(new Packages.org.elasticsearch.common.unit.TimeValue(60000)).setSize(100).setQuery(qb).execute().actionGet();
+                    while (true) {
+                        var hits = response.getHits().getHits();
+                        for (var i = 0;i < hits.length;++i) {
+                            //将获取到的查询结果的id插入到表中。
+                            $ctx.parameter.mid = java.lang.Integer.parseInt(hits[i].getId());
+                            $ctx.parameter.score = java.lang.Double.parseDouble(hits[i].getScore());
+                            $bm('es.es_test').insert();
+                        }
+                        // 循环查询后续结果页
+                        response = client.prepareSearchScroll(response.getScrollId()).setScroll(new Packages.org.elasticsearch.common.unit.TimeValue(60000)).execute().actionGet();
+                        if (response.getHits().getHits().length == 0) {
+                            break;
+                        }
+                    }
+                    //关闭客户端
+                    if (client != null) {
+                        client.close();
+                    }
+                }
+            })();
+        ]]></s:server-script>
+    </a:init-procedure>
+</a:service>

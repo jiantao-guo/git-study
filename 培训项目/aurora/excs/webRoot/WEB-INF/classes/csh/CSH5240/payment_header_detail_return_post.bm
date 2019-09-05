@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[				SELECT V.*, V.TRANSACTION_AMOUNT - V.RETURNED_AMOUNT-V.PRE_PAYMENTED_AMOUNT UNRETURNED_AMOUNT
+				  FROM (SELECT CTH.TRANSACTION_HEADER_ID,
+							   CTH.TRANSACTION_NUM,
+							   CTH.TRANSACTION_TYPE,
+							   (select g.period_name
+							  from gld_periods g,gld_set_of_books b,fnd_companies e
+							 where g.start_date <= sysdate
+							   and g.end_date >= sysdate 
+							   and g.period_set_code=b.period_set_code
+							   and b.enabled_flag='Y'
+							   and e.company_id=${/session/@company_id}
+							   and e.set_of_books_id=b.set_of_books_id) period_name, 
+							   CTH.PAYMENT_METHOD_ID,
+							   CTH.TRANSACTION_CATEGORY,
+							   (SELECT B.CODE_VALUE_NAME
+					  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+					 WHERE A.CODE_ID = B.CODE_ID
+					   AND A.CODE = 'CSH_TRANSACTION_CATEGORY'
+					   AND B.CODE_VALUE = CTH.TRANSACTION_CATEGORY) P_TRANSACTION_CATEGORY,
+							   CTH.CREATED_BY,
+							   CTH.TRANSACTION_DATE,
+							   CTL.TRANSACTION_LINE_ID,
+							   CTL.TRANSACTION_AMOUNT,
+							   CTL.CURRENCY_CODE,
+							   CTL.EXCHANGE_RATE_TYPE,
+							   CTL.EXCHANGE_RATE,
+							   CTL.BANK_ACCOUNT_ID,
+							   BAV.BANK_ACCOUNT_NUM,
+							   BAV.BANK_ACCOUNT_CODE,
+							   BAV.BANK_ACCOUNT_NAME,
+							   BAV.BANK_ACCOUNT_CODE || '-' || BAV.BANK_ACCOUNT_NAME NAME_CODE,
+							   CTL.DOCUMENT_NUM,
+							   CTL.PARTNER_CATEGORY,
+							   decode(CTL.PARTNER_CATEGORY,'EMPLOYEE','员工','CUSTOMER','客户','VENDER','供应商')PARTNER_CATEGORY_NAME,
+							   (select w.document_source from csh_write_off w where w.csh_transaction_line_id = CTL.TRANSACTION_LINE_ID and rownum = 1)wf_document_source,
+							    DECODE(CTL.PARTNER_CATEGORY,
+					  'EMPLOYEE',
+					  (SELECT EE.EMPLOYEE_CODE || '-' || EE.NAME
+						 FROM EXP_EMPLOYEES EE
+						WHERE EE.EMPLOYEE_ID = CTL.PARTNER_ID),
+					  'VENDER',
+					  (SELECT SVV.VENDER_CODE || '-' || SVV.DESCRIPTION
+						 FROM PUR_SYSTEM_VENDERS_VL SVV
+						WHERE SVV.VENDER_ID = CTL.PARTNER_ID),
+					  'CUSTOMER',
+					  (SELECT SCV.CUSTOMER_CODE || '-' || SCV.DESCRIPTION
+						 FROM ORD_SYSTEM_CUSTOMERS_VL SCV
+						WHERE SCV.CUSTOMER_ID = CTL.PARTNER_ID)) partner,
+							   CTL.PARTNER_ID,
+							   CTL.PARTNER_BANK_ACCOUNT_ID,
+							   CTL.DESCRIPTION,
+							   CTL.EXCHANGE_RATE_QUOTATION,
+							   CTL.AGENT_EMPLOYEE_ID,
+							   (SELECT NVL(COUNT(CPRR.PAYMENT_REQUISITION_REF_ID), 0)
+								  FROM CSH_PAYMENT_REQUISITION_REFS CPRR
+								 WHERE CTL.TRANSACTION_LINE_ID = CPRR.CSH_TRANSACTION_LINE_ID) REF_COUNT,
+							   (SELECT NVL(COUNT(CPRR.PAYMENT_REQUISITION_REF_ID), 0)
+								  FROM CSH_PAYMENT_REQUISITION_REFS CPRR
+								 WHERE CTL.TRANSACTION_LINE_ID = CPRR.CSH_TRANSACTION_LINE_ID
+								   AND CPRR.AMOUNT > 0) REF_RETURN_COUNT,
+							   (SELECT NVL(SUM(TL.TRANSACTION_AMOUNT), 0)
+          FROM csh_transaction_headers th,
+			   csh_transaction_lines   tl
+		 where th.transaction_header_id =
+			   tl.transaction_header_id
+		   and th.posted_flag = 'Y'
+		   and th.returned_flag = 'R'
+		   and th.reversed_flag is null
+		   and th.source_header_id =
+			   cth.transaction_header_id) RETURNED_AMOUNT,
+								nvl((select sum(cwo.csh_write_off_amount)
+                                       from csh_write_off cwo, csh_write_off cwo2
+                                      where cwo2.csh_transaction_line_id = ctl.transaction_line_id
+                                        AND cwo2.SOURCE_CSH_TRX_LINE_ID = CWO.CSH_TRANSACTION_LINE_ID
+                                        AND cwo2.write_off_type = 'PAYMENT_PREPAYMENT'),0) PRE_PAYMENTED_AMOUNT , 
+                     
+								    (select cch.contract_number
+								  from con_contract_headers cch,con_document_flows s
+								 where contract_header_id =s.document_id
+								 and s.document_type='CON_CONTRACT_HEADERS'
+								 and s.source_document_type ='CSH_TRANSACTION_HEADERS'
+								 and  s.source_document_id =CTH.TRANSACTION_HEADER_ID) contact_number,
+								 (select cch.CONTRACT_HEADER_ID
+								  from con_contract_headers cch,con_document_flows s
+								 where contract_header_id =s.document_id
+								 and s.document_type='CON_CONTRACT_HEADERS'
+								 and s.source_document_type ='CSH_TRANSACTION_HEADERS'
+								 and  s.source_document_id =CTH.TRANSACTION_HEADER_ID) CONTRACT_HEADER_ID
+						  FROM CSH_TRANSACTION_HEADERS CTH, CSH_TRANSACTION_LINES CTL ,CSH_BANK_ACCOUNTS_VL BAV
+						 WHERE CTH.TRANSACTION_HEADER_ID = ${/parameter/@transaction_header_id}
+						   AND CTH.TRANSACTION_HEADER_ID = CTL.TRANSACTION_HEADER_ID
+						   AND CTL.BANK_ACCOUNT_ID = BAV.BANK_ACCOUNT_ID) V]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

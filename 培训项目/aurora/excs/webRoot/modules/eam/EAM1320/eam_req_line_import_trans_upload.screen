@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="bgt.bgt_get_sys_import_head_id" rootPath="header"/>
+        <a:import-excel header_id="${/model/header/record/@header_id}" separator="," status_field="/parameter/@ImportSuccess" template_code="EAMSERIAL" user_id="${/session/@user_id}"/>
+        <a:model-query defaultWhereClause="header_id=${/model/header/record/@header_id} and TEMPLATE_CODE = &apos;EAMSERIAL&apos;" model="eam.eam0720.eam0720_asset_counting_plan_result_import_get_status" rootPath="status"/>
+        <a:model-query autoCount="false" defaultWhereClause="header_id=${/model/header/record/@header_id} order by line_id" fetchAll="true" model="eam.eam1320.eam_line_info_import_get_fnd_data" rootPath="importData"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="eam1320_line_import_link" url="${/request/@context_path}/modules/eam/EAM1320/eam_req_line_import.screen"/>
+        <a:link id="eam1320_line_import_save_data_link" url="${/request/@context_path}/modules/eam/EAM1320/eam_req_line_import_save_data.svc"/>
+        <script><![CDATA[
+            function loadComplete() {
+                if ('${/model/status/record/@status}' == 'NEW') {
+                    var importData = $('fnd_data_ds').getAll();
+                    var param = {};
+                    var saveData = [];
+                    var errorData = "";
+                    var importFlag = true;
+                    var comErrorFlag = false; //循环校验错误标志
+                    var message = ""; //导入时提示信息
+                    param['header_id'] = '${/model/header/record/@header_id}';
+                    param['requisition_header_id'] = '${/parameter/@requisition_header_id}';
+                    /*var l_length =  importData.length - 1;
+                    if (l_length != '${/parameter/@length}') {
+                        importFlag = false;
+                    }*/
+                    if (importFlag) {
+                        for (var i = 1;i < importData.length;i++) {
+                            var lineData = {};
+                            lineData['requisition_header_id'] = '${/parameter/@requisition_header_id}';
+                            lineData['seq'] = i * 10;
+                            lineData['tag_number'] = importData[i].get('attribute_1');
+                            lineData['to_employee_code'] = importData[i].get('attribute_2');
+                            lineData['to_location_code'] = importData[i].get('attribute_3');
+                            lineData['current_location_address'] = importData[i].get('attribute_4');
+                            lineData['to_location_code2'] = importData[i].get('attribute_5');
+                            lineData['expense_amount'] = importData[i].get('attribute_6');
+                            lineData['revenue_amount'] = importData[i].get('attribute_7');
+                            lineData['pl_amount'] = importData[i].get('attribute_8');
+                            lineData['retirement_type_desc'] = importData[i].get('attribute_9');
+                            lineData['use_type_desc'] = importData[i].get('attribute_10');
+                            lineData['partner_name'] = importData[i].get('attribute_11');
+                            lineData['description'] = importData[i].get('attribute_12');
+                            saveData.push(lineData);
+                        }
+                        param['details'] = saveData;
+                        Aurora.request({
+                            url: $('eam1320_line_import_save_data_link').getUrl(),
+                            para: param,
+                            success: function() {
+                                Ext.get('failure_form').setStyle('display', 'none');
+                                Ext.get('success_form').setStyle('visibility', 'visible');
+                            },
+                            scope: this
+                        });
+                    } else {
+                         Aurora.showMessage('提示', '导入的行数和单据上的行数不一致', null, 280, 160);
+                          return;
+                       /* errorData = errorData.substr(0, errorData.length - 1);
+                        Ext.get('success_form').setStyle('display', 'none');
+                        Ext.get('failure_form').setStyle('visibility', 'visible');
+                        $('error_ds').setQueryParameter('errorData', errorData);
+                        $('error_ds').query();*/
+                    }
+                } else {
+                    Ext.get('success_form').setStyle('display', 'none');
+                    Ext.get('failure_form').setStyle('visibility', 'visible');
+                }
+            }
+            
+            function view() {
+                window.location.href = $('eam1320_line_import_link').getUrl() + '?requisition_header_id=' + '${/parameter/@requisition_header_id}'+'&update_flag='+'${/parameter/@update_flag}'+'&req_type='+'${/parameter/@req_type}'+'&ast_requisition_type_id=${/parameter/@type_id}&asset_book_id=${/parameter/@book_id}&base_trx_category=${/parameter/@base_trx_category}';
+                window.close();
+            }
+            
+            function back() {
+                //Aurora.go($('eam0720_asset_counting_plan_result_import_link').getUrl());
+                window.location.href = $('eam1320_line_import_link').getUrl() + '?requisition_header_id=' + '${/parameter/@requisition_header_id}'+'&update_flag='+'${/parameter/@update_flag}'+'&req_type='+'${/parameter/@req_type}'+'&ast_requisition_type_id=${/parameter/@type_id}&asset_book_id=${/parameter/@book_id}&base_trx_category=${/parameter/@base_trx_category}';
+                window.close();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="fnd_data_ds">
+                <a:datas dataSource="/model/importData"/>
+            </a:dataSet>
+            <a:dataSet id="error_ds" model="eam.eam1320.eam_line_info_import_get_error_data">
+                <a:fields>
+                    <a:field name="tag_number"/>
+                    <a:field name="to_employee_code"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form id="success_form" marginWidth="50" style="visibility:hidden" title="IMPORT_SUCCESS" width="400">
+                <a:button click="view" text="PROMPT.VIEW"/>
+            </a:form>
+            <a:hBox>
+                <a:button click="back" text="HAP_BACK"/>
+            </a:hBox>
+            <a:form id="failure_form" height="400" marginWidth="50" style="visibility:hidden" title="ERROR_MESSAGE">
+                <a:grid bindTarget="error_ds" height="340" navBar="true" width="980">
+                    <a:columns>
+                        <a:column name="tag_number" align="center" prompt="资产标签号" width="120"/>
+                        <a:column name="to_employee_code" align="center" prompt="责任人代码" width="100"/>
+                        <a:column name="to_location_code" align="center" prompt="领用位置代码" width="100"/>
+                        <a:column name="current_location_address" align="center" prompt="物理地址" width="100"/>
+                        <a:column name="to_location_code2" align="center" prompt="目标位置" width="150"/>
+                        <a:column name="expense_amount" align="right" prompt="销售成本" renderer="Aurora.formatMoney" width="80"/>
+                        <a:column name="revenue_amount" align="right" prompt="变价收入" renderer="Aurora.formatMoney" width="80"/>
+                        <a:column name="pl_amount" align="right" prompt="赔偿金" renderer="Aurora.formatMoney" width="80"/>
+                        <a:column name="retirement_type_desc" align="center" prompt="报废类型" width="120"/>
+                        <a:column name="use_type_desc" align="center" prompt="领用类型" width="120"/>
+                        <a:column name="partner_name" align="center" prompt="使用人备注" width="120"/>
+                        <a:column name="description" align="center" prompt="备注" width="150"/>
+                    </a:columns>
+                </a:grid>
+            </a:form>
+        </a:screenBody>
+        <script><![CDATA[
+	  		loadComplete();
+	  	]]></script>
+    </a:view>
+</a:screen>

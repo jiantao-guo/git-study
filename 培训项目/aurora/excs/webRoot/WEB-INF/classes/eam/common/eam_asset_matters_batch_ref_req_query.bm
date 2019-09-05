@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: myh 
+    $Date: 2013-9-25 
+    $Revision: 1.0  
+    $Purpose: 财审会事项行批量关联资产的查询
+-->
+<ns1:model xmlns:ns1="http://www.aurora-framework.org/schema/bm">
+    <ns1:operations>
+        <ns1:operation name="query">
+            <ns1:query-sql><![CDATA[
+						select *
+  from (select h.ASSET_ID,
+               h.ASSET_CODE,
+               (select fd.description_text
+                  from fnd_descriptions fd
+                 where fd.description_id = h.description_id
+                   and fd.language = ${/session/@lang}) asset_name,
+               h.STATUS,
+               h.entity_class_id,
+               (SELECT e.description
+                  FROM eam_asset_entity_classes_vl e
+                 WHERE e.class_id = h.entity_class_id) AS entity_class_desc,
+               (SELECT v.code_value_name
+                  FROM sys_service_lookup_v v
+                 WHERE v.enabled_flag = 'Y'
+                   AND V.code_value = h.status
+                   AND code = 'EAM_ASSET_STATUS'
+                   AND language = ${/session/@lang}) AS status_desc,
+               h.location_id,
+               l.DESCRIPTION as current_location_desc
+          from eam_asset_headers    h,
+               eam_asset_categories e,
+               eam_locations_vl     l
+         where h.category_id = e.category_id
+           and h.location_id = l.location_id(+)
+           and h.lock_flag <> 'Y'
+           and h.status <> 'INVALID'
+           and (exists
+                (select p.unit_id
+                   from exp_org_position p, exp_employee_assigns a, sys_user s
+                  where p.position_id = a.position_id
+                    and p.company_id = a.company_id
+                    and p.enabled_flag = 'Y'
+                    and a.employee_id = s.employee_id
+                    and a.enabled_flag = 'Y'
+                    and s.user_id = ${/session/@user_id}
+                    and a.company_id = ${/session/@company_id}
+                    and p.unit_id = l.entity_man_unit_id) or exists
+                (select u.unit_id
+                   from eam_ast_cate_refer_units u, exp_org_unit eu
+                  where u.category_id = e.category_id
+                    and u.unit_id = eu.unit_id
+                    and u.asset_book_id = e.asset_book_id
+                    and exists
+                  (select p.unit_id
+                           from exp_org_position     p,
+                                exp_employee_assigns a,
+                                sys_user             s,
+                                exp_org_unit         eou
+                          where p.position_id = a.position_id
+                            and p.company_id = a.company_id
+                            and p.enabled_flag = 'Y'
+                            and a.employee_id = s.employee_id
+                            and a.enabled_flag = 'Y'
+                            and s.user_id = ${/session/@user_id}
+                            and p.unit_id = eou.unit_id
+                            and ((eou.unit_code = eu.unit_code and
+                                (p.position_id =
+                                eou.unit_asset_manager_position_id or
+                                p.position_id = eou.chief_position_id or
+                                a.employee_id = eou.unit_leader_id)) or exists
+                                 (select 1
+                                    from wbc_work_teams t
+                                   where t.employee_id = a.employee_id
+                                     and t.enabled_flag = 'Y') or exists
+                                 (select 1
+                                    from wbc_work_team_detail d, wbc_work_teams t
+                                   where d.employee_id = a.employee_id
+                                     and d.enabled_flag = 'Y'
+                                     and t.work_team_id = d.work_team_id
+                                     and t.enabled_flag = 'Y'))
+                            and l.entity_man_company_id in
+                                (select f.company_id
+                                   from fnd_companies_vl f
+                                  start with f.company_id = ${/session/@company_id}
+                                 connect by prior
+                                             f.company_id = f.parent_company_id))))
+                            and not EXISTS(select 1 from eam_asset_document_references r
+		                      where h.ASSET_ID = r.asset_id
+			                    and r.document_type ='EXP_REQUISITION'
+			                    and r.document_id =${/parameter/@head_id}
+			                    and r.reference_type = 'OTHERS'
+			                    and r.matters_line_id is not null)) t
+
+			  #WHERE_CLAUSE#
+	             order by t.ASSET_CODE
+  ]]></ns1:query-sql>
+        </ns1:operation>
+    </ns1:operations>
+    <ns1:fields>
+        <ns1:field name="asset_id"/>
+        <ns1:field name="asset_code" prompt="EAM_ASSET_HEADERS.ASSET_CODE"/>
+        <ns1:field name="asset_name" prompt="EAM_ASSET_HEADERS.DESCRIPTION"/>
+        <ns1:field name="status"/>
+        <ns1:field name="status_desc" prompt="EAM_ASSET_HEADERS.STATUS"/>
+        <ns1:field name="location_id"/>
+        <ns1:field name="current_location_desc" prompt="EAM_ASSET_HEADERS.LOCATION_ID"/>
+        <ns1:field name="entity_class_id"/>
+        <ns1:field name="entity_class_desc"/>
+    </ns1:fields>
+    <ns1:query-fields>
+        <ns1:query-field name="asset_code_from" queryExpression="upper(t.asset_code) &gt;= upper(${/parameter/@asset_code_from})"/>
+        <ns1:query-field name="asset_code_to" queryExpression="upper(t.asset_code) &lt;= upper(${/parameter/@asset_code_to})"/>
+        <ns1:query-field name="status" queryExpression="t.status = ${/parameter/@status}"/>
+    </ns1:query-fields>
+</ns1:model>

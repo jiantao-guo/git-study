@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lzm
+    $Date: 2013/01/30
+    $Revision: 1.2 $
+    $Purpose: 付款申请单支付页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="acp.ACP5060.acp_payment_methods" rootPath="paymentMethod"/>
+        <a:model-query model="acp.ACP5060.acp_type_desc" rootPath="acp_type_desc"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_report_companies" queryOrderBy="company_code" rootPath="exp_report_companies"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="acp_payment_requisition_payment_pay_link" url="${/request/@context_path}/modules/acp/ACP5060/acp_payment_requisition_pay.screen"/>
+        <a:link id="acp_payment_requisition_payment_control_link" url="${/request/@context_path}/modules/acp/ACP5050/acp_payment_requisition_payment_control.svc"/>
+        <a:link id="acp_req_maintain_submit_link_2" model="acp.acp_req_maintain_submit" modelaction="batch_update"/>
+        <a:link id="acp_acp_req_maintain_view_link" url="${/request/@context_path}/modules/acp/public/acp_req_maintain_view.screen"/>
+        <a:link id="acp_acp_req_maintain_create_link_1" url="${/request/@context_path}/modules/acp/public/acp_acp_req_maintain_create.screen"/>
+        <a:link id="exp_report_detail_link" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl.screen"/>
+        <script><![CDATA[
+
+            function newReq() {
+            
+                Aurora.post( /*acp_acp_req_maintain_create.screen*/
+                $('acp_acp_req_maintain_create_link_1').getUrl());
+            }
+            
+            function newWindowAssignComFunction(url) {
+            
+                new Aurora.Window({
+                    title: '',
+                    id: 'acp_acp_req_detail_screen',
+                    fullScreen: true,
+                    url: url
+                });
+            }
+            
+            function requestNoRenderFunction(value, record, name) {
+            
+            
+                var url = $('acp_acp_req_maintain_view_link').getUrl() + '?acp_requisition_header_id=' + record.get('acp_requisition_header_id');
+                return '<a href="javascript:newWindowAssignComFunction(\'' + url + '\');">' + value + '</a>';
+            }
+            
+            function document_numberRender(value, record, name) {
+                
+                if(value!=undefined){
+                url = /*csh_payment_transaction_detail.screen*/
+                $('exp_report_detail_link').getUrl() + '?exp_report_header_id=' + record.get('exp_report_header_id');
+                return '<a href="javascript:opendocWindow(\'' + url + '\')">' + value + '</a>';
+                }
+            }
+            
+            function opendocWindow(url) {
+                new Aurora.Window({
+                    id: 'exp_report_doc_detail_window',
+                    url: url,
+                    fullScreen: true,
+                    title: '',
+                    height: 960,
+                    width: 600
+                });
+            }
+            
+            
+            
+            function submit() {
+            
+                Aurora.showConfirm('${l:EXIT_SYSTEM}', '${l:DOCUMNET_SUBMIT_CONFIRM}', function(cmp) {
+                    var param = $('acp_result_ds').getJsonData(true);
+            
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/acp.acp_req_maintain_submit/batch_update*/
+                        $('acp_req_maintain_submit_link_2').getUrl(),
+                        para: param,
+                        success: function() {
+                            $('acp_result_ds').query();
+                        },
+                        scope: this
+                    });
+                    cmp.close();
+                }, null, null, 80);
+            
+            
+            }
+            
+            function deleteCheck() {}
+            
+            function resetFunction() {
+                var dataSet = $('acp_query_ds');
+                var record = dataSet.getCurrentRecord();
+                dataSet.reset();
+                record.getField('partner_name').setLovService('');
+                record.getField('partner_name').setReadOnly(true);
+            
+            }
+            
+            function queryRequisitionquery() {
+                $('acp_result_ds').query();
+            }
+            
+            function pay() {
+                var cmpArray = $('acp_result_ds').getSelected();
+                for (var i = 0;i < cmpArray.length;i++) {
+                    var record = cmpArray[i];
+                    var payment_amount = record.get('payment_amount');
+                    if (!payment_amount && payment_amount != '') {
+                        Aurora.showMessage('${l:PROMPT}', '请确认支付金额都已经输入');
+                        return;
+                    }
+                }
+                if (cmpArray.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                    return;
+                }
+                var param = $('acp_result_ds').getJsonData(true);
+                for (i = 0;i < param.length;i++) {
+                    if (param[i]['ref_document_line_id'] != undefined) {
+                        var los = [];
+                        var llo = {};
+                        llo['payment_amount'] = param[i]['payment_amount'];
+                        llo['payment_schedule_line_id'] = param[i]['ref_document_line_id'];
+                        los.push(llo);
+                        param[i]['details'] = los;
+                    }
+                }
+                Aurora.request({
+                    url: $('acp_payment_requisition_payment_control_link').getUrl() + '?_ban_remind=Y',
+                    para: param,
+                    success: function() {
+                        //$('acp_result_ds').query();
+                        dispatch();
+                    },
+                    scope: this
+                });
+            
+            }
+            function refresh_result_ds() {
+                $('acp_result_ds').query();
+            }
+            
+            function dispatch() {
+                new Aurora.Window({
+                    id: "win1",
+                    closeable: false,
+                    url: /*acp_payment_requisition_payment_pay.screen*/
+                    $('acp_payment_requisition_payment_pay_link').getUrl(),
+                    title: "${l:ACP_PAYMENT_REQUISITION_PAYMENT.PAYMENT_REQUEST_FOR_PAYMENT}",
+                    width: 580,
+                    height: 250
+                }).on('close', refresh_result_ds);
+            }
+            
+            function onUpdate(ds, record, name, value) {
+                if (name == 'partner_category') {
+                    if (value != null && value != '') {
+                        record.getField('partner_name').setLovPara('partner_category', value);
+                        record.getField('partner_name').setLovService('acp.acp_partner_name');
+                        record.getField('partner_name').setReadOnly(false);
+                    } else {
+                        record.getField('partner_name').setLovService('');
+                        record.getField('partner_name').setReadOnly(true);
+                    }
+                    record.set('partner_name', '');
+                    record.set('partner_id', '');
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="gld_set_of_applicant_ds" loadData="true" model="acp.acp_applicant"/>
+            <a:dataSet id="payment_object_ds" lookupcode="PAYMENT_OBJECT"/>
+            <a:dataSet id="payment_status_ds" lookupcode="PAYMENT_STATUS"/>
+            <a:dataSet id="acp_payment_method_ds">
+                <a:datas dataSource="/model/paymentMethod"/>
+            </a:dataSet>
+            <a:dataSet id="acp_type_desc_ds">
+                <a:datas dataSource="/model/acp_type_desc"/>
+            </a:dataSet>
+            <a:dataSet id="pay_req_type" loadData="true" model="acp.acp_pay_req_type">
+                <a:fields>
+                    <a:field name="description"/>
+                    <a:field name="id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exp_report_companies_ds">
+                <a:datas dataSource="/model/exp_report_companies"/>
+            </a:dataSet>
+            <a:dataSet id="exp_report_type" loadData="true" model="acp.exp_report_type">
+                <a:fields>
+                    <a:field name="description"/>
+                    <a:field name="expense_report_type_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="gld_set_of_currency_list_ds" loadData="true" model="exp.exp_currency_code"/>
+            <a:dataSet id="gld_set_of_status_query_list_ds" loadData="true" lookupcode="PAYMENT_REQUISITION_STATUS"/>
+            <a:dataSet id="acp_query_ds">
+                <a:fields>
+                    <a:field name="applicant" displayField="name" options="gld_set_of_applicant_ds" returnField="employee_id" valueField="employee_id"/>
+                    <a:field name="currency_name" displayField="currency_name" options="gld_set_of_currency_list_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="status_name" displayField="code_value_name" options="gld_set_of_status_query_list_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="status"/>
+                    <a:field name="partner_category_display" displayfield="code_value_name" options="payment_object_ds" returnfield="partner_category" valuefield="code_value"/>
+                    <a:field name="partner_name" autoComplete="true" autoCompleteField="name_code" lovGridHeight="300" lovHeight="450" lovWidth="500" readOnly="true" title="CSH_TRANSACTION_LINES.PARTNER_ID_ONE">
+                        <a:mapping>
+                            <a:map from="name_code" to="partner_name"/>
+                            <a:map from="id" to="partner_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company"/>
+                    <a:field name="acp_type_desc" displayField="description" options="acp_type_desc_ds" returnField="acp_type_code" valueField="acp_req_type_code">
+                        <a:mapping>
+                            <a:map from="acp_req_type_code" to="acp_type_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="acp_type_code"/>
+                    <a:field name="payment_method_code"/>
+                    <a:field name="company_desc" autoComplete="true" autoCompleteField="report_company" lovGridHeight="350" lovHeight="500" lovService="expm.exp_report_companies" lovWidth="500" options="exp_report_companies_ds" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="report_company" to="company_desc"/>
+                            <a:map from="company_code" to="company_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_code"/>
+                    <a:field name="payment_method" displayField="description" options="acp_payment_method_ds" returnField="payment_method_code" valueField="payment_method_code">
+                        <a:mapping>
+                            <a:map from="payment_method_code" to="payment_method_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_id"/>
+                    <a:field name="requisition_number"/>
+                    <a:field name="requisition_type"/>
+                    <a:field name="exp_report_type" displayfield="description" options="exp_report_type" returnfield="expense_report_type_id" valuefield="expense_report_type_id"/>
+                    <a:field name="expense_report_type_id"/>
+                    <a:field name="csh_type" displayfield="description" options="pay_req_type" returnfield="csh_type_id" valuefield="type_id"/>
+                    <a:field name="csh_type_id"/>
+                    <a:field name="already_paying_f"/>
+                    <a:field name="already_paying_t"/>
+                    <a:field name="acp_requisition_amount_f"/>
+                    <a:field name="aco_requisition_amount_t"/>
+                    <a:field name="payment_status" displayField="code_value_name" options="payment_status_ds" returnField="payment_status_id" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="acp_result_ds" autoQuery="true" fetchAll="false" model="acp.ACP5050.acp_payment_requisition_payment_query" queryDataSet="acp_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="ref_document_line_id"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="acp_req_payment_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="resetFunction" text="HAP_RESET" width="80"/>
+                <a:toolbarButton click="pay" text="HEC_PAY" width="80"/>
+                <a:gridButton bind="result_grid" type="excel" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="acp_query_ds" resultTarget="acp_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="requisition_number" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.REQUISITION_NUMBER"/>
+                    <a:comboBox name="partner_category_display" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.PARTNER_TARGET"/>
+                    <a:lov name="partner_name" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.PARTNER_NAME"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:comboBox name="acp_type_desc" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.REQ_TYPES"/>
+                    <a:datePicker name="requisition_date_from" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.REQUISITION_DATE_F"/>
+                    <a:datePicker name="requisition_date_to" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.REQUISITION_DATE_T"/>
+                    <a:numberField name="acp_requisition_amount_f" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.AMOUNT_F"/>
+                    <a:numberField name="acp_requisition_amount_t" bindTarget="acp_query_ds" prompt="ACP_REQUISITION.AMOUNT_T"/>
+                    <a:lov name="company_desc" bindTarget="acp_query_ds" prompt="ACP_ACP_REQUISITION_HDS.COMPANY_ID"/>
+                    <a:comboBox name="payment_method" bindTarget="acp_query_ds" prompt="ACP.DESCRIPTION_METHOD"/>
+                    <a:datePicker name="plan_pay_date_f" bindTarget="acp_query_ds" prompt="CSH_PAYMENT.P_TRANSACTION_DATE_F"/>
+                    <a:datePicker name="plan_pay_date_t" bindTarget="acp_query_ds" prompt="CSH_PAYMENT.P_TRANSACTION_DATE_T"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="result_grid" bindTarget="acp_result_ds" height="350" marginHeight="127" marginWidth="25" navBar="true" style="margin-left:5px;margin-top:5px;" width="1000">
+                <a:columns>
+                    <a:column name="requisition_number" align="center" prompt="ACP_REQUISITION.REQUISITION_NUMBER" renderer="requestNoRenderFunction" sortable="true" width="150"/>
+                    <a:column name="acp_company" align="center" prompt="ACP_ACP_REQUISITION_HDS.COMPANY_ID" sortable="true" width="110"/>
+                    <a:column name="requisition_date" align="center" prompt="ACP_REQUISITION.REQUISITION_DATE" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="p_partner_category" align="center" prompt="ACP_REQUISITION.PARTNER_TARGET" sortable="true" width="80"/>
+                    <a:column name="partner_name" align="center" prompt="ACP_REQUISITION.PARTNER_NAME" sortable="true" width="80"/>
+                    <a:column name="payment_method" align="center" prompt="ACP.DESCRIPTION_METHOD" width="80"/>
+                    <a:column name="requisition_payment_date" align="center" prompt="ACP_ACP_REQ_CREATE.PLAN_PAYMENT_DATE" renderer="Aurora.formatDate" width="100"/>
+                    <a:column name="payment_amount" align="right" editor="payment_amount_tf" prompt="ACP_REQUISITION.PAYMENT_AMOUNT" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="amount" align="right" prompt="ACP_REQUISITION.AMOUNT" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="paid_amount" align="right" prompt="ACP_REQUISITION.ALREADY_PAYING" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="transaction_class_desc" align="center" prompt="CSH_PAYMENT_USEDS" sortable="true" width="80"/>
+                    <a:column name="account_name" align="center" prompt="CSH_BANK_BALANCES.BANK_ACCOUNT_ID" width="80"/>
+                    <a:column name="acp_type_desc" align="center" prompt="ACP_REQUISITION.REQ_TYPES" sortable="true" width="80"/>
+                    <a:column name="document_number" align="center" prompt="ACP_REQ_MAINTAIN.REF_REQ_NUM" renderer="document_numberRender" sortable="true" width="120"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="payment_amount_tf"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function acpReqPaymentInitSize() {
+                   //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度       
+            	   $('result_grid').setWidth(autoWidth);           
+            }
+            //Ext.fly(window).on('resize', acpReqPaymentInitSize);
+            acpReqPaymentInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

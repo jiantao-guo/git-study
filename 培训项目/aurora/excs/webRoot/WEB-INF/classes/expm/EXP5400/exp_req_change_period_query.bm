@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Robin  
+    $Date: 2011-6-20 上午10:45:29  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select *
+  from (select h.exp_requisition_header_id,
+               h.exp_requisition_number,
+               to_char(h.requisition_date,
+                       'yyyy-mm-dd') requisition_date,
+               h.employee_id,
+               (select employee_code
+                  from exp_employees es
+                 where es.employee_id = h.employee_id) employee_code,
+               (select name
+                  from exp_employees es
+                 where es.employee_id = h.employee_id) employee_name,
+               h.currency_code,
+               (select currency_name from gld_currency_vl gcv where gcv.currency_code = h.currency_code) currency_name,
+               l.exp_requisition_line_id,
+               l.line_number,
+               h.exp_requisition_type_id,
+               (select erpv.description
+                  from exp_expense_req_types_vl erpv
+                 where erpv.expense_requisition_type_id = h.exp_requisition_type_id) type_description,
+               l.exp_req_item_id,
+               (select itm.description
+                  from exp_req_items_vl itm
+                 where itm.req_item_id = l.exp_req_item_id) exp_req_item,
+               d.price,
+               d.primary_quantity,
+               d.primary_uom,
+               (d.price * d.primary_quantity) dist_amount,
+               exp_requisition_common_pkg.get_exp_rpt_release_amt_dist(d.exp_requisition_dists_id) usedamount,
+               exp_requisition_common_pkg.get_exp_rpt_release_qty_dist(d.exp_requisition_dists_id) usedquanlity,
+               exp_requisition_common_pkg.get_total_release_amt_dist(d.exp_requisition_dists_id) totalamount,
+               exp_requisition_common_pkg.get_total_release_qty_dist(d.exp_requisition_dists_id) totalquanlity,
+               d.payee_category,
+               (select code_value_name
+                  from sys_code_values_vl b,
+                       sys_codes          a
+                 where b.code_id = a.code_id
+                   and a.code = 'PAYMENT_OBJECT'
+                   and code_value = d.payee_category) payee_category_name,
+               d.payee_id,
+               decode(d.payee_category,
+                      'EMPLOYEE',
+                      (select employee_code || '-' || name
+                         from exp_employees ee
+                        where ee.employee_id = d.payee_id),
+                      'CUSTOMER',
+                      (select vc.customer_code || '-' || vc.description
+                         from ord_system_customers_vl vc
+                        where vc.customer_id = d.payee_id),
+                      (select vv.vender_code || '-' || vv.description
+                         from pur_system_venders_vl vv
+                        where vv.vender_id = d.payee_id)) payee_name,
+               d.description,
+               d.period_name,
+               nvl((gld_common_pkg.get_gld_internal_period_num(d.company_id,
+                                                               d.period_name)),
+                   0) dist_period_name,
+               d.exp_requisition_dists_id,
+               d.company_id dist_com,
+               (select fc.company_code
+                  from fnd_companies_vl fc
+                 where fc.company_id = h.company_id) company_code,
+               (select fc.company_short_name
+                  from fnd_companies_vl fc
+                 where fc.company_id = h.company_id) company_short_name,
+               d.expense_type_id,
+               (select ev.description
+                  from exp_expense_types_vl ev
+                 where ev.expense_type_id = d.expense_type_id) expense_type_desc
+          from exp_requisition_dists   d,
+               exp_requisition_headers h,
+               exp_requisition_lines   l
+         where nvl(d.close_flag,
+                   'N') = 'N'
+           and h.exp_requisition_header_id = l.exp_requisition_header_id
+           and l.exp_requisition_line_id = d.exp_requisition_line_id
+           and h.requisition_status = 'COMPLETELY_APPROVED'
+           and (d.requisition_amount - nvl(d.released_amount,
+                                           0)) > 0) v
+		#WHERE_CLAUSE# ORDER BY v.exp_requisition_number desc]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+        		begin
+     
+          exp_req_change_period_pkg.ins_exp_req_change_periods_tmp(p_session_id => ${/session/@session_id},
+                                  p_exp_requisition_header_id => ${@exp_requisition_header_id},
+                                  p_exp_requisition_line_id => ${@exp_requisition_line_id},
+                                  p_exp_requisition_dist_id => ${@exp_requisition_dists_id},
+                                  p_user_id => ${/session/@user_id});
+                                          
+	 end;
+        	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+        	
+        		begin
+        		exp_req_change_period_pkg.create_exp_req_change_periods(p_session_id  => ${/session/@session_id},
+                                          p_user_id     => ${/session/@user_id},
+                                          p_period_name  =>${@head_period_name});
+        		end;
+        	
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="payee_category" dataType="java.lang.String" queryExpression="payee_category=${@payee_category_code}"/>
+        <bm:query-field name="payee_id" dataType="java.lang.Long" queryExpression="payee_id=${@payee_id}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="currency_code=${@currency_code}"/>
+        <bm:query-field name="company_code_from" dataType="java.lang.String" queryExpression=" company_code  &gt;= ${@company_code_from} "/>
+        <bm:query-field name="company_code_to" dataType="java.lang.String" queryExpression=" company_code &lt;= ${@company_code_to} "/>
+        <bm:query-field name="requesition_date_from" dataType="java.lang.String" queryExpression="requisition_date &gt;= ${@requesition_date_from}"/>
+        <bm:query-field name="requesition_date_to" dataType="java.lang.String" queryExpression="requisition_date &lt;= ${@requesition_date_to}"/>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="employee_id = ${@employee_id}"/>
+        <bm:query-field name="requesition_number" dataType="java.lang.String" queryExpression="exp_requisition_number like &apos;%&apos;||${@requesition_number}||&apos;%&apos;"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="filter" enforceOperations="query" expression="(1=1 and ${@period_name} is null)       or (${@period_name} is not null             and v.dist_period_name &lt; (gld_common_pkg.get_gld_internal_period_num(${/session/@company_id},${@period_name})))"/>
+    </bm:data-filters>
+</bm:model>

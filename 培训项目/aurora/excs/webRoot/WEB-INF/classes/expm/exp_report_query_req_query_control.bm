@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[ 
+            	SELECT * FROM (
+				   select s.exp_report_header_id,
+				   (select cch.contract_number
+				  from con_contract_headers cch,con_document_flows s
+				 where contract_header_id =s.document_id
+				 and s.document_type='CON_CONTRACT_HEADERS'
+				 and s.source_document_type ='EXP_REPORT_HEADERS'
+				            and  s.source_document_id =s.exp_report_header_id) contact_number,
+				       s.exp_report_number exp_requisition_number,
+				       s.employee_id,
+				       s.audit_flag,
+				       to_char(s.audit_date,'yyyy-mm-dd') audit_date,
+				       (select employee_code
+				          from exp_employees es
+				         where es.employee_id = s.employee_id) employee_code,
+				       (select name
+				          from exp_employees es
+				         where es.employee_id = s.employee_id) employee_name,
+				       s.payee_category,
+				       (  select code_value_name
+				    from sys_code_values_vl b, sys_codes a
+				   where b.code_id = a.code_id
+				     and a.code = 'PAYMENT_OBJECT'
+				     and code_value=s.payee_category) payee_category_name,
+				       s.payee_id,
+				       decode (s.PAYEE_CATEGORY,'EMPLOYEE' ,
+				       (select employee_code||'-'|| name from  exp_employees ee where ee.employee_id=s.payee_id),
+				       'CUSTOMER',
+				       (select vc.CUSTOMER_CODE||'-'||vc.DESCRIPTION from ord_system_customers_vl vc where vc.CUSTOMER_ID=s.payee_id ),
+				       ( select vv.VENDER_CODE||'-'||vv.DESCRIPTION from pur_system_venders_vl vv where vv.VENDER_ID=s.payee_id ))  payee_name,
+				       s.currency_code,
+				       s.exchange_rate_type,
+				       s.exchange_rate_quotation,
+				       (select sum(t.report_amount)
+				          from exp_report_lines t
+				         where t.exp_report_header_id = s.exp_report_header_id) QUARTER_NUM,
+				       (select sum(t.report_functional_amount)
+				          from exp_report_lines t
+				         where t.exp_report_header_id = s.exp_report_header_id) QUARTER_NUM_FUN,
+				       s.period_name,
+				       
+				       s.je_creation_status,
+				       s.gld_interface_flag,
+				       s.created_by,       s.last_updated_by,
+				       s.last_update_date,
+				       to_char(s.report_date, 'YYYY-MM-DD') REQUISITION_DATE,
+				       s.exp_report_type_id exp_requisition_type_id,
+				       (select erpv.DESCRIPTION
+				          from exp_expense_report_types_vl erpv
+				         where erpv.expense_report_type_id = s.exp_report_type_id) type_description,
+				       (select erpv.EXPENSE_REQUISITION_TYPE_CODE
+				          from exp_expense_req_types_vl erpv
+				         where erpv.EXPENSE_REQUISITION_TYPE_ID = s.exp_report_type_id) TYPE_CODE,
+				       s.description,
+				       s.report_status requisition_status_value,
+				       (select b.code_value_name
+				          from sys_codes_vl a, sys_code_values_vl b
+				         where a.code_id = b.code_id
+				           and a.code = 'EXP_EXPENSE_REPORT_STATUS'
+				           and b.code_value = s.report_status) REQUISITION_STATUS,
+				           s.CREATION_DATE,
+				            to_char(S.CREATION_DATE,'yyyy-mm-dd')  CREATION_DATE1,
+				               (SELECT NVL(SUM(W.CSH_WRITE_OFF_AMOUNT), 0)
+												  FROM CSH_WRITE_OFF W
+												 WHERE W.DOCUMENT_SOURCE = 'EXPENSE_REPORT'
+												   AND W.DOCUMENT_HEADER_ID =
+													   s.EXP_REPORT_HEADER_ID
+												   ) PAYED_AMOUNT,
+												   (  
+				  select sum(erps.due_amount) from exp_report_pmt_schedules  erps 
+				  where erps.exp_report_header_id=s.exp_report_header_id)-(SELECT NVL(SUM(W.CSH_WRITE_OFF_AMOUNT), 0)
+												  FROM CSH_WRITE_OFF W
+												 WHERE W.DOCUMENT_SOURCE = 'EXPENSE_REPORT'
+												   AND W.DOCUMENT_HEADER_ID =
+													   s.EXP_REPORT_HEADER_ID
+												   )  UNPAYMENT_AMOUNT
+				  from exp_report_headers s
+				  ORDER BY exp_report_header_id desc)
+						#WHERE_CLAUSE# 
+		]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="head_id" dataType="java.lang.Long" queryExpression=" exists ( select 1 from exp_requisition_release  err where err.document_type=&apos;EXP_REPORT&apos; and  err.exp_requisition_header_id=${@head_id} and  err.document_id=exp_report_header_id ) "/>
+    </bm:query-fields>
+</bm:model>

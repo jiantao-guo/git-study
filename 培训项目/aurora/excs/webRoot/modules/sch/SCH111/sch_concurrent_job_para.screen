@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <p:switch test="/parameter/@maintain_type">
+            <p:case value="CREATE">
+                <a:model-query fetchAll="true" model="sch.SCH111.sch_job_para_default" rootPath="job_para_list"/>
+                <a:model-query fetchAll="true" model="sch.SCH111.sch_task_display_para_count" rootPath="para_count_record"/>
+            </p:case>
+            <p:case value="*">
+                <a:model-query fetchAll="true" model="sch.SCH111.sch_job_para" rootPath="job_para_list"/>
+                <a:model-query fetchAll="true" model="sch.SCH111.sch_job_display_para_count" rootPath="para_count_record"/>
+            </p:case>
+        </p:switch>
+        <p:loop nullable="true" source="/model/job_para_list">
+            <p:switch test="@edit_type">
+                <p:case value="LOV">
+                    <p:switch test="@lov_has_default_value">
+                        <p:case value="Y">
+                            <p:set field="/model/temp/record/@lov_sql" value="${@lov_sql}"/>
+                            <p:set field="/model/temp/record/@default_value" value="${@default_value_format}"/>
+                            <a:model-query defaultWhereClause="t1.code_value = ${/model/temp/record/@default_value}" model="sch.SCH111.sch_task_parameter_default_value" rootPath="default_para_value_record"/>
+                        </p:case>
+                    </p:switch>
+                </p:case>
+            </p:switch>
+        </p:loop>
+        <p:echo/>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+        	function mask_jobPara()
+        	{
+        	    Aurora.Masker.mask($('sch_concurrent_job_para').wrap, '正在提交..');
+        	}
+        	
+        	function unmask_jobPara()
+        	{
+        	    Aurora.Masker.unmask($('sch_concurrent_job_para').wrap);
+        	}
+        	
+            function winClose_jobPara() {
+                $('sch_concurrent_job_para').close();
+            }
+
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="taskParaTmpDs">
+                <a:datas dataSource="/model/job_para_list"/>
+            </a:dataSet>
+            <a:dataSet id="taskParaDs" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="dynamic_ds_fields"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <script><![CDATA[
+        	function field_display_handle(record,name,display_type)
+        	{
+        	    var field = record.getField(name);
+        	    
+        	    if(display_type=='REQUIRED')
+        	    {
+        	        field.setRequired(true);
+        	    }
+        	    else if(display_type=='READONLY')
+        	    {
+        	        field.setReadOnly(true);
+        	    }
+        	}
+        	
+    		(function ()
+    		{
+    		    var tmpDs = $('taskParaTmpDs');
+    		    var tmpRecords = tmpDs.getAll();
+    		    
+    		    var paraRecord = $('taskParaDs').getAt(0); 
+    		    
+    		    for (var i=0,j=tmpRecords.length;i<j;i++)
+    		    {
+    		        var tmpRecord = tmpRecords[i];
+    		        var name = tmpRecord.get('parameter_name');
+    		        var parameter_type = tmpRecord.get('parameter_type');
+    		        var edit_type = tmpRecord.get('edit_type');
+    		        
+    		        if('${/parameter/@maintain_type}'=='READONLY')
+    		        {
+    		            var display_type = 'READONLY';
+    		        }
+    		        else
+    		        {
+    		            var display_type = tmpRecord.get('display_type');
+    		        }
+    		        
+    		        
+    		        
+    		        if(parameter_type=='DATE')
+    		        {
+    		            var allow_edit_type = {
+			            	'DATEPICKER':1,
+			            	'TEXTFIELD':1,
+			            	'LOV':1
+			            };
+			            
+    		            if(!Ext.isEmpty(allow_edit_type[edit_type]))
+    		            {
+    		                paraRecord.set(name,$A.parseDate(paraRecord.get(name)));
+    		            }
+    		            else
+    		            {
+    		                paraRecord.set(name,'');
+    		            }
+    		        }
+    		        else if(parameter_type=='NUMBER')
+    		        {
+    		            var allow_edit_type={
+    		            	'NUMBERFIELD_INTEGER':1,
+			            	'NUMBERFIELD_DECIMAL':1,
+			            	'NUMBERFIELD_MONEY':1,
+			            	'TEXTFIELD':1,
+			            	'LOV':1
+    		            };
+    		            if(!Ext.isEmpty(allow_edit_type[edit_type]))
+    		            {
+    		                var value = paraRecord.get(name);
+    		                if(isNaN(Number(value)))
+    		                {
+    		                    paraRecord.set(name,'');
+    		                }
+    		            }
+    		            else
+    		            {
+    		                paraRecord.set(name,'');
+    		            }
+    		        }
+    		        
+    		        if(tmpRecord.get('edit_type')=='LOV')
+    		        {
+    		            paraRecord.getField(name+'_desc').setLovPara('lov_sql',tmpRecord.get('lov_sql'));
+    		            
+    		            field_display_handle(paraRecord,name+'_desc',display_type);
+    		        }
+    		        else
+    		        {
+    		            field_display_handle(paraRecord,name,display_type);
+    		        }
+    		    } 
+    		})();
+    	]]></script>
+        <a:screenBody>
+            <a:form column="2" labelWidth="100" title=" " width="520">
+                <a:placeHolder id="dynamic_form_no_editor"/>
+                <a:placeHolder id="dynamic_form_editors"/>
+            </a:form>
+        </a:screenBody>
+    </a:view>
+    <a:view-config>
+        <c:create-config targetId="dynamic_form_no_editor">
+            <p:switch test="/model/para_count_record/record/@para_count">
+                <p:case value="0">
+                    <c:process-config>
+                        <div style="margin-left:250px;"><![CDATA[无参数]]></div>
+                    </c:process-config>
+                </p:case>
+            </p:switch>
+        </c:create-config>
+        <c:create-config targetId="dynamic_ds_fields">
+            <p:loop source="/model/job_para_list">
+                <p:switch test="@edit_type">
+                    <p:case value="LOV">
+                        <c:process-config>
+                            <a:field name="${@parameter_name}" defaultValue="${model/default_para_value_record/record/@code_value}"/>
+                            <a:field name="${@parameter_name}_desc" defaultValue="${model/default_para_value_record/record/@code_value_name}" lovGridHeight="300" lovHeight="450" lovService="sch.SCH111.sch_task_parameter_value_lov" lovWidth="550" prompt="${@description}" title="${@description}">
+                                <a:mapping>
+                                    <a:map from="code_value_name" to="${@parameter_name}_desc"/>
+                                    <a:map from="code_value" to="${@parameter_name}"/>
+                                </a:mapping>
+                            </a:field>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="TEXTFIELD">
+                        <c:process-config>
+                            <a:field name="${@parameter_name}" defaultValue="${@parameter_value}" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="NUMBERFIELD_INTEGER">
+                        <c:process-config>
+                            <a:field name="${@parameter_name}" defaultValue="${@parameter_value}" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="NUMBERFIELD_DECIMAL">
+                        <c:process-config>
+                            <a:field name="${@parameter_name}" defaultValue="${@parameter_value}" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="NUMBERFIELD_MONEY">
+                        <c:process-config>
+                            <a:field name="${@parameter_name}" defaultValue="${@parameter_value}" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="CHECKBOX">
+                        <c:process-config>
+                            <a:field name="${@parameter_name}" checkedValue="Y" defaultValue="${@parameter_value}" prompt="${@description}" uncheckedValue="N"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="DATEPICKER">
+                        <c:process-config>
+                            <a:field name="${@parameter_name}" datatype="date" defaultValue="${@parameter_value}" prompt="${@description}"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dynamic_form_editors">
+            <p:loop source="/model/job_para_list">
+                <p:switch test="@display_flag">
+                    <p:case value="Y">
+                        <p:switch test="@edit_type">
+                            <p:case value="LOV">
+                                <c:process-config>
+                                    <a:lov name="${@parameter_name}_desc" bindTarget="taskParaDs" prompt="${@description}"/>
+                                </c:process-config>
+                            </p:case>
+                            <p:case value="TEXTFIELD">
+                                <c:process-config>
+                                    <a:textField name="${@parameter_name}" bindTarget="taskParaDs" prompt="${@description}"/>
+                                </c:process-config>
+                            </p:case>
+                            <p:case value="NUMBERFIELD_INTEGER">
+                                <c:process-config>
+                                    <a:numberField name="${@parameter_name}" allowDecimals="false" bindTarget="taskParaDs" prompt="${@description}"/>
+                                </c:process-config>
+                            </p:case>
+                            <p:case value="NUMBERFIELD_DECIMAL">
+                                <c:process-config>
+                                    <a:numberField name="${@parameter_name}" allowDecimals="true" bindTarget="taskParaDs" decimalPrecision="-1" prompt="${@description}"/>
+                                </c:process-config>
+                            </p:case>
+                            <p:case value="NUMBERFIELD_MONEY">
+                                <c:process-config>
+                                    <a:numberField name="${@parameter_name}" allowDecimals="true" allowFormat="true" bindTarget="taskParaDs" decimalPrecision="2" prompt="${@description}"/>
+                                </c:process-config>
+                            </p:case>
+                            <p:case value="CHECKBOX">
+                                <c:process-config>
+                                    <a:checkBox name="${@parameter_name}" bindTarget="taskParaDs" prompt="${@description}"/>
+                                </c:process-config>
+                            </p:case>
+                            <p:case value="DATEPICKER">
+                                <c:process-config>
+                                    <a:datePicker name="${@parameter_name}" bindTarget="taskParaDs" prompt="${@description}"/>
+                                </c:process-config>
+                            </p:case>
+                        </p:switch>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

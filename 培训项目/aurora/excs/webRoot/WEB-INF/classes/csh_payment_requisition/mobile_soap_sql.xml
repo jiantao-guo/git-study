@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mapper>
+	<query>
+
+
+
+		<!--借款单头,查询 -->
+		<select id="csh_payment_requisition_hds" page="false"><![CDATA[
+				SELECT v.requisition_number            attr_1,
+			       v.csh_type_id_display           attr_2,
+			       v.requisition_date              attr_3,
+			       v.amount                        attr_4,
+			       v.employee_id_display           attr_5,
+			       v.position_id_display           attr_6,
+			       v.payment_requisition_attach_id attr_7,
+			       v.currency_code_display         attr_8,
+			       v.payment_requisition_create_by attr_9,
+			       v.description                   attr_10
+			  FROM (SELECT (SELECT employee_code || '-' || NAME
+			                  FROM exp_employees ee
+			                 WHERE ee.employee_id = cprh.employee_id) employee_id_display,
+			               (SELECT NAME
+			                  FROM exp_employees ee
+			                 WHERE ee.employee_id =
+			                       (SELECT employee_id
+			                          FROM sys_user su
+			                         WHERE su.user_id = cprh.created_by)) payment_requisition_create_by,
+			               to_char(cprh.requisition_date, 'YYYY-MM-DD') requisition_date,
+			               gld.currency_name AS currency_code_display,
+			               cprh.requisition_number,
+			               cprh.amount,
+			               cprh.description,
+			               cprh.payment_requisition_header_id,
+			               (SELECT description
+			                  FROM exp_org_position_vl eopv
+			                 WHERE eopv.position_id = cprh.position_id) position_id_display,
+			               (SELECT (t.description || '-' || t.position_code) parent_pos_desc
+			                  FROM exp_org_position_vl t
+			                 WHERE t.enabled_flag = 'Y'
+			                   AND t.position_id = cprh.position_id
+			                   AND t.company_id = cprh.company_id) pos_desc,
+			               (SELECT (t.description || '-' || t.position_code) parent_pos_desc
+			                  FROM exp_org_position_vl t, exp_employee_assigns_v emp
+			                 WHERE t.enabled_flag = 'Y'
+			                   AND t.position_id = emp.position_id
+			                   AND t.company_id = cprh.company_id
+			                   AND emp.employee_id = cprh.employee_id
+			                   AND emp.primary_position_flag = 'Y'
+			                   AND emp.assign_enabled_flag = 'Y'
+			                   AND emp.employee_enabled_flag = 'Y') parent_pos_desc,
+			               cprh.status p_status,
+			               cprh.payment_req_type_id,
+			               (SELECT description
+			                  FROM csh_pay_req_types_vl cprt
+			                 WHERE cprt.type_id = cprh.payment_req_type_id) AS csh_type_id_display,
+			               cprh.source_type,
+			               cprh.attachment_num payment_requisition_attach_id
+			          FROM csh_payment_requisition_hds cprh, gld_currency_vl gld
+			         WHERE cprh.requisition_number =  ${@param_1}
+			         AND ( ${@param_2} is null or EXISTS
+			             (SELECT 1
+			                      FROM wfl_instance_node_recipient wi, wfl_workflow_instance wwi
+			                     WHERE wi.instance_id = wwi.instance_id
+			                       AND wwi.document_number = cprh.requisition_number
+			                       AND wi.record_id = nvl(${@param_2}, wi.record_id)
+			                       ))
+			           AND gld.currency_code(+) = cprh.currency_code) v
+
+		
+       ]]>
+		</select>
+
+
+		<!--借款行,查询 -->
+		<select id="csh_payment_requisition_ls" page="true"><![CDATA[
+				SELECT v.description attr_1,
+			       v.cls_des attr_2,
+			       v.partner_category_name attr_3,
+			       v.p_partner_name attr_4,
+			       v.amount attr_5,
+			       v.account_number_ext attr_6,
+			       v.account_name attr_7,
+			       v.payment_method_id_display attr_8,
+			       v.plan_repayment_date attr_9,
+			       v.repay_desc attr_10,
+			       (SELECT cch.contract_number
+			          FROM con_contract_headers cch
+			         WHERE cch.contract_header_id = v.contract_header_id) attr_11 ,
+			       (SELECT conl.payment_schedule_line_number
+			          FROM con_payment_schedules conl
+			         WHERE conl.payment_schedule_line_id = v.contract_l_id) attr_12
+			  FROM (SELECT cprl.payment_requisition_header_id,
+			               cprl.payment_requisition_line_id,
+			               (SELECT e.description
+			                  FROM csh_payment_methods_vl e
+			                 WHERE e.payment_method_id = cprl.payment_method) payment_method_id_display,
+			               cprl.amount,
+			               cprl.description,
+			               cprl.account_number,
+			               decode(cprl.partner_category,
+			                      'EMPLOYEE',
+			                      decode(cprl.account_number,
+			                             NULL,
+			                             NULL,
+			                             '*******' || substr(cprl.account_number, -4, 4)),
+			                      cprl.account_number) account_number_ext,
+			               cprl.account_name,
+			               (SELECT cdf.document_id
+			                  FROM con_document_flows cdf
+			                 WHERE cdf.document_type = 'CON_CONTRACT'
+			                   AND cdf.source_document_type =
+			                       'CSH_PAYMENT_REQUISITION_LNS'
+			                   AND cdf.source_document_id =
+			                       cprl.payment_requisition_header_id
+			                   AND cdf.source_document_line_id =
+			                       cprl.payment_requisition_line_id) contract_header_id,
+			               (SELECT cdf.document_line_id
+			                  FROM con_document_flows cdf
+			                 WHERE cdf.document_type = 'CON_CONTRACT'
+			                   AND cdf.source_document_type =
+			                       'CSH_PAYMENT_REQUISITION_LNS'
+			                   AND cdf.source_document_id =
+			                       cprl.payment_requisition_header_id
+			                   AND cdf.source_document_line_id =
+			                       cprl.payment_requisition_line_id) contract_l_id,
+			               (SELECT NAME
+			                  FROM (SELECT cev.employee_id id,
+			                               cev.company_id,
+			                               cev.name || '-' || cev.employee_code NAME,
+			                               cev.employee_code,
+			                               'EMPLOYEE' partner_category
+			                          FROM exp_company_employees_v cev
+			                         WHERE cev.employee_enabled_flag = 'Y'
+			                        UNION
+			                        SELECT svv.vender_id,
+			                               cv.company_id,
+			                               svv.description || '-' || svv.vender_code,
+			                               svv.vender_code,
+			                               'VENDER' partner_category
+			                          FROM pur_company_venders   cv,
+			                               pur_system_venders_vl svv
+			                         WHERE cv.vender_id = svv.vender_id
+			                           AND cv.enabled_flag = 'Y'
+			                        UNION
+			                        SELECT cv.customer_id,
+			                               cc.company_id,
+			                               cv.description || '-' || cv.customer_code,
+			                               cv.customer_code,
+			                               'CUSTOMER' partner_category
+			                          FROM ord_company_customers   cc,
+			                               ord_system_customers_vl cv
+			                         WHERE cc.customer_id = cv.customer_id
+			                           AND cc.enabled_flag = 'Y') cat
+			                 WHERE partner_category = cprl.partner_category
+			                   AND id = cprl.partner_id
+			                   AND cprl.company_id = company_id) p_partner_name,
+			               (SELECT v.code_value_name
+			                  FROM sys_codes s, sys_code_values_vl v
+			                 WHERE s.code = 'PAYMENT_OBJECT'
+			                   AND s.code_id = v.code_id
+			                   AND v.code_value = cprl.partner_category) AS partner_category_name,
+			               (SELECT a.description
+			                  FROM csh_transaction_classes_vl a
+			                 WHERE a.csh_transaction_type_code = 'PREPAYMENT'
+			                   AND a.enabled_flag = 'Y'
+			                   AND a.csh_transaction_class_code =
+			                       cprl.csh_transaction_class_code) cls_des,
+			               decode(cprl.repay_code,
+			                      'Y',
+			                      '收据已上缴',
+			                      'N',
+			                      '收据未上缴',
+			                      NULL) repay_desc,
+			               (SELECT sc.code_value_name
+			                  FROM sys_codes s, sys_code_values_vl sc
+			                 WHERE s.code_id = sc.code_id
+			                   AND sc.code_value = cprl.repay_status
+			                   AND s.code = 'RECEIPT_STATUS') repay_status_desc,
+			               to_char(cprl.plan_repayment_date, 'yyyy-mm-dd') plan_repayment_date
+			          FROM csh_payment_requisition_lns cprl,csh_payment_requisition_hds h
+			          WHERE cprl.payment_requisition_header_id = h.payment_requisition_header_id
+			          and h.requisition_number = ${@param_1}
+			          AND ( ${@param_2} is null or EXISTS
+			             (SELECT 1
+			                      FROM wfl_instance_node_recipient wi, wfl_workflow_instance wwi
+			                     WHERE wi.instance_id = wwi.instance_id
+			                       AND wwi.document_number = h.requisition_number
+			                       AND wi.record_id = nvl(${@param_2}, wi.record_id)
+			                       ))
+			          ) v
+			 ORDER BY payment_requisition_line_id
+				 
+       ]]>
+		</select>
+
+
+			<!--EKP 文档标题 -->
+	<select id="ekp_title" page="true"><![CDATA[
+		SELECT t1.csh_oasign_text attr_1
+		  FROM CSH_REQ_OASIGN t1, csh_payment_requisition_hds h
+		 WHERE t1.PAYMENT_REQUISITION_HEADER_ID = h.PAYMENT_REQUISITION_HEADER_ID
+   		 AND h.requisition_number = ${@param_1}
+	       ]]>
+	</select>
+		
+		
+	</query>
+</mapper>

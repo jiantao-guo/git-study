@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <s:server-script><![CDATA[
+            var fileType = $ctx.parameter.file_type;
+            if (fileType == 'WORD' || fileType == 'EXCEL' || fileType == 'PPT' || fileType == 'PDF') {
+                var fileMap = $bm('ptl.ptl_file_doc_query').queryAsMap();
+                var fileArr = fileMap.getChildren();
+            
+                if (fileArr.length != 0) {
+                    $ctx.parameter.file_exists_flag = 'Y';
+                } else {
+                    $ctx.parameter.file_exists_flag = 'N';
+                }
+            } else if (fileType == 'IMAGE' || fileType == 'OTHER' ) {
+                $ctx.parameter.file_exists_flag = 'N';
+            }
+        ]]></s:server-script>
+        <p:switch test="/parameter/@file_exists_flag">
+            <p:case value="N">
+                <p:switch test="/parameter/@file_type">
+                    <p:case value="WORD">
+                        <a:atm-manager actionType="upload" savePath="/u01/app/hec3dev/ptl_doc/word" saveType="file"/>
+                    </p:case>
+                    <p:case value="EXCEL">
+                        <a:atm-manager actionType="upload" savePath="/u01/app/hec3dev/ptl_doc/excel" saveType="file"/>
+                    </p:case>
+                    <p:case value="PPT">
+                        <a:atm-manager actionType="upload" savePath="/u01/app/hec3dev/ptl_doc/ppt" saveType="file"/>
+                    </p:case>
+                    <p:case value="PDF">
+                        <a:atm-manager actionType="upload" savePath="/u01/app/hec3dev/ptl_doc/pdf" saveType="file"/>
+                    </p:case>
+                    <p:case value="IMAGE">
+                        <a:atm-manager actionType="upload" savePath="/u01/app/hec3dev/ptl_doc/image" saveType="file"/>
+                    </p:case>
+                    <p:case value="OTHER">
+                        <a:atm-manager actionType="upload" saveType="db"/>
+                    </p:case>
+                </p:switch>
+            </p:case>
+        </p:switch>
+        <s:server-script><![CDATA[
+            importPackage(Packages.java.net);
+            importPackage(Packages.java.io);
+            if (fileType == 'WORD' || fileType == 'EXCEL' || fileType == 'PPT' || fileType == 'PDF') {
+                if ($ctx.parameter.file_exists_flag == 'N') {
+                    (function() {
+                        var attachment_id = $ctx.parameter.attachment_id;
+            
+                        var fieldsMap = $bm('ptl.ptl_file_atm_query').queryAsMap();
+                        var fieldsArr = fieldsMap.getChildren();
+                        var attachment_path;
+                        var attachment_name;
+            
+                        attachment_path = fieldsArr[0].file_path;
+                        attachment_name = fieldsArr[0].file_name;
+            
+                        var filePath = attachment_path.replace('/u01/app/hec3dev/ptl_doc/', 'h:/nfs/');
+            
+                        var doc_name = attachment_path;
+                        var baseUrl = 'http://172.31.212.21:8080/officeConvert/';
+                        if (fileType == 'WORD') {
+                            var convertUrl = new URL(baseUrl + 'convert_word.jsp?wordAtmId=' + attachment_id + '&wordFilePath=' + filePath);
+                        } else if (fileType == 'EXCEL') {
+                            var convertUrl = new URL(baseUrl + 'convert_excel.jsp?excelAtmId=' + attachment_id + '&excelFilePath=' + filePath);
+                        } else if (fileType == 'PPT') {
+                            var convertUrl = new URL(baseUrl + 'convert_ppt.jsp?pptAtmId=' + attachment_id + '&pptFilePath=' + filePath);
+                        } else if (fileType == 'PDF') {
+                            var convertUrl = new URL(baseUrl + 'convert_pdf.jsp?pdfAtmId=' + attachment_id + '&pdfFilePath=' + filePath);
+                        }
+                        var conn = convertUrl.openConnection();
+                        conn.connect();
+                        var br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                        var resultStr = '';
+                        while (true) {
+                            var str = br.readLine();
+                            if (str) {
+                                println('Result:' + str);
+                                resultStr += str;
+                            } else {
+                                break;
+                            }
+                        }
+            
+                        if (resultStr && resultStr != "") {
+                            resultObj = JSON.parse(resultStr);
+                            if (resultObj) {
+                                if (fileType == 'PPT' || fileType == 'PDF' || fileType == 'EXCEL'|| fileType == 'WORD') {
+                                    $ctx.parameter.content_length = resultObj.length;
+                                }
+                            }
+                        }
+            
+                        $bm('ptl.ptl_file_doc_upload').insert();
+                    })();
+                } else {
+                    var resp = $ctx.getData().get('_instance.javax.servlet.http.HttpServletResponse');
+                    resp.setCharacterEncoding("utf-8");
+                    resp.getWriter().println('{error:{message:"清先删除当前已经存在的文件，再进行上传操作！"}}');
+                    resp.getWriter().close();
+                }
+            } else if (fileType == 'IMAGE' || fileType == 'OTHER' ) {
+                $bm('ptl.ptl_file_doc_upload').insert();
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output/>
+</a:service>

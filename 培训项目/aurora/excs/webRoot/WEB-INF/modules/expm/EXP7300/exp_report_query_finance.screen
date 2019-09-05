@@ -1,0 +1,558 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zhulizhong $
+    $Date: 2011/08/02 16:05:39 $
+    $Revision: 1.1 $
+    $Purpose:报销单财务查询
+   
+
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" defaultWhereClause=" enabled_flag = &apos;Y&apos; " fetchAll="true" model="gld.gld_currency_vl" rootPath="currency_list"/>
+        <a:model-query autoCount="false" defaultWhereClause=" eertvl.company_id = ${/session/@company_id} and exists (select *  from exp_report_ref_user_groups egs where egs.expense_report_type_id = eertvl.expense_report_type_id and exists (select 1 from exp_user_group_lines el where el.expense_user_group_id = egs.expense_user_group_id and el.employee_id = (select employee_id from  sys_user where user_id=${/session/@user_id}))) and eertvl.ENABLED_FLAG = &apos;Y&apos;" fetchAll="true" model="exp.exp_expense_report_types_vl" rootPath="type_list"/>
+    </a:init-procedure>
+    <a:view>
+        <!-- <a:link id="exp_report_readonly_wfl_link_8" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl.screen"/> -->
+        <a:link id="exp_report_readonly_wfl_link_8" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl_finance_query_readonly.screen"/>
+        <a:link id="exp_req_query_report_link" url="${/request/@context_path}/modules/exp/exp_requisition_query_report_wfl.screen"/>
+        <a:link id="exp_rep_query_report_link_1" model="expm.exp_report_query_finance" modelaction="query"/>
+        <a:link id="exp_rep_query_report_link_2" model="expm.exp_rep_com_query_finance" modelaction="query"/>
+        <a:link id="exp_report_query_csh_payment_rep_readonly_link" url="${/request/@context_path}/modules/expm/public/exp_report_query_csh_payment_req_readonly.screen"/>
+        <a:link id="exp_report_readonly_query_oasign_link" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_query_oasign.screen"/>
+        <a:link id="cux_exp_report_paste_temp_clear_link" model="expm.exp_report_paste_temp_clear" modelaction="delete"/>
+        <a:link id="cux_exp_report_paste_temp_insert_link" model="expm.exp_report_report_temp_insert" modelaction="batch_update"/>
+        <div/>
+        <script><![CDATA[
+            function queryReportFinance() {
+                var all_company_flag=$('exp_report_query_finance_ds').getAt(0).get('all_company_flag');
+                /* if(all_company_flag=='N'){
+                	$('exp_report_query_finance_result_ds1').setQueryUrl($('exp_rep_query_report_link_1').getUrl());
+                }else{
+	                $('exp_report_query_finance_result_ds1').setQueryUrl($('exp_rep_query_report_link_2').getUrl());
+                } */
+                $('exp_report_query_finance_result_ds1').query();
+                // $('exp_report_query_finance_result_ds2').query();
+            }
+            
+            function expenseCodeEdit(record, name) {
+                if (record.isNew) {
+                    return 'common_tf';
+                }
+                return '';
+            }
+            
+            function onCompanyCommit(lov, r1, r2) {
+                var company_id = r1.get('company_id');
+                if (!company_id) {
+                	Aurora.showMessage("${l:PROMPT}", "${l:CHOOSE_COMPANY_FIRST}");
+                }
+                else {
+                    var unit = r1.getMeta().getField('unit_desc');
+                    unit.setLovPara('company_id', company_id);
+                }
+            }
+            
+            function onUnitCommit(lov, r1, r2) {
+                var unit_id = r1.get('unit_id');
+                if (!unit_id) {
+                    Aurora.showMessage("${l:PROMPT}", "${l:CHOOSE_UNIT_FIRST}");
+                }
+                /* else {
+                    var position = r1.getMeta().getField('position_desc');
+                    position.setLovPara('unit_id', unit_id);
+                } */
+            }
+            
+            function indexChangeFunction(ds, record) {
+                //取消所有选择
+                ds.unSelectAll();
+                //选择当前record
+                ds.select(record);
+                var exp_report_header_id = record.get('exp_report_header_id');
+                
+                var toRecord = $('exp_report_query_finance_result_ds2').getCurrentRecord();
+                if (toRecord) {
+                    toRecord.set('exp_report_header_id', exp_report_header_id);
+                }
+                return;
+            }
+            
+            function reset() {
+                $('exp_report_query_finance_ds').reset();
+                $('exp_report_query_finance_ds').getCurrentRecord().getField('payee_code').setReadOnly(true);
+            }
+            
+            function updateFunction(dataSet, record, name, value) {
+                if (name == 'payee_category') {
+                    var title = '';
+                    record.set('payee_code', '');
+                    record.getMeta().getField('payee_code').setReadOnly(false);
+                    if (value == 'EMPLOYEE') {
+                        title = '${l:EXP_EMPLOYEES.QUERY}';
+                        record.getMeta().getField('payee_code').setLovService('expm.exp_employee_req_lov');
+                    } else if (value == 'CUSTOMER') {
+                        title = '${l:CUSTOMER_QUERY}';
+                        record.getMeta().getField('payee_code').setLovService('expm.exp_customer_req_lov');
+                    } else if (value == 'VENDER') {
+                        title = '${l:VENDER_SEARCH}';
+                        record.getMeta().getField('payee_code').setLovService('expm.exp_vender_req_lov');
+                    } else {
+                        record.getMeta().getField('payee_code').setReadOnly(true);
+                        record.getMeta().getField('payee_code').setLovService('');
+                    }
+                    record.getMeta().getField('payee_code').setTitle(title);
+                } else if (name == 'payee_code') {
+                    if (value == '') {
+                        record.set('payee_id', '');
+                    }
+                } else if(name=='all_company_flag'){
+                    /* if(value == 'N'){
+                        $('exp_report_query_finance_result_ds1').setQueryUrl($('exp_rep_query_report_link_1').getUrl());
+                    } else {
+                        $('exp_report_query_finance_result_ds1').setQueryUrl($('exp_rep_query_report_link_2').getUrl());
+                    } */
+                }else if (name == 'company_desc') {
+                    if (value == '') {
+                        record.set('unit_desc', '');
+                        record.set('unit_id', '');
+                        record.set('unit_code', '');
+                        record.getMeta().getField('unit_desc').setReadOnly(true);
+                    } else {
+                        record.getMeta().getField('unit_desc').setReadOnly(false);
+                    }
+                }
+            }
+            
+            function payeeCodeCommitFuncton(lov, r1, r2) {
+                var value = $('exp_report_query_finance_ds').getAt(0).get('payee_category');
+                if (value == 'EMPLOYEE') {
+                    r1.set('payee_id', r2.get('employee_id'));
+                } else if (value == 'CUSTOMER') {
+                    r1.set('payee_id', r2.get('customer_id'));
+                } else {
+                    r1.set('payee_id', r2.get('vender_id'));
+                }
+            }
+            
+            function viewFunction() {
+                var records = $('exp_report_query_finance_result_ds1').getSelected();
+                if (records.length != 1) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT_ONE}', null, 250, 100);
+                    return;
+                }
+                new Aurora.Window({
+                    url: $('exp_req_query_report_link').getUrl() + '?exp_report_header_id=' + records[0].get('exp_report_header_id'),
+                    title: '',
+                    id: 'exp_req_query_report_screen',
+                    fullScreen:true,
+                    width: 950,
+                    height: 600
+                });
+            }
+            
+            function reportFunction() {
+                var records = $('exp_report_query_finance_result_ds1').getSelected();
+                if (records.length != 1) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT_ONE}', null, 250, 100);
+                    return;
+                }
+                new Aurora.Window({
+                    url: $('exp_report_query_csh_payment_rep_readonly_link').getUrl() + '?head_id=' + records[0].get('exp_report_header_id'),
+                    title: '',
+                    id: 'exp_report_query_csh_payment_rep_readonly_screen',
+                    width: 950,
+                    height: 600
+                });
+            }
+            
+            function expRepNumRenderer(value, record, name) {
+                var header_id = record.get('exp_report_header_id');
+                return '<a href="javascript:detailNewWindow(' + header_id + ');">' + value + '</a>';
+            }
+            
+            function detailNewWindow(header_id) {
+                new Aurora.Window({
+                    title: '',
+                    id: 'exp_report_maintain_screen',
+                    fullScreen:true,
+                    url: /*${/request/@context_path}/modules/expm/exp_report_readonly_wfl.screen*/
+                    $('exp_report_readonly_wfl_link_8').getUrl() + '?exp_report_header_id=' + header_id,
+                    width: 950,
+                    height: 600
+                });
+            }
+            //批量打印
+            /* function batchPrintFunction() {
+                var ids = '';
+                var records = $('exp_report_query_finance_result_ds1').getSelected();
+                if (records.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:BGT_PERIOD.PLEASE_CHOOSE_LINE}', null, 250, 100);
+                    return;
+                }
+                var reportName = records[0].get('report_name');
+                var reportParamName = records[0].get('report_param_name');
+            
+                for (var i = 0;i < records.length;i++) {
+                    if (reportName != records[i].get('report_name')) {
+                        Aurora.showInfoMessage('${l:PROMPT}', '${l:CAN_NOT_PRINT_AT_THE_SAME_TIME}');
+                        return;
+                    }
+                    ids += records[i].get('exp_report_header_id');
+                    if (i != records.length - 1) {
+                        ids += ',';
+                    }
+                    if ( records[i].get('requisition_status_value')!='COMPLETELY_APPROVED') {
+                        Aurora.showInfoMessage('${l:PROMPT}', '请打印审批通过的单据!');
+                        return;
+                    }
+                }
+            
+                if (!reportName) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:SYS_REPORT_NOT_ASSIGN}');
+                    return;
+                }
+            
+                if (!reportParamName) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:SYS_REPORT_PARAM_NOT_DEFINED}');
+                    return;
+                }
+           
+                window.open('${/request/@context_path}/reports?__report=' + reportName + '&' + reportParamName + '=' + ids + '&__format=pdf');
+            } */
+            
+            
+            function batchPrintFunction() {
+                var records = $('exp_report_query_finance_result_ds1').getJsonData(true);
+                var record = $('exp_report_query_finance_result_ds1').getSelected();
+                var href = window.location.href;
+                href = href.substring(0, href.indexOf("/modules"));
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}');
+                    return false;
+                }
+                for (var i = 0;i < records.length;i++) {
+                    records[i]["web_url"]=href;
+                    if (record[i].get('requisition_status_value')!='COMPLETELY_APPROVED') {
+                        Aurora.showInfoMessage('${l:PROMPT}', '请打印审批通过的单据!');
+                        return;
+                    }
+                    if (record[i].get('audit_flag')!='Y') {
+                        Aurora.showInfoMessage('${l:PROMPT}', '请打印已审核的单据!');
+                        return;
+                    }
+                }
+            new Aurora.request({
+                    url: $('cux_exp_report_paste_temp_clear_link').getUrl(),
+                    success: function(res) {
+                        new Aurora.request({
+                            url: $('cux_exp_report_paste_temp_insert_link').getUrl(),
+                            para: records,
+                            success: function(res) {
+                            window.open('${/request/@context_path}/reports?__report=reports/exp_report.rptdesign&session_id=' + '${/session/@session_id}' + '&__format=pdf');
+                            }
+                        });
+                    }
+                });
+            }
+            
+            function oasignFunction() {
+                var records = $('exp_report_query_finance_result_ds1').getSelected();
+                if (records.length != 1) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT_ONE}', null, 250, 100);
+                    return;
+                }
+                new Aurora.Window({
+                    url: $('exp_report_readonly_query_oasign_link').getUrl() + '?exp_report_header_id=' + records[0].get('exp_report_header_id') + '&exp_requisition_number=' + records[0].get('exp_requisition_number'),
+                    title: '${l:关联OA审批}',
+                    id: 'exp_report_readonly_query_oasign_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="status_list_ds" lookupCode="EXP_EXPENSE_REPORT_STATUS"/>
+            <a:dataSet id="reversed_flag_list_ds" lookupCode="CSH_REVERSE_SELECT"/>
+            <a:dataSet id="payment_object_ds" lookupCode="PAYMENT_OBJECT"/>
+            <a:dataSet id="approval_status_ds" lookupCode="APPROVAL_STATUS"/>
+            <a:dataSet id="type_list_ds">
+                <a:datas dataSource="/model/type_list"/>
+            </a:dataSet>
+            <a:dataSet id="currency_list_ds">
+                <a:datas dataSource="/model/currency_list"/>
+            </a:dataSet>
+            <a:dataSet id="audit_flag_ds">
+                <a:datas>
+                    <a:record code_value="Y" code_value_name="复核通过"/>
+                    <a:record code_value="N" code_value_name="未审核"/>
+                    <a:record code_value="R" code_value_name="初审通过"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="exp_report_query_finance_ds">
+                <a:fields>
+                    <a:field name="default" defaultValue="1"/>
+                    <!--<a:field name="type_item_display" displayField="description" options="type_list_ds" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID" returnField="type_item" valueField="expense_report_type_id"/>-->
+                    <!-- <a:field name="type_item_display" autoComplete="true" autoCompleteField="description" lovHeight="500" lovService="expm.exp_expense_report_types_vl_for_lov" lovWidth="530" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID" title="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID">
+                        <a:mapping>
+                            <a:map from="expense_report_type_id" to="type_item"/>
+                            <a:map from="description" to="type_item_display"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="type_item_display" autoComplete="true" autoCompleteField="description" lovHeight="500" lovService="expm.EXP2160.exp_report_types_query" lovWidth="530" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID" title="EXP_REPORT_HEADERS.EXP_REPORT_TYPE_ID">
+                        <a:mapping>
+                            <a:map from="description" to="type_item_display"/>
+                            <a:map from="expense_report_type_code" to="exp_report_type"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="type_item"/>
+                    <a:field name="employee_id_display" autoComplete="true" autoCompleteField="name" lovGridHeight="350" lovHeight="500" lovService="exp.exp_company_employees_v_for_finance" lovWidth="500" prompt="EXP_REQUISITION_LINES.EMPLOYEE_ID" title="EXP_REPORT_HEADERS.EMPLOYEE_NAME">
+                        <a:mapping>
+                            <a:map from="name_code" to="employee_id_display"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="the_audit_flag" displayField="code_value_name" options="approval_status_ds" prompt="CSH_PAYMENT_REQUISITION_HDS.AUDIT_FLAG" returnField="p_audit_flag" valueField="code_value"/>
+                    <a:field name="p_audit_flag"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="requesition_date_from" prompt="EXP_EXPENSE_REPORT_AUDIT.REPORT_DATE_F"/>
+                    <a:field name="requesition_date_to" prompt="EXP_EXPENSE_REPORT_AUDIT.REPORT_DATE_T"/>
+                    <a:field name="requisition_amount_from" prompt="EXP_REPORT_HEADERS.REQUISITION_AMOUNT_FROM"/>
+                    <a:field name="requisition_amount_to" prompt="EXP_REPORT_HEADERS.REQUISITION_AMOUNT_TO"/>
+                    <a:field name="currency_name" displayField="currency_name" options="currency_list_ds" prompt="EXP_EXPENSE_ITEMS.CURRENCY_CODE" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="payee_category_display" displayField="code_value_name" options="payment_object_ds" prompt="EXP_REQUISITION_DISTS.PAYEE_CATEGORY" returnField="payee_category" valueField="code_value"/>
+                    <a:field name="payee_category"/>
+                    <a:field name="payee_code" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="440" lovWidth="720" prompt="EXP_REQUISITION_HEADERS.PAYEE_ID" readOnly="true">
+                        <a:mapping>
+                            <a:map from="code_name" to="payee_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="payee_id"/>
+                    <a:field name="requisition_status_display" displayField="code_value_name" options="status_list_ds" prompt="EXP_REPORT_LINES.REPORT_STATUS" returnField="requisition_status" valueField="code_value"/>
+                    <a:field name="requisition_status"/>
+                    <a:field name="report_number" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER"/>
+                    <a:field name="reversed_flag_display" displayField="code_value_name" options="reversed_flag_list_ds" prompt="EXP_REQUISITION_HEADERS.REVERSED_FLAG" returnField="reversed_flag" valueField="code_value"/>
+                    <a:field name="reversed_flag"/>
+                    <a:field name="all_company_flag" checkedValue="Y" defaultValue="Y" prompt="CONTAIN_SUB_COMPANY" uncheckedValue="N"/>
+                    <a:field name="description" prompt="EXP_REPORT_HEADERS.DESCRIPTION"/>
+                    <a:field name="company_desc" autoComplete="true" autoCompleteField="company_short_name" lovGridHeight="340" lovHeight="460" lovService="fnd.fnd_companies" lovWidth="540" title="FND_COMPANIES.QUERY">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_short_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_desc" autoComplete="true" autoCompleteField="unit_desc" lovGridHeight="340" lovHeight="460" lovService="expm.EXP1220.exp_org_unit_exp_lov" lovWidth="540" readOnly="true" title="BGT_BUDGET_ITEM_MAPPING.ORG_UNIT_CODE_SEARCH">
+                        <a:mapping>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="unit_code" to="unit_code"/>
+                            <a:map from="description" to="unit_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="gl_period_name" lovGridHeight="300" lovHeight="500" lovService="vat.VAT6110.vat_period_lov" lovWidth="400" title="PROMPT.PERIOD_NAME_FROM">
+                        <a:mapping>
+                            <a:map from="period_name" to="gl_period_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="audit_flag_desc" displayField="code_value_name" options="audit_flag_ds" prompt="审核标志" returnField="audit_flag" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_report_query_finance_result_ds1" autoQuery="false" fetchAll="false" model="expm.exp_req_com_query_report_for_audit" queryDataSet="exp_report_query_finance_ds" selectable="true">
+                <a:fields>
+                    <a:field name="exp_report_header_id" prompt="EXP_REPORT_HEADERS.REPORT_NUMBER"/>
+                    <a:field name="exp_requisition_number" prompt="EXP_REPORT_HEADERS.REPORT_NUMBER"/>
+                    <a:field name="type_description" prompt="EXP_REPORT_HEADERS.EXP_REPORT_TYPE"/>
+                    <a:field name="requesition_date" prompt="EXP_REPORT_HEADERS.REPORT_DATE"/>
+                    <a:field name="currency_name" prompt="EXP_REPORT_HEADERS.CURRENCY_CODE"/>
+                    <a:field name="quarter_num" prompt="EXP_REPORT_LINES.REPORT_AMOUNT"/>
+                    <a:field name="quarter_num_fun" prompt="EXP_REPORT_LINES.REPORT_FUNCTIONAL_AMOUNT"/>
+                    <a:field name="employee_name" prompt="EXP_REQUISITION_HEADERS.EMPLOYEE_ID"/>
+                    <a:field name="payee_category_name" prompt="EXP_REQUISITION_HEADERS.PAYEE_CATEGORY"/>
+                    <a:field name="payee_name" prompt="EXP_REQUISITION_HEADERS.PAYEE_ID"/>
+                    <a:field name="requisition_status" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUS"/>
+                    <a:field name="audit_date" prompt="EXP_REPORT_HEADERS.AUDIT_DATE"/>
+                    <a:field name="reversed_flag_name" prompt="EXP_REPORT_HEADERS.REVERSED_FLAG"/>
+                    <a:field name="reversed_number" prompt="EXP_REPORT.REVERSED_DOCUMENT"/>
+                    <a:field name="paymented_samount" prompt="EXP_REPORT_QUERY.PAYED_AMOUNT"/>
+                    <a:field name="description" prompt="EXP_REPORT_HEADERS.DESCRIPTION"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="indexchange" handler="indexChangeFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_report_query_finance_result_ds2" bindName="head" bindTarget="exp_report_query_finance_result_ds1" fetchAll="true" queryUrl="${/request/@context_path}/autocrud/expm.exp_report_query_finance_info/query"/>
+        </a:dataSets>
+        <!-- <a:form column="4" style="margin-top:5px;margin-left:5px;width:99%" title="EXP_REPORT_QUERY_FINANCE.QUERY">
+            <a:textField name="report_number" bindTarget="exp_report_query_finance_ds"/>
+            <a:lov name="type_item_display" bindTarget="exp_report_query_finance_ds"/>
+            <a:datePicker name="requesition_date_from" bindTarget="exp_report_query_finance_ds"/>
+            <a:datePicker name="requesition_date_to" bindTarget="exp_report_query_finance_ds"/>
+            <a:lov name="employee_id_display" bindTarget="exp_report_query_finance_ds"/>
+            <a:comboBox name="currency_name" bindTarget="exp_report_query_finance_ds"/>
+            <a:comboBox name="payee_category_display" bindTarget="exp_report_query_finance_ds"/>
+            <a:lov name="payee_code" bindTarget="exp_report_query_finance_ds">
+                <a:events>
+                    <a:event name="commit" handler="payeeCodeCommitFuncton"/>
+                </a:events>
+            </a:lov>
+            <a:numberField name="requisition_amount_from" bindTarget="exp_report_query_finance_ds"/>
+            <a:numberField name="requisition_amount_to" bindTarget="exp_report_query_finance_ds"/>
+            <a:comboBox name="requisition_status_display" bindTarget="exp_report_query_finance_ds"/>
+            <a:comboBox name="reversed_flag_display" bindTarget="exp_report_query_finance_ds"/>
+            <a:textField name="description" bindTarget="exp_report_query_finance_ds"/>
+            <a:checkBox name="all_company_flag" bindTarget="exp_report_query_finance_ds"/>
+        </a:form>
+        <a:hBox style="margin-top:5px;margin-left:5px;">
+            <a:button click="queryReportFinance" text="HAP_QUERY"/>
+            <a:button click="reset" text="HAP_RESET"/>
+        </a:hBox> 
+        <a:hBox style="margin-top:5px;margin-left:5px;">
+            <a:button click="viewFunction" text="PROMPT.THE_CONN_LIST"/>
+            <a:button click="reportFunction" text="PROMPT.PAYMENT_TRANSACTION"/>
+        </a:hBox>-->
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <!-- <a:toolbarButton click="queryReportFinance" text="HAP_QUERY" width="100"/> -->
+                <a:toolbarButton click="reset" text="HAP_RESET" width="100"/>
+                <!-- <a:toolbarButton click="viewFunction" text="PROMPT.THE_CONN_LIST" width="100"/> -->
+                <a:toolbarButton click="reportFunction" text="PROMPT.PAYMENT_TRANSACTION" width="100"/>
+                <a:gridButton bind="grid_fin" text="HAP_EXPORT" type="excel" width="80"/>
+                <a:toolbarButton click="batchPrintFunction" text="PROMPT.BATCH_PRINT" width="80"/>
+                <a:toolbarButton click="oasignFunction" text="关联OA审批" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="exp_report_query_finance_ds" resultTarget="exp_report_query_finance_result_ds1" style="width:100%;border:none">
+                <a:formToolBar labelWidth="100">
+                    <a:textField name="report_number" bindTarget="exp_report_query_finance_ds">
+                        <a:events>
+                            <a:event name="enterdown" handler="queryReportFinance"/>
+                        </a:events>
+                    </a:textField>
+                    <a:lov name="type_item_display" bindTarget="exp_report_query_finance_ds">
+                        <a:events>
+                            <a:event name="commit" handler="queryReportFinance"/>
+                        </a:events>
+                    </a:lov>
+                    <a:lov name="company_desc" bindTarget="exp_report_query_finance_ds" prompt="FND_COMPANIES.COMPANY">
+                        <a:events>
+                            <a:event name="commit" handler="onCompanyCommit"/>
+                        </a:events>
+                    </a:lov>
+                    <a:lov name="unit_desc" bindTarget="exp_report_query_finance_ds" prompt="EXP_ORG_UNIT.UNIT">
+                        <a:events>
+                            <a:event name="commit" handler="onUnitCommit"/>
+                        </a:events>
+                    </a:lov>
+                    <a:lov name="gl_period_name" bindTarget="exp_report_query_finance_ds" prompt="凭证期间">
+                        <a:events>
+                            <a:event name="commit" handler="queryReportFinance"/>
+                        </a:events>
+                    </a:lov>
+                </a:formToolBar>
+                <a:formBody labelWidth="100">
+                    <a:hBox>
+                        <a:comboBox name="audit_flag_desc" bindTarget="exp_report_query_finance_ds" width="200"/>
+                        <!--  <a:comboBox name="requisition_status_display" bindTarget="exp_report_query_finance_ds" width="200">
+                            <a:events>
+                                <a:event name="select" handler="queryReportFinance"/>
+                            </a:events>
+                        </a:comboBox> -->
+                        <a:datePicker name="requesition_date_from" bindTarget="exp_report_query_finance_ds" width="200">
+                            <a:events>
+                                <a:event name="select" handler="queryReportFinance"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="requesition_date_to" bindTarget="exp_report_query_finance_ds" width="200">
+                            <a:events>
+                                <a:event name="select" handler="queryReportFinance"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:lov name="employee_id_display" bindTarget="exp_report_query_finance_ds">
+                            <a:events>
+                                <a:event name="commit" handler="queryReportFinance"/>
+                            </a:events>
+                        </a:lov>
+                        <!-- <a:comboBox name="payee_category_display" bindTarget="exp_report_query_finance_ds" width="200"/>
+                        <a:lov name="payee_code" bindTarget="exp_report_query_finance_ds" width="200">
+                            <a:events>
+                                <a:event name="commit" handler="payeeCodeCommitFuncton"/>
+                            </a:events>
+                        </a:lov> -->
+                    </a:hBox>
+                    <a:hBox>
+                        <a:comboBox name="the_audit_flag" bindTarget="exp_report_query_finance_ds" width="200"/>
+                        <a:comboBox name="currency_name" bindTarget="exp_report_query_finance_ds" width="200">
+                            <a:events>
+                                <a:event name="select" handler="queryReportFinance"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:numberField name="requisition_amount_from" bindTarget="exp_report_query_finance_ds" width="200"/>
+                        <a:numberField name="requisition_amount_to" bindTarget="exp_report_query_finance_ds" width="200"/>
+                    </a:hBox>
+                    <a:hBox>
+                        <a:comboBox name="reversed_flag_display" bindTarget="exp_report_query_finance_ds" width="200">
+                            <a:events>
+                                <a:event name="select" handler="queryReportFinance"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:textField name="description" bindTarget="exp_report_query_finance_ds" width="200"/>
+                        <a:comboBox name="requisition_status_display" bindTarget="exp_report_query_finance_ds"/>
+                        <!-- <a:checkBox name="all_company_flag" bindTarget="exp_report_query_finance_ds" width="200"/> -->
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="grid_fin" bindTarget="exp_report_query_finance_result_ds1" marginHeight="277" marginWidth="25" navBar="true">
+                <a:columns>
+                    <a:column name="exp_requisition_number" align="center" renderer="expRepNumRenderer" sortable="true" width="150"/>
+                    <a:column name="gl_period_name" align="center" prompt="凭证期间" sortable="true"/>
+                    <a:column name="type_description" align="center" sortable="true" width="120"/>
+                    <a:column name="requesition_date" align="center" sortable="true" width="80"/>
+                    <a:column name="currency_name" align="center" sortable="true" width="60"/>
+                    <a:column name="quarter_num" align="right" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="quarter_num_fun" align="right" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="employee_name" align="center" sortable="true" width="80"/>
+                    <!-- <a:column name="payee_name" align="center" sortable="true" width="100"/> -->
+                    <!-- <a:column name="payee_category_name" align="center" sortable="true" width="80"/> -->
+                    <a:column name="requisition_status" align="center" sortable="true" width="80"/>
+                    <a:column name="audit_date" align="center" sortable="true" width="80"/>
+                    <a:column name="reversed_flag_name" align="center" sortable="true" width="80"/>
+                    <a:column name="reversed_number" align="center" sortable="true" width="80"/>
+                    <a:column name="paymented_samount" align="right" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="description" sortable="true" width="100"/>
+                    <a:column name="audit_flag_desc" prompt="审核标志"/>
+                </a:columns>
+            </a:grid>
+            <a:grid autoFocus="false" bindTarget="exp_report_query_finance_result_ds2" height="150" marginWidth="25" navBar="true">
+                <a:columns>
+                    <a:column name="description" prompt="EXP_REPORT_ACCOUNTS.DESCRIPTION" sortable="true" width="150"/>
+                    <a:column name="period_name" align="center" prompt="EXP_REPORT_ACCOUNTS.PERIOD_NAME" sortable="true" width="80"/>
+                    <a:column name="company_short_name" align="center" prompt="FND_COMPANIES.COMPANY_SHORT_NAME_ID" sortable="true" width="100"/>
+                    <a:column name="responsibility_center_name" align="center" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME_ID" sortable="true" width="100"/>
+                    <a:column name="account_code" align="center" prompt="GLD_ACCOUNTS.ACCOUNT_CODE" sortable="true" width="100"/>
+                    <a:column name="account_desc" align="center" prompt="GLD_ACCOUNTS.DESCRIPTION" sortable="true" width="100"/>
+                    <a:column name="entered_amount_dr" align="right" prompt="CSH_BANK_BALANCES.ENTERED_DATE_NET_DR" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="entered_amount_cr" align="right" prompt="CSH_BANK_BALANCES.ENTERED_DATE_NET_CR" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="functional_amount_dr" align="right" prompt="CSH_PAY_REQ.FUNCTIONAL_AMOUNT_DR" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <a:column name="functional_amount_cr" align="right" prompt="CSH_PAY_REQ.FUNCTIONAL_AMOUNT_CR" renderer="Aurora.formatMoney" sortable="true" width="100"/>
+                    <!-- <a:column name="exchange_rate_quotation" align="center" prompt="EXP_REPORT_HEADERS.EXCHANGE_RATE_QUOTATION" width="120"/> -->
+                    <!-- <a:column name="exchange_rate" align="center" prompt="CSH_BANK_TREASURER_REQ_LNS.EXCHANGE_RATE"/> -->
+                    <a:column name="account_segment1" align="center" prompt="ACCOUNT_SEGMENT1" width="80"/>
+                    <a:column name="account_segment2" align="center" prompt="ACCOUNT_SEGMENT2" width="80"/>
+                    <a:column name="account_segment3" align="center" prompt="ACCOUNT_SEGMENT3" width="80"/>
+                    <a:column name="account_segment4" align="center" prompt="ACCOUNT_SEGMENT4" width="80"/>
+                    <a:column name="account_segment5" align="center" prompt="ACCOUNT_SEGMENT5" width="80"/>
+                    <a:column name="account_segment6" align="center" prompt="ACCOUNT_SEGMENT6" width="80"/>
+                    <a:column name="account_segment7" align="center" prompt="ACCOUNT_SEGMENT7" width="80"/>
+                    <a:column name="account_segment8" align="center" prompt="ACCOUNT_SEGMENT8" width="80"/>
+                    <a:column name="account_segment9" align="center" prompt="ACCOUNT_SEGMENT9" width="80"/>
+                    <!-- <a:column name="account_segment10" align="center" prompt="ACCOUNT_SEGMENT10" width="80"/>
+                    <a:column name="account_segment11" align="center" prompt="ACCOUNT_SEGMENT11" width="80"/> -->
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lenovo  
+    $Date: 2014-5-6 下午1:48:04  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.asset_book_id,
+                        h.asset_id,
+                        h.tag_number,
+                        h.description_id,
+                        h.category_id,
+                        (SELECT
+                            fd.description_text
+                        FROM
+                            fnd_descriptions fd
+                        WHERE
+                            fd.description_id = h.description_id AND
+                            LANGUAGE          = ${/session/@lang}
+                        ) asset_name,
+                        h.using_unit_id,
+                        (SELECT
+                            v.description
+                        FROM
+                            exp_org_unit_vl v
+                        WHERE
+                            v.unit_id = h.using_unit_id
+                        ) using_unit_desc,
+                        h.status,
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_code_values_v v
+                        WHERE
+                            v.code      = 'EAM_ASSET_STATUS' AND
+                            v.code_value=h.status
+                        ) status_desc,
+                        f.remaining_life_in_month,
+                        f.life_in_month,
+                        TO_CHAR(h.start_use_date, 'yyyy-mm-dd') start_use_date,
+                        f.original_cost,
+                        f.current_cost,
+                        (f.current_cost - f.accumulated_dep_amt - f.impairment_loss_amt) current_value,
+                        (SELECT
+                            TO_CHAR(erl2.retire_date, 'yyyy-mm-dd')
+                        FROM
+                            (SELECT
+                                *
+                            FROM
+                                eam_requisition_lines erl,
+                                eam_requisition_headers erh
+                            WHERE
+                                erl.requisition_header_id = erh.requisition_header_id AND
+                                erh.requisition_status    = 'CONFIRMED' AND
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    eam_requisition_types t
+                                WHERE
+                                    t.ast_requisition_type_id = erh.ast_requisition_type_id AND
+                                    t.base_trx_category       = 'RET'
+                                )
+                            ORDER BY
+                                erl.last_update_date DESC
+                            ) erl2
+                        WHERE
+                            erl2.asset_id = h.asset_id AND
+                            rownum        = 1
+                        ) retire_date,
+                        (SELECT
+                            erl2.expense_amount
+                        FROM
+                            (SELECT
+                                *
+                            FROM
+                                eam_requisition_lines erl,
+                                eam_requisition_headers erh
+                            WHERE
+                                erl.requisition_header_id = erh.requisition_header_id AND
+                                erh.requisition_status    = 'CONFIRMED' AND
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    eam_requisition_types t
+                                WHERE
+                                    t.ast_requisition_type_id = erh.ast_requisition_type_id AND
+                                    t.base_trx_category       = 'RET'
+                                )
+                            ORDER BY
+                                erl.last_update_date DESC
+                            ) erl2
+                        WHERE
+                            erl2.asset_id = h.asset_id AND
+                            rownum        = 1
+                        ) expense_amount,
+                        (SELECT
+                            erl2.revenue_amount
+                        FROM
+                            (SELECT
+                                *
+                            FROM
+                                eam_requisition_lines erl,
+                                eam_requisition_headers erh
+                            WHERE
+                                erl.requisition_header_id = erh.requisition_header_id AND
+                                erh.requisition_status    = 'CONFIRMED' AND
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    eam_requisition_types t
+                                WHERE
+                                    t.ast_requisition_type_id = erh.ast_requisition_type_id AND
+                                    t.base_trx_category       = 'RET'
+                                )
+                            ORDER BY
+                                erl.last_update_date DESC
+                            ) erl2
+                        WHERE
+                            erl2.asset_id = h.asset_id AND
+                            rownum        = 1
+                        ) revenue_amount,
+                        (SELECT
+                            erl2.pl_amount
+                        FROM
+                            (SELECT
+                                *
+                            FROM
+                                eam_requisition_lines erl,
+                                eam_requisition_headers erh
+                            WHERE
+                                erl.requisition_header_id = erh.requisition_header_id AND
+                                erh.requisition_status    = 'CONFIRMED' AND
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    eam_requisition_types t
+                                WHERE
+                                    t.ast_requisition_type_id = erh.ast_requisition_type_id AND
+                                    t.base_trx_category       = 'RET'
+                                )
+                            ORDER BY
+                                erl.last_update_date DESC
+                            ) erl2
+                        WHERE
+                            erl2.asset_id = h.asset_id AND
+                            rownum        = 1
+                        ) pl_amount
+                    FROM
+                        eam_asset_headers h,
+                        eam_asset_finance_info f
+                    WHERE
+                        h.asset_id    = f.asset_id AND
+                        h.lock_flag   = 'N' AND
+                        h.post_status = 'Y' AND
+                        (
+                            h.status='SCRAPPED' OR
+                            h.status='PARTIAL_SCRAPPED'
+                        )
+                        --by whf 20151111
+                        --and cux_eam_requisition_pkg.chk_CZ005_tag_number(h.tag_number) = 'Y'
+                        AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            eam_requisition_lines erl,
+                            eam_requisition_headers erh,
+                            eam_requisition_types t
+                        WHERE
+                            erl.requisition_header_id   = erh.requisition_header_id AND
+                            erh.ast_requisition_type_id = t.ast_requisition_type_id AND
+                            erh.confirm_date           >= TRUNC(sysdate, 'yyyy') AND
+                            erh.confirm_date           <= (add_months(TRUNC(sysdate, 'yyyy'), 12) - 1) AND
+                            erh.requisition_status      = 'CONFIRMED' AND
+                            t.base_trx_category         = 'RET' AND
+                            erl.asset_id                = h.asset_id
+                        ) AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            eam_asset_entity_classes t1,
+                            eam_asset_fin_classes t2,
+                            eam_asset_categories t3
+                        WHERE
+                            --t1.entity_man_unit_id = u.UNIT_ID and
+                            t1.fin_class_id          = t2.class_id AND
+                            t2.asset_category_sec_id = t3.category_sec_id AND
+                            t1.asset_category_id     = t3.category_id AND
+                            t1.enabled_flag          = upper('Y') AND
+                            t3.category_id           = h.category_id
+                        )
+                        /*)*/
+                        AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            eam_asset_companies_vl eacv
+                        WHERE
+                            eacv.parent_company_id      = ${/session/@company_id} AND
+                            h.responsibility_company_id = eacv.company_id
+                        )
+                    ) t #WHERE_CLAUSE#
+                ORDER BY
+                    t.tag_number
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="tag_number" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="240" forDisplay="true" forQuery="true" prompt="卡片号"/>
+        <bm:field name="asset_id"/>
+        <bm:field name="description_id"/>
+        <bm:field name="asset_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="240" forDisplay="true" prompt="资产名称"/>
+        <bm:field name="status"/>
+        <bm:field name="status_desc"/>
+        <bm:field name="using_unit_id"/>
+        <bm:field name="using_unit_desc"/>
+        <bm:field name="retire_date"/>
+        <bm:field name="life_in_month"/>
+        <bm:field name="remaining_life_in_month"/>
+        <bm:field name="original_cost"/>
+        <bm:field name="current_cost"/>
+        <bm:field name="current_value"/>
+        <bm:field name="expense_amount"/>
+        <bm:field name="revenue_amount"/>
+        <bm:field name="pl_amount"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="tag_number" queryOperator="like"/>
+        <bm:query-field field="asset_name" queryOperator="like"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="asset_book_id= ${@asset_book_id} "/>
+    </bm:data-filters>
+</bm:model>

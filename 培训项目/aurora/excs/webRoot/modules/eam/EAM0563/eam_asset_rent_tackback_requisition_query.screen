@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-5-9 下午2:29:13  
+    $Revision: 1.0  
+    $Purpose: 资产出租收回申请查询
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="eam.eam0410.eam0410_asset_books_query" rootPath="eam0563_asset_books"/>
+        <a:model-query fetchAll="true" model="eam.eam0550.eam0550_rent_requisition_types_cmb" rootPath="eam0560_req_types"/>
+        <a:model-query fetchAll="true" model="eam.eam_asset_sysdate_query" rootPath="sysdate_query"/>
+    </a:init-procedure>
+    <a:view>
+        <script src="${/request/@context_path}/javascripts/common.js" type="text/javascript"/>
+        <script><![CDATA[
+            //查询表单
+            function eam0563_query() {
+                $('eam0563_req_result_ds').query();
+            }
+            //重置表单
+            function eam0563_reset() {
+                $('eam0563_req_form_ds').reset();
+            }
+            
+            // 申请号编辑器
+            function eam0563_reqNumRenderer(value, record, name) {
+                var requisition_header_id = record.get("requisition_header_id");
+                var base_trx_category = record.get("base_trx_category");
+                var asset_book_id = record.get("asset_book_id");
+                return '<a href="javascript:eam0563_reqDetail(\'' + base_trx_category + '\',' + requisition_header_id + ',' + asset_book_id + ');">' + value + '</a>';
+            }
+            
+            // 打开申请详情页面
+            function eam0563_reqDetail(base_trx_category, requisition_header_id,asset_book_id) {
+                var url = "";
+                if (base_trx_category == 'BAC' || base_trx_category == 'LBK') {
+                    url = '${/request/@context_path}/modules/eam/EAM0563/eam_asset_rent_tackback_req_readonly_details.screen?requisition_header_id=' + requisition_header_id+ '&asset_book_id=' + asset_book_id;
+                    new Aurora.Window({
+                        id: 'eam_asset_rent_tackback_query_window',
+                        url: url,
+                        fullScreen: true
+                        // title: '${l:EAM_REQUISITION_RENT_TACKBACK_QUERY.TITLE}'
+                    });
+                    // Aurora.go(url);
+                }
+            }
+            
+            function dateValidate(record, name, value) {
+                if (name == 'req_date_from' || name == 'req_date_to') {
+                    var req_date_from = record.get('req_date_from');
+                    var req_date_to = record.get('req_date_to');
+                    
+                    if (typeof(req_date_from) != 'undefined' && !Ext.isEmpty(req_date_from)) {
+                        if (!compareDate(req_date_from, req_date_to)) {
+                            return '${l:EXP_REPORT_MAINTAIN.DATE_VALIDATE}';
+                        }
+                    }
+                     
+                    return true;
+                }
+            }
+            
+            function compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function onFormUpdate(dataSet, record, name, value, oldValue) {
+               	switch(name) {
+               	    case 'req_date_from':
+               	    record.validate("req_date_from");
+               	    record.validate("req_date_to");
+               	    break;
+               	    case 'req_date_to':
+               	    record.validate("req_date_from");
+               	    record.validate("req_date_to");
+               	    break;
+               	    case 'asset_book_id':
+               	    $("eam0563_req_type_ds").setQueryParameter("asset_book_id", value);
+               	    $("eam0563_req_type_ds").query();
+           	    	record.set("ast_requisition_type_id", null);
+           	    	record.set("requisition_type_desc", null);
+               	    break;
+               	}
+            }
+            
+            function batchPrintFunction(){
+				    var requisition_header_id = '';
+					var records = $('eam0563_req_result_ds').getSelected();				
+					if(records.length == 0){
+						Aurora.showInfoMessage('${l:PROMPT}','${l:BGT_PERIOD.PLEASE_CHOOSE_LINE}',null,250,100);
+						return ;
+					}
+					for(var i = 0; i < records.length ; i ++){
+                        requisition_header_id=records[i].get('requisition_header_id');
+                        var para = jlnx.util.escapesPara(requisition_header_id);
+                        window.open('${/request/@context_path}/reports?__report=eam_asset_rent_tackback_print_review.rptdesign&eam_requisition_header_id='+para);                    
+					}
+				}
+        ]]></script>
+        <!-- 声明dataSets -->
+        <a:dataSets>
+            <!-- 资产账簿DS -->
+            <a:dataSet id="eam0563_asset_books_ds">
+                <a:datas dataSource="/model/eam0563_asset_books"/>
+            </a:dataSet>
+            <!-- 申请类型DS -->
+            <a:dataSet id="eam0563_req_type_ds">
+                <a:datas dataSource="/model/eam0560_req_types"/>
+            </a:dataSet>
+            <!-- 资产业务申请单状态 -->
+            <a:dataSet id="eam0563_status_ds" lookupCode="EAM_REQUISITION_STATUS"/>
+            <a:dataSet id="eam0563_req_form_ds">
+                <a:fields>
+                    <a:field name="asset_book_id"/>
+                    <a:field name="asset_book_desc" displayField="asset_book_desc" options="eam0563_asset_books_ds" prompt="EAM_ASSET_CATEGORIES.ASSET_BOOK" returnField="asset_book_id" valueField="asset_book_id"/>
+                    <a:field name="ast_requisition_type_id"/>
+                    <a:field name="requisition_type_desc" displayField="description" options="eam0563_req_type_ds" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_TYPE_CODE" returnField="ast_requisition_type_id" valueField="ast_requisition_type_id"/>
+                    <a:field name="req_date_from" defaultValue="${/model/sysdate_query/record/@q_from_date}" prompt="EXP_REQUISITION_LINES.DATE_FROM" required="true"/>
+                    <a:field name="req_number_from" prompt="REQUISITION_NUMBER_FROM"/>
+                    <a:field name="req_number_to" prompt="REQUISITION_NUMBER_TO"/>
+                    <a:field name="req_date_to" defaultValue="${/model/sysdate_query/record/@q_to_date}" prompt="EXP_REQUISITION_LINES.DATE_TO" required="true"/>
+                    <a:field name="requisition_status"/>
+                    <a:field name="status" displayField="code_value_name" options="eam0563_status_ds" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUSII" returnField="requisition_status" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onFormUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="eam0563_req_result_ds" autoQuery="true" fetchAll="false" model="eam.eam0563.eam0563_requisition_headers_readonly_query" queryDataSet="eam0563_req_form_ds" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <!-- 查询表单 -->
+            <a:form column="3" title="EAM_REQUISITION_RENT_TACKBACK_QUERY.TITLE" width="1024">
+                <a:comboBox name="asset_book_desc" bindTarget="eam0563_req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0563_query"/>
+                    </a:events>
+                </a:comboBox>
+                <a:datePicker name="req_date_from" bindTarget="eam0563_req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0563_query"/>
+                    </a:events>
+                </a:datePicker>
+                <a:datePicker name="req_date_to" bindTarget="eam0563_req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0563_query"/>
+                    </a:events>
+                </a:datePicker>
+                <a:comboBox name="requisition_type_desc" bindTarget="eam0563_req_form_ds" prompt="申请类型">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0563_query"/>
+                    </a:events>
+                </a:comboBox>
+                <a:textField name="req_number_from" bindTarget="eam0563_req_form_ds" prompt="单据号从">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0563_query"/>
+                    </a:events>
+                </a:textField>
+                <a:textField name="req_number_to" bindTarget="eam0563_req_form_ds" prompt="单据号到">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0563_query"/>
+                    </a:events>
+                </a:textField>
+                <a:comboBox name="status" bindTarget="eam0563_req_form_ds">
+                    <a:events>
+                        <a:event name="enterdown" handler="eam0563_query"/>
+                    </a:events>
+                </a:comboBox>
+            </a:form>
+            <a:hBox>
+                <a:button click="eam0563_query" text="HAP_QUERY"/>
+                <a:button click="eam0563_reset" text="HAP_RESET"/>
+                <a:button click="batchPrintFunction" text="打印"/>
+            </a:hBox>
+            <a:grid bindTarget="eam0563_req_result_ds" height="400" navBar="true" width="1024">
+                <a:toolBar>
+                    <a:label/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="asset_book_desc" align="center" width="180"/>
+                    <a:column name="requisition_number" align="center" prompt="单据编号" renderer="eam0563_reqNumRenderer" width="150"/>
+                    <a:column name="ast_requisition_type_desc" align="center" prompt="申请类型" width="150"/>
+                    <a:column name="requisition_date" align="center" renderer="Aurora.formatDate"/>
+                    <a:column name="employee_name" align="center" width="140"/>
+                    <a:column name="req_status_desc" align="center" width="80"/>
+                    <a:column name="description" align="center" prompt="摘要" width="180"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

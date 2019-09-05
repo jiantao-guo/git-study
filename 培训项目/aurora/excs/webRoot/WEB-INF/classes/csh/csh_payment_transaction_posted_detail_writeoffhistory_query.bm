@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[		SELECT  *
+  FROM (SELECT TO_CHAR(CWO.WRITE_OFF_DATE, 'YYYY-MM-DD') WRITE_OFF_DATE,
+               BGT_COMMON_PKG.GET_BGT_PERIOD_NAME(${/session/@company_id}, CWO.WRITE_OFF_DATE) PERIOD_NAME,
+               (SELECT B.CODE_VALUE_NAME
+                  FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+                 WHERE A.CODE_ID = B.CODE_ID
+                   AND A.CODE = 'CSH_WRITE_OFF_TYPE'
+                   AND B.CODE_VALUE = CWO.WRITE_OFF_TYPE) WRITE_OFF_TYPE,
+               (SELECT ERH.EXP_REPORT_NUMBER
+                  FROM EXP_REPORT_HEADERS ERH, EXP_REPORT_PMT_SCHEDULES ERPS
+                 WHERE ERPS.PAYMENT_SCHEDULE_LINE_ID = CWO.DOCUMENT_LINE_ID
+                   AND ERPS.EXP_REPORT_HEADER_ID = ERH.EXP_REPORT_HEADER_ID) EXP_REPORT_NUMBER,
+               (SELECT ERPS.EXP_REPORT_HEADER_ID
+                  FROM EXP_REPORT_PMT_SCHEDULES ERPS
+                 WHERE ERPS.PAYMENT_SCHEDULE_LINE_ID = CWO.DOCUMENT_LINE_ID) EXP_REPORT_HEADER_ID,
+               DECODE(CWO.WRITE_OFF_TYPE,
+                      'PAYMENT_PREPAYMENT',
+                      (SELECT CTH.TRANSACTION_NUM
+                         FROM CSH_TRANSACTION_HEADERS CTH,
+                              CSH_TRANSACTION_LINES   CTL
+                        WHERE CTH.TRANSACTION_HEADER_ID =
+                              CTL.TRANSACTION_HEADER_ID
+                          AND CTL.TRANSACTION_LINE_ID =
+                              CWO.SOURCE_CSH_TRX_LINE_ID
+                          AND CTH.TRANSACTION_TYPE = 'PREPAYMENT'),
+                      'PAYMENT_RESERVATION_FUND',
+                      (SELECT CTH.TRANSACTION_NUM
+                         FROM CSH_TRANSACTION_HEADERS CTH,
+                              CSH_TRANSACTION_LINES   CTL
+                        WHERE CTH.TRANSACTION_HEADER_ID =
+                              CTL.TRANSACTION_HEADER_ID
+                          AND CTL.TRANSACTION_LINE_ID =
+                              CWO.SOURCE_CSH_TRX_LINE_ID
+                          AND CTH.TRANSACTION_TYPE = 'RESERVATION_FUND'),
+                      'PAYMENT_DEPOSIT',
+                      (SELECT CTH.TRANSACTION_NUM
+                         FROM CSH_TRANSACTION_HEADERS CTH,
+                              CSH_TRANSACTION_LINES   CTL
+                        WHERE CTH.TRANSACTION_HEADER_ID =
+                              CTL.TRANSACTION_HEADER_ID
+                          AND CTL.TRANSACTION_LINE_ID =
+                              CWO.SOURCE_CSH_TRX_LINE_ID
+                          AND CTH.TRANSACTION_TYPE = 'DEPOSIT'),
+                      NULL) TRANSACTION_NUM,
+                      ( select V.description
+                     from csh_transaction_classes_vl v
+                     WHERE V.csh_transaction_class_code=
+                      (SELECT CTH.TRANSACTION_CLASS
+                         FROM CSH_TRANSACTION_HEADERS CTH,
+                              CSH_TRANSACTION_LINES   CTL
+                        WHERE CTH.TRANSACTION_HEADER_ID =
+                              CTL.TRANSACTION_HEADER_ID
+                          AND CTL.TRANSACTION_LINE_ID =
+                              CWO.SOURCE_CSH_TRX_LINE_ID
+                          AND CTH.TRANSACTION_TYPE = 'PREPAYMENT')) TRANSACTION_CLASS,
+					  DECODE(CWO.WRITE_OFF_TYPE,
+                      'PAYMENT_PREPAYMENT',
+                      (SELECT CTH.TRANSACTION_HEADER_ID
+                         FROM CSH_TRANSACTION_HEADERS CTH,
+                              CSH_TRANSACTION_LINES   CTL
+                        WHERE CTH.TRANSACTION_HEADER_ID =
+                              CTL.TRANSACTION_HEADER_ID
+                          AND CTL.TRANSACTION_LINE_ID =
+                              CWO.SOURCE_CSH_TRX_LINE_ID
+                          AND CTH.TRANSACTION_TYPE = 'PREPAYMENT'),
+                      'PAYMENT_RESERVATION_FUND',
+                      (SELECT CTH.TRANSACTION_HEADER_ID
+                         FROM CSH_TRANSACTION_HEADERS CTH,
+                              CSH_TRANSACTION_LINES   CTL
+                        WHERE CTH.TRANSACTION_HEADER_ID =
+                              CTL.TRANSACTION_HEADER_ID
+                          AND CTL.TRANSACTION_LINE_ID =
+                              CWO.SOURCE_CSH_TRX_LINE_ID
+                          AND CTH.TRANSACTION_TYPE = 'RESERVATION_FUND'),
+                      'PAYMENT_DEPOSIT',
+                      (SELECT CTH.TRANSACTION_HEADER_ID
+                         FROM CSH_TRANSACTION_HEADERS CTH,
+                              CSH_TRANSACTION_LINES   CTL
+                        WHERE CTH.TRANSACTION_HEADER_ID =
+                              CTL.TRANSACTION_HEADER_ID
+                          AND CTL.TRANSACTION_LINE_ID =
+                              CWO.SOURCE_CSH_TRX_LINE_ID
+                          AND CTH.TRANSACTION_TYPE = 'DEPOSIT'),
+                      NULL) TRANSACTION_ID,
+               CWO.CSH_WRITE_OFF_AMOUNT,
+               CTL.TRANSACTION_HEADER_ID,
+               CTH.SOURCE_HEADER_ID,
+               ( select cprh.requisition_number
+         from csh_payment_requisition_lns cprl,
+              csh_payment_requisition_hds cprh
+        where cprl.payment_requisition_header_id =
+              cprh.payment_requisition_header_id
+        and  cprl.payment_requisition_line_id=cprr.payment_requisition_line_id  ) REQUISITION_NUMBER,
+        ( select cprh.PAYMENT_REQUISITION_HEADER_ID
+         from csh_payment_requisition_lns cprl,
+              csh_payment_requisition_hds cprh
+        where cprl.payment_requisition_header_id =
+              cprh.payment_requisition_header_id
+        and  cprl.payment_requisition_line_id=cprr.payment_requisition_line_id  ) PAYMENT_REQUISITION_HEADER_ID,
+        
+       (   select cps.payment_schedule_line_number from con_payment_schedules cps 
+       where cps.payment_schedule_line_id= cctpsl.payment_schedule_line_id) line_number,
+       ( select cch.contract_number from con_contract_headers cch
+       where cch.contract_header_id= cctpsl.contract_header_id) contract_number,
+       cctpsl.contract_header_id
+       
+          FROM CSH_WRITE_OFF           CWO,
+               CSH_TRANSACTION_LINES   CTL,
+               CSH_TRANSACTION_HEADERS CTH,
+               csh_payment_requisition_refs  cprr,
+               con_cash_trx_pmt_schedule_lns cctpsl
+         WHERE CTL.TRANSACTION_LINE_ID = CWO.CSH_TRANSACTION_LINE_ID
+           AND CTL.TRANSACTION_HEADER_ID = CTH.TRANSACTION_HEADER_ID
+           AND  cprr.write_off_id(+)= CWO.write_off_id
+           and  cctpsl.write_off_id(+)= CWO.write_off_id
+        union all
+        select to_char(cth.transaction_date, 'yyyy-mm-dd') write_off_date,
+               bgt_common_pkg.get_bgt_period_name(${/session/@company_id},
+                                                  cth.transaction_date) period_name,
+               (select b.code_value_name
+                  from sys_codes_vl a, sys_code_values_vl b
+                 where a.code_id = b.code_id
+                   and a.code = 'CSH_WRITE_OFF_TYPE'
+                   and b.code_value = 'CSH_RETURN') write_off_type,
+               null exp_report_number,
+               null exp_report_header_id,
+               cth.transaction_num,
+               null transaction_class,
+               cth.transaction_header_id transaction_id,
+               -ctl.transaction_amount,
+               cth1.transaction_header_id,
+               cth.source_header_id,
+               null requisition_number,
+               null payment_requisition_header_id,
+               null line_number,
+               null contract_number,
+               null contract_header_id
+          from csh_transaction_lines   ctl,
+               csh_transaction_headers cth,
+               csh_transaction_headers cth1
+         where ctl.transaction_header_id = cth.transaction_header_id
+           and cth.source_header_id = cth1.transaction_header_id
+           and cth.returned_flag = 'R'
+           and (cth.reversed_flag = 'W' or cth.reversed_flag is null)
+           and cth1.transaction_type = 'PREPAYMENT'
+           and cth1.transaction_header_id = ${@transaction_header_id}
+        union all
+        select to_char(cth.transaction_date, 'yyyy-mm-dd') write_off_date,
+               bgt_common_pkg.get_bgt_period_name(${/session/@company_id},
+                                                  cth.transaction_date) period_name,
+               (select b.code_value_name
+                  from sys_codes_vl a, sys_code_values_vl b
+                 where a.code_id = b.code_id
+                   and a.code = 'CSH_WRITE_OFF_TYPE'
+                   and b.code_value = 'CSH_RETURN') write_off_type,
+               null exp_report_number,
+               null exp_report_header_id,
+               cth.transaction_num,
+               null transaction_class,
+               cth.transaction_header_id transaction_id,
+               -ctl.transaction_amount,
+               cth2.transaction_header_id,
+               cth.source_header_id,
+               null requisition_number,
+               null payment_requisition_header_id,
+               null line_number,
+               null contract_number,
+               null contract_header_id
+          from csh_transaction_lines   ctl,
+               csh_transaction_headers cth,
+               csh_transaction_headers cth1,
+               csh_transaction_headers cth2
+         where ctl.transaction_header_id = cth.transaction_header_id
+           and cth.source_header_id = cth1.transaction_header_id
+           and cth1.source_header_id = cth2.transaction_header_id
+           and cth.returned_flag = 'R'
+           and cth.reversed_flag = 'R'
+           and cth2.transaction_type = 'PREPAYMENT'
+           and cth2.transaction_header_id = ${@transaction_header_id}
+         ) V
+				   
+		#WHERE_CLAUSE#]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="transaction_header_id" queryExpression="v.TRANSACTION_HEADER_ID = ${@transaction_header_id}"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        s.travel_plan_header_id,
+                        (SELECT
+                            cch.contract_number
+                        FROM
+                            con_contract_headers cch,
+                            con_document_flows s
+                        WHERE
+                            contract_header_id     = s.document_id AND
+                            s.document_type        = 'CON_CONTRACT' AND
+                            s.source_document_type = 'EXP_TRAVEL_PLAN_HEADERS' AND
+                            s.source_document_id   = s.travel_plan_header_id
+                        ) contact_number,
+                        s.travel_plan_number,
+                        s.employee_id,
+                        (SELECT
+                            employee_code
+                        FROM
+                            exp_employees es
+                        WHERE
+                            es.employee_id = s.employee_id
+                        ) employee_code,
+                        (SELECT name FROM exp_employees es WHERE es.employee_id = s.employee_id
+                        ) employee_name,
+                        s.currency_code,
+                        (SELECT
+                            currency_name
+                        FROM
+                            gld_currency_vl gcv
+                        WHERE
+                            gcv.currency_code = s.currency_code
+                        ) currency_name,
+                        s.exchange_rate_type,
+                        s.exchange_rate_quotation,
+                        (SELECT
+                            SUM(t.amount)
+                        FROM
+                            exp_travel_plan_lines t
+                        WHERE
+                            t.travel_plan_header_id = s.travel_plan_header_id
+                        ) quarter_num,
+                        (SELECT
+                            SUM(t.functional_amount)
+                        FROM
+                            exp_travel_plan_lines t
+                        WHERE
+                            t.travel_plan_header_id = s.travel_plan_header_id
+                        ) quarter_num_fun,
+                        s.created_by,
+                        s.creation_date,
+                        TO_CHAR(s.creation_date, 'yyyy-mm-dd') creation_date1,
+                        s.last_updated_by,
+                        s.last_update_date,
+                        TO_CHAR(s.application_date, 'yyyy-mm-dd') application_date,
+                        s.travel_plan_type_id,
+                        (SELECT
+                            erpv.description
+                        FROM
+                            exp_com_travel_plan_types_vl erpv
+                        WHERE
+                            erpv.com_travel_plan_id = s.travel_plan_type_id
+                        ) type_description,
+                        (SELECT
+                            erpv.travel_plan_type_code
+                        FROM
+                            exp_com_travel_plan_types_vl erpv
+                        WHERE
+                            erpv.com_travel_plan_id = s.travel_plan_type_id
+                        ) type_code,
+                        s.description,
+                        s.status travel_plan_status_value,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'EXP_EXPENSE_REPORT_STATUS' AND
+                            b.code_value = s.status
+                        ) travel_plan_status
+                    FROM
+                        exp_travel_plan_headers s,
+                        (SELECT
+                            DISTINCT
+                            t2.employee_id
+                        FROM
+                            exp_document_authorities a,
+                            exp_employee_assigns t,
+                            exp_employee_assigns t2,
+                            exp_org_position p,
+                            exp_org_unit u,
+                            sys_user su
+                        WHERE
+                            su.user_id      = ${/session/@user_id} AND
+                            a.document_type = '30' AND
+                            (
+                                a.granted_position_id IS NULL OR
+                                a.granted_position_id  = t.position_id AND
+                                t.enabled_flag         = 'Y' AND
+                                t.company_id           = a.company_id AND
+                                t.employee_id          = su.employee_id
+                            )
+                            AND
+                            NVL(a.granted_employee_id, su.employee_id) = su.employee_id AND
+                            t2.enabled_flag                            = 'Y' AND
+                            p.enabled_flag                             = 'Y' AND
+                            u.enabled_flag                             = 'Y' AND
+                            p.position_id                              = t2.position_id AND
+                            u.unit_id                                  = p.unit_id AND
+                            a.start_date                              <= sysdate AND
+                            (
+                                a.end_date IS NULL OR
+                                a.end_date + 1 >= sysdate
+                            )
+                            AND
+                            t2.company_id = a.company_id AND
+                            (
+                                a.org_unit_id IS NULL OR
+                                a.org_unit_id  = u.unit_id
+                            )
+                            AND
+                            (
+                                a.position_id IS NULL OR
+                                a.position_id  = p.position_id
+                            )
+                            AND
+                            (
+                                a.employee_id IS NULL OR
+                                a.employee_id  = t2.employee_id
+                            )
+                        UNION
+                        SELECT
+                          su2.employee_id
+                        FROM
+                            sys_user su2
+                        WHERE
+                            su2.user_id = ${/session/@user_id}
+                        ) x
+                    WHERE
+                        s.company_id  = ${/session/@company_id} AND
+                        s.status     IN ('GENERATE', 'REJECTED', 'TAKEN_BACK','COMPLETELY_APPROVED','SUBMITTED') AND
+                        s.employee_id = x.employee_id
+                    ) #WHERE_CLAUSE#
+                ORDER BY
+                    travel_plan_header_id DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                begin
+                    EXP_TRAVEL_PLAN_PKG.DELETE_EXP_TRAVEL_PLAN_HEADERS
+                    (
+                        p_travel_plan_header_id=>${@travel_plan_header_id},
+                        p_user_id=>${/session/@user_id}
+                    );
+                end;]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="travel_plan_status" datatype="java.lang.String" queryexpression="travel_plan_status_value=${@travel_plan_status}"/>
+        <bm:query-field name="currency_code" datatype="java.lang.String" queryexpression="currency_code=${@currency_code}"/>
+        <bm:query-field name="requisition_amount_from" datatype="java.lang.Long" queryexpression="quarter_num&gt;=${@requisition_amount_from}"/>
+        <bm:query-field name="requisition_amount_to" datatype="java.lang.Long" queryexpression="quarter_num&lt;=${@requisition_amount_to}"/>
+        <bm:query-field name="application_date_from" datatype="java.lang.String" queryexpression="application_date &gt;= ${@requesition_date_from}"/>
+        <bm:query-field name="application_date_to" datatype="java.lang.String" queryexpression="appication_date &lt;= ${@requesition_date_to}"/>
+        <bm:query-field name="travel_plan_number" datatype="java.lang.String" queryexpression="travel_plan_number like ${@travel_plan_number}"/>
+        <bm:query-field name="type_item" datatype="java.lang.Long" queryexpression="travel_plan_type_id = ${@type_item}"/>
+        <bm:query-field name="employee_id" datatype="java.lang.Long" queryexpression="employee_id = ${@employee_id}"/>
+        <bm:query-field name="create_date_from" datatype="java.lang.String" queryexpression="creation_date &gt;= to_date(${@create_date_from},&apos;YYYY-MM-DD&apos;) "/>
+        <bm:query-field name="create_date_to" datatype="java.lang.String" queryexpression="creation_date &lt;= to_date(${@create_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+    </bm:query-fields>
+</bm:model>

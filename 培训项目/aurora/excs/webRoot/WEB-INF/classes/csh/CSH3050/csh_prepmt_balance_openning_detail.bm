@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+          select * from (
+            select v.transaction_header_id,
+			   (select vv.code_value_name
+				  from sys_code_values_v vv
+				 where vv.code_value = v.transaction_type
+				   and vv.code = 'CSH_TRANSACTION_TYPE') transaction_type,
+			   v.transaction_num,
+			   v.currency_code,
+			   to_char(v.transaction_date, 'yyyy-mm-dd') transaction_date,
+			   v.bank_account_code,
+			   v.bank_account_name,
+			   x.prepayment_amount,
+			   x.write_off_amount,
+			   x.balance
+		  from csh_transaction_v v,
+			   (select t.transaction_header_id,
+					   nvl(sum(t.openning_prepayment_amount), 0) prepayment_amount,
+					   nvl(sum(t.openning_write_off_amount), 0) write_off_amount,
+					   nvl(sum(t.openning_balance), 0) balance
+				  from csh_prepmt_class_bal_dtl_tmp t
+				 where t.session_id = ${/session/@session_id}
+				 --万联证券
+				   and t.company_id = ${@company_id}
+				   and t.partner_category = ${@partner_category}
+				   and t.partner_id = ${@partner_id}
+				   and t.currency_code = ${@currency_code}
+				   --万联证券
+				   and t.employee_id = ${@employee_id}
+				   and t.csh_transaction_class_code = nvl(${@transaction_class_code},t.csh_transaction_class_code)
+				   and t.balance_type in ('OPENNING PREPAYMENT', 'OPENNING WRITE OFF')
+				 group by t.transaction_header_id) x
+		 where v.transaction_header_id = x.transaction_header_id
+		 UNION ALL
+					SELECT goh.work_order_header_id,
+					       '核算工单' transaction_type,
+					       goh.work_order_number,
+					       goh.currency_code,
+					       to_char(goh.je_date, 'yyyy-mm-dd') transaction_date,
+					       '',
+					       '',
+					       x.prepayment_amount,
+					       x.write_off_amount,
+					       x.balance
+					  FROM gld_work_order_headers goh,
+							  (select t.transaction_header_id,
+							   nvl(sum(t.openning_prepayment_amount), 0) prepayment_amount,
+							   nvl(sum(t.openning_write_off_amount), 0) write_off_amount,
+							   nvl(sum(t.openning_balance), 0) balance
+						  from csh_prepmt_class_bal_dtl_tmp t
+						 where t.session_id = ${/session/@session_id}
+						 --万联证券
+						   and t.company_id = ${@company_id}
+						   and t.partner_category = ${@partner_category}
+						   and t.partner_id = ${@partner_id}
+						   and t.currency_code = ${@currency_code}
+						   --万联证券
+						   and t.employee_id = ${@employee_id}
+						   and t.csh_transaction_class_code = nvl(${@transaction_class_code},t.csh_transaction_class_code)
+						   and t.balance_type in ('OPENNING GLD')
+						   group by t.transaction_header_id) x,
+					       gld_currency_vl gld
+					 WHERE goh.work_order_header_id = x.transaction_header_id
+					   AND goh.currency_code = gld.currency_code(+)) o
+		 order by o.transaction_date
+     		]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

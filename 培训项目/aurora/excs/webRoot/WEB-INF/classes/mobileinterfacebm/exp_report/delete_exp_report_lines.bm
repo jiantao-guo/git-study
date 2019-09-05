@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Mouse Chow  
+    $Date: 2012-1-13 下午03:03:58  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="execute">
+            <bm:parameters>
+                <bm:parameter name="exp_report_line_id" dataType="java.lang.Long" input="true" output="false"/>
+                <bm:parameter name="user_id" dataType="java.lang.Long" input="true" output="false"/>
+                <bm:parameter name="exp_report_header_id" dataType="java.lang.Long" input="true" output="false"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+                DECLARE
+                    v_invoice_type VARCHAR2(20);
+                    CURSOR cur_invoic_type
+                    IS
+                        SELECT
+                            eyit.einvoice_flag einvoice_flag,
+                            eyit.special_invoice special_invoice
+                        FROM
+                            exp_report_lines l,
+                            exp_ygz_invoice_types eyit
+                        WHERE
+                            l.invoice_type         = eyit.type_code AND
+                            l.exp_report_header_id = ${@exp_report_header_id};
+                BEGIN
+                    EXP_REPORT_PKG.DELETE_EXP_REPORT_LINES ( p_exp_report_line_id=>${@exp_report_line_id}, p_created_by=>${@user_id}, p_exp_report_header_id=>${@exp_report_header_id} );
+                    UPDATE
+                        hly_expense_pool hep
+                    SET
+                        hep.status             = 'N',
+                        hep.exp_report_head_id = NULL,
+                        hep.exp_report_line_id = NULL
+                    WHERE
+                        hep.exp_report_head_id = ${@exp_report_header_id} AND
+                        hep.exp_report_line_id = ${@exp_report_line_id};
+                    FOR v_invoice_type        IN cur_invoic_type
+                    LOOP
+                        IF v_invoice_type.einvoice_flag = 'Y' OR v_invoice_type.special_invoice = 'Y' THEN
+                            UPDATE exp_report_headers h SET h.vat_special_invoice_include = 'Y';
+                            RETURN;
+                        END IF;
+                        UPDATE exp_report_headers h SET h.vat_special_invoice_include = 'N';
+                    END LOOP;
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

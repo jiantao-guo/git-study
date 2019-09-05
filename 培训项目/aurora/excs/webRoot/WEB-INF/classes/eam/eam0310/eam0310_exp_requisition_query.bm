@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2013-3-11 上午10:57:47  
+    $Revision: 1.0  
+    $Purpose: 源单据信息查询
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+          select *  from (
+            SELECT *
+			   FROM (SELECT rh.exp_requisition_header_id,
+			                rh.exp_requisition_number,
+			                rh.requisition_date,
+			                rl.exp_requisition_line_id,
+			                rl.description req_line_desc,
+			                rl.line_number,
+			                iv.description req_item_desc,
+			                rl.primary_quantity,
+			                --rl.examine_primary_quantity examine_quantity,
+			                rl.requisition_amount,
+			                --rl.examine_amount,
+			                --ed.ast_requisition_type_id,
+			                (select nvl(sum(er.release_quantity), 0)
+                               from eam_document_req_releases er
+                             where er.source_document_line_id =
+                                    rl.exp_requisition_line_id) release_quantity,
+                            --abs(nvl(examine_primary_quantity, 0) -  (select nvl(sum(er.release_quantity), 0)
+                            --   from eam_document_req_releases er
+                            -- where er.source_document_line_id =
+                            --        rl.exp_requisition_line_id)) quantity,
+			                (select trunc(nvl(sum(er.release_amount),0),2)
+			                   from eam_document_req_releases er
+			                  where er.source_document_line_id =
+			                        rl.exp_requisition_line_id) release_amount,
+			                rh.company_id,
+			                (select f.COMPANY_SHORT_NAME from fnd_companies_vl f where f.COMPANY_ID = rh.company_id) as company_name        
+			           FROM exp_requisition_headers      rh,
+			                exp_requisition_lines        rl,
+			                exp_req_items_vl             iv,
+			                exp_expense_req_types        rt,
+			                exp_sob_req_types            sr,
+			                eam_req_type_source_doc_type ed,
+			                eam_requisition_types        et
+			          WHERE ed.document_type_id = sr.expense_requisition_type_id
+			            AND sr.expense_requisition_type_code =
+			                rt.expense_requisition_type_code
+			            AND rt.expense_requisition_type_id = rh.exp_requisition_type_id
+			            AND rl.exp_requisition_header_id = rh.exp_requisition_header_id
+			            AND et.ast_requisition_type_id = ed.ast_requisition_type_id
+			            AND iv.req_item_id = rl.exp_req_item_id
+			            AND iv.enabled_flag = 'Y'
+			            and exists
+			                 (select 1
+			                          from exp_requisition_dists rd
+			                         where rd.exp_requisition_line_id =
+			                               rl.exp_requisition_line_id
+			                           and nvl(rd.close_flag, 'N') = 'N')
+			            AND rh.company_id = ${/session/@company_id}
+			            AND rh.created_by = ${/session/@user_id}
+			            AND ed.document_category = 'EXP_REQ'
+			            AND rh.requisition_status = 'COMPLETELY_APPROVED'
+			           group by rh.exp_requisition_header_id,
+                          rh.exp_requisition_number,
+                          rh.requisition_date,
+                          rl.exp_requisition_line_id,
+                          rl.description,
+                          rl.line_number,
+                          iv.description,
+                          rl.primary_quantity,
+                          --rl.examine_primary_quantity,
+                          rl.requisition_amount,
+                          --rl.examine_amount,
+                          rh.company_id) t1 
+			            --where 
+			             --release_quantity < examine_quantity
+   						--AND release_amount < examine_amount
+			            )t
+       		#WHERE_CLAUSE#
+       		ORDER BY t.requisition_date, t.exp_requisition_number
+       ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="line_number" databaseType="NUMBER" datatype="java.lang.Long" displayWidth="40" forDisplay="true" physicalName="LINE_NUMBER" prompt="EXP_REPORT_LINES.LINE_NUMBER"/>
+        <bm:field name="exp_requisition_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="EXP_REQUISITION_HEADER_ID"/>
+        <bm:field name="exp_requisition_line_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="EXP_REQUISITION_LINE_ID"/>
+        <bm:field name="exp_requisition_number" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="160" forDisplay="true" forQuery="true" prompt="单据编号"/>
+        <bm:field name="company_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="100" forDisplay="true" prompt="机构"/>
+        <bm:field name="req_item_desc" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="100" forDisplay="true" forQuery="true" prompt="EXP_REQ_ITEMS.REQ_ITEM_CODE"/>
+        <bm:field name="req_line_desc" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="100" forDisplay="true" prompt="EXP_USER_GROUP_HEADERS.DESCRIPTION"/>
+        <bm:field name="primary_quantity" databaseType="NUMBER" datatype="java.lang.Long" displayWidth="60" forDisplay="true" forQuery="false" physicalName="PRIMARY_QUANTITY" prompt="申请数量"/>
+        <!-- <bm:field name="examine_quantity" databaseType="NUMBER" datatype="java.lang.Long" displayWidth="60" forDisplay="true" forQuery="false" prompt="审批数量"/> -->
+        <bm:field name="release_quantity" databaseType="NUMBER" datatype="java.lang.Long" displayWidth="80" forDisplay="true" forQuery="false" prompt="实际数量"/>
+        <!-- <bm:field name="quantity" databaseType="NUMBER" datatype="java.lang.Long"/> -->
+        <bm:field name="requisition_amount" databaseType="NUMBER" datatype="java.lang.Double" displayWidth="80" forDisplay="true" forQuery="false" physicalName="REQUISITION_AMOUNT" prompt="EXP_REQUISITION_LINES.REQUISITION_AMOUNT"/>
+        <!-- <bm:field name="examine_amount" databaseType="NUMBER" datatype="java.lang.Double" displayWidth="80" forDisplay="true" forQuery="false" physicalName="REQUISITION_AMOUNT" prompt="审批金额"/> -->
+        <!-- <bm:field name="ast_requisition_type_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="AST_REQUISITION_TYPE_ID"/> -->
+        <bm:field name="release_amount" databaseType="NUMBER" datatype="java.lang.Double" displayWidth="80" forDisplay="true" physicalName="RELEASE_AMOUNT" prompt="实际金额"/>
+        <bm:field name="requisition_date" databaseType="DATE" datatype="java.util.Date" displayWidth="80" forDisplay="true" prompt="申请日期"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="exp_requisition_header_id" queryOperator="="/>
+        <bm:query-field field="exp_requisition_line_id" queryOperator="="/>
+        <!-- <bm:query-field field="ast_requisition_type_id" queryOperator="="/> -->
+        <bm:query-field field="exp_requisition_number" queryOperator="like"/>
+        <bm:query-field field="req_item_desc" queryOperator="like"/>
+    </bm:query-fields>
+</bm:model>

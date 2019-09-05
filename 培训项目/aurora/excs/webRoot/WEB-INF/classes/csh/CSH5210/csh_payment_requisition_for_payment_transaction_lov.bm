@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[  
+            select * from ( 
+		            SELECT CPRH.PAYMENT_REQUISITION_HEADER_ID,
+		       CPRH.REQUISITION_NUMBER,
+		       TO_CHAR(CPRH.REQUISITION_DATE, 'YYYY-MM-DD') REQUISITION_DATE,
+		       CPRL.PAYMENT_REQUISITION_LINE_ID,
+		       CPRL.PAYMENT_REQUISITION_LINE_TYPE,
+		       (SELECT B.CODE_VALUE_NAME
+		          FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+		         WHERE A.CODE_ID = B.CODE_ID
+		           AND A.CODE = 'PAYMENT_REQ_DOC_CATEGORY'
+		           AND B.CODE_VALUE = CPRL.PAYMENT_REQUISITION_LINE_TYPE) P_PAYMENT_REQ_LINE_TYPE,
+		       CPRL.REF_DOCUMENT_ID,
+		       (SELECT ERH.EXP_REQUISITION_NUMBER
+		          FROM EXP_REQUISITION_HEADERS ERH
+		         WHERE ERH.EXP_REQUISITION_HEADER_ID = CPRL.REF_DOCUMENT_ID) EXP_REQUISITION_NUMBER,
+		       CPRL.AMOUNT,
+		       CPRL.DESCRIPTION,
+		       (SELECT NVL(SUM(CPRR.AMOUNT), 0)
+		          FROM CSH_PAYMENT_REQUISITION_REFS CPRR,
+		               CSH_TRANSACTION_LINES        CTL,
+		               CSH_TRANSACTION_HEADERS      CTH
+		         WHERE CPRR.PAYMENT_REQUISITION_LINE_ID =
+		               CPRL.PAYMENT_REQUISITION_LINE_ID
+		           AND CTL.TRANSACTION_LINE_ID = CPRR.CSH_TRANSACTION_LINE_ID
+		           AND CTL.TRANSACTION_HEADER_ID = CTH.TRANSACTION_HEADER_ID
+		           AND CTH.POSTED_FLAG = 'Y') PAYED_AMOUNT,
+		       CPRL.AMOUNT -
+		       (SELECT NVL(SUM(CPRR.AMOUNT), 0)
+		          FROM CSH_PAYMENT_REQUISITION_REFS CPRR,
+		               CSH_TRANSACTION_LINES        CTL,
+		               CSH_TRANSACTION_HEADERS      CTH
+		         WHERE CPRR.PAYMENT_REQUISITION_LINE_ID =
+		               CPRL.PAYMENT_REQUISITION_LINE_ID
+		           AND CTL.TRANSACTION_LINE_ID = CPRR.CSH_TRANSACTION_LINE_ID
+		           AND CTL.TRANSACTION_HEADER_ID = CTH.TRANSACTION_HEADER_ID
+		           AND CTH.POSTED_FLAG = 'Y') REQUISITED_UNPAYMENT_AMOUNT
+		  FROM CSH_PAYMENT_REQUISITION_HDS CPRH, CSH_PAYMENT_REQUISITION_LNS CPRL
+		 WHERE CPRL.PARTNER_CATEGORY = ${@partner_category}
+		   AND CPRH.PAYMENT_REQUISITION_HEADER_ID =
+		       CPRL.PAYMENT_REQUISITION_HEADER_ID
+		   AND CPRL.PARTNER_ID = ${@partner_id}
+		   AND CPRH.CURRENCY_CODE = ${@currency_code}
+		   AND CPRH.STATUS = 'APPROVED'
+		   AND CPRL.PAYMENT_STATUS != 'COMPLETELY'
+		   AND CPRL.AMOUNT -
+		       (SELECT NVL(SUM(CPRR.AMOUNT), 0)
+		          FROM CSH_PAYMENT_REQUISITION_REFS CPRR,
+		               CSH_TRANSACTION_LINES        CTL,
+		               CSH_TRANSACTION_HEADERS      CTH
+		         WHERE CPRR.PAYMENT_REQUISITION_LINE_ID =
+		               CPRL.PAYMENT_REQUISITION_LINE_ID
+		           AND CTL.TRANSACTION_LINE_ID = CPRR.CSH_TRANSACTION_LINE_ID
+		           AND CTL.TRANSACTION_HEADER_ID = CTH.TRANSACTION_HEADER_ID
+		           AND CTH.POSTED_FLAG = 'Y') > 0
+		   AND NOT EXISTS
+		 (SELECT *
+		          FROM CON_DOCUMENT_FLOWS T
+		         WHERE T.SOURCE_DOCUMENT_ID = CPRH.PAYMENT_REQUISITION_HEADER_ID
+		           AND T.SOURCE_DOCUMENT_TYPE = 'CSH_PAYMENT_REQUISITION_HDS')
+		 ORDER BY CPRH.REQUISITION_NUMBER, CPRL.PAYMENT_REQUISITION_LINE_ID)
+		 #WHERE_CLAUSE#]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="payment_requisition_header_id"/>
+        <bm:field name="requisition_number" displayWidth="100" forDisplay="true" forQuery="true" prompt="CSH_PREPAYMENT_WRITE_OFF.REQUISITION_NUMBER" queryExpression="REQUISITION_NUMBER like upper(&apos;%&apos;||${@requisition_number}||&apos;%&apos;)"/>
+        <bm:field name="requisition_date"/>
+        <bm:field name="payment_requisition_line_id"/>
+        <bm:field name="payment_requisition_line_type"/>
+        <bm:field name="p_payment_req_line_type" displayWidth="90" forDisplay="true" prompt="CSH_CASH_PLAN_LINE_ASSIGN.DOCUMENT_TYPE"/>
+        <bm:field name="ref_document_id"/>
+        <bm:field name="exp_requisition_number" displayWidth="100" forDisplay="true" prompt="CSH_BANK_TREASURER_REQ_HDS.DOCUMENT_NUMBER"/>
+        <bm:field name="amount" displayWidth="80" forDisplay="true" prompt="EXP_REQUISITION_DISTS.REQUISITION_AMOUNT"/>
+        <bm:field name="description" displayWidth="100" forDisplay="true" prompt="CSH_PAYMENT_REQUISITION_TYPES.DESCRIPTION"/>
+        <bm:field name="payed_amount" displayWidth="80" forDisplay="true" prompt="CSH_PAYMENT_REQUISITION_HDS.PAYMENTED_AMOUNT"/>
+        <bm:field name="requisited_unpayment_amount"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="requisition_number" queryOperator="like"/>
+        <bm:query-field name="exp_requisition_number" queryExpression="exsits(select 1 from EXP_REQUISITION_HEADERS ERH where ERH.EXP_REQUISITION_HEADER_ID=CPRL.REF_DOCUMENT_ID and ERH.EXP_REQUISITION_NUMBER=${@exp_requisition_number})"/>
+    </bm:query-fields>
+</bm:model>

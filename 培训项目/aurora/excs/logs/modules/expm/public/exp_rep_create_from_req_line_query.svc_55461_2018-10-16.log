@@ -1,0 +1,576 @@
+2018-10-16 09:30:19.304 [aurora.application.session_check] [CONFIG] Session data copied to context
+2018-10-16 09:30:19.304 [aurora.application.session_check] [CONFIG] Access check result for modules/expm/public/exp_rep_create_from_req_line_query.svc => success
+2018-10-16 09:30:19.304 [uncertain.proc] [CONFIG] [action] AccessCheck
+2018-10-16 09:30:19.307 [uncertain.proc] [CONFIG] [action] CheckServiceLock
+2018-10-16 09:30:19.307 [uncertain.proc] [CONFIG] [action] ParseParameter
+2018-10-16 09:30:19.307 [uncertain.proc] [CONFIG] [action] ValidateInput
+2018-10-16 09:30:19.307 [uncertain.proc] [CONFIG] [action] InvokeService
+2018-10-16 09:30:19.307 [aurora.database] [CONFIG] ===================================== prepare to run model-query expm.exp_rep_create_from_req_line_query==============================
+2018-10-16 09:30:19.314 [uncertain.proc] [CONFIG] [action] DecideSqlGenerationMode
+2018-10-16 09:30:19.314 [uncertain.proc] [FINE] aurora.database.service.BusinessModelService.onDecideSqlGenerationMode
+2018-10-16 09:30:19.314 [uncertain.proc] [CONFIG] [action] CreateOperationSql
+2018-10-16 09:30:19.314 [uncertain.proc] [CONFIG] [action] PopulateOperationSql
+2018-10-16 09:30:19.314 [uncertain.proc] [FINE] aurora.database.features.OrderByClauseCreator.onPopulateOperationSql
+2018-10-16 09:30:19.314 [uncertain.proc] [FINE] aurora.database.features.WhereClauseCreator.onPopulateOperationSql
+2018-10-16 09:30:19.314 [uncertain.proc] [CONFIG] [action] ExecuteQuery
+2018-10-16 09:30:19.314 [uncertain.proc] [FINE] aurora.bm.QuerySqlCreator.onExecuteQuery
+2018-10-16 09:30:19.413 [uncertain.proc] [CONFIG] [action] QueryFinish
+2018-10-16 09:30:19.413 [uncertain.proc] [FINE] aurora.database.features.AutoQueryCounter.onQueryFinish
+2018-10-16 09:30:19.490 [uncertain.proc] [CONFIG] [action] FetchResultSet
+2018-10-16 09:30:19.490 [uncertain.proc] [FINE] aurora.database.features.CacheBasedLookUpField.postFetchResultSet
+2018-10-16 09:30:19.490 [aurora.database] [CONFIG] 
+============= BEGIN [query] SQL Statement execution dump ============
+
+                WITH
+                    emp_temp AS
+                    (SELECT
+                        t2.employee_id
+                    FROM
+                        exp_document_authorities a,
+                        exp_employee_assigns t,
+                        exp_employee_assigns t2,
+                        exp_org_position p,
+                        exp_org_unit u,
+                        sys_user su
+                    WHERE
+                        su.user_id      = ? AND
+                        a.document_type = '01' AND
+                        (
+                            a.granted_position_id IS NULL OR
+                            a.granted_position_id  = t.position_id AND
+                            t.enabled_flag         = 'Y' AND
+                            t.company_id           = a.company_id AND
+                            t.employee_id          = su.employee_id
+                        )
+                        AND
+                        NVL(a.granted_employee_id, su.employee_id) = su.employee_id AND
+                        t2.enabled_flag                            = 'Y' AND
+                        p.enabled_flag                             = 'Y' AND
+                        u.enabled_flag                             = 'Y' AND
+                        p.position_id                              = t2.position_id AND
+                        u.unit_id                                  = p.unit_id AND
+                        a.start_date                              <= sysdate AND
+                        (
+                            a.end_date    IS NULL OR
+                            a.end_date +1 >= sysdate
+                        )
+                        AND
+                        (
+                            (
+                                ?           = 'MAINTENANCE' AND
+                                a.maintenance_authority = 'Y'
+                            )
+                            OR
+                            (
+                                ?    IS NULL AND
+                                a.query_authority = 'Y'
+                            )
+                        )
+                        AND
+                        t2.company_id = a.company_id AND
+                        (
+                            a.org_unit_id IS NULL OR
+                            a.org_unit_id  = u.unit_id
+                        )
+                        AND
+                        (
+                            a.position_id IS NULL OR
+                            a.position_id  = p.position_id
+                        )
+                        AND
+                        (
+                            a.employee_id IS NULL OR
+                            a.employee_id  = t2.employee_id
+                        )
+                    GROUP BY
+                        t2.employee_id
+                    UNION
+                    SELECT
+                        su2.employee_id
+                    FROM
+                        sys_user su2
+                    WHERE
+                        su2.user_id = ?
+                    )
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        v1.*,
+                        (req_release_amount - requisition_amount) AS value,
+                        fnd_format_mask_pkg.get_gld_amount(v1.currency_code, DECODE(v1.req_unrelease_quantity, 0, 0, v1.req_unrelease_amount / v1.req_unrelease_quantity), v1.set_of_books_id) req_unrelease_price
+                    FROM
+                        (SELECT DISTINCT
+                            h.exp_requisition_number,
+                            l.line_number,
+                            (SELECT
+                                eetv.description
+                            FROM
+                                exp_expense_types_vl eetv
+                            WHERE
+                                eetv.expense_type_id = l.expense_type_id
+                            ) expense_type_desc,
+                            (SELECT
+                                vt.description
+                            FROM
+                                exp_req_items_vl vt
+                            WHERE
+                                vt.req_item_id = l.exp_req_item_id
+                            ) exp_req_item_desc,
+                            (SELECT
+                                ev.expense_item_id
+                            FROM
+                                exp_expense_items_vl ev
+                            WHERE
+                                ev.req_item_id = l.exp_req_item_id AND
+                                rownum         = 1
+                            ) expense_item_id,
+                            (SELECT
+                                ev.description
+                            FROM
+                                exp_expense_items_vl ev,
+                                exp_company_expense_items ei
+                            WHERE
+                                ev.req_item_id     = l.exp_req_item_id AND
+                                ei.expense_item_id = ev.expense_item_id AND
+                                ei.enabled_flag    = 'Y' AND
+                                company_id         = ? AND
+                                rownum             = 1
+                            ) expense_item_desc,
+                            d.dist_number,
+                            d.price,
+                            d.primary_quantity,
+                            d.requisition_amount,
+                            d.requisition_functional_amount,
+                            d.exp_req_item_id,
+                            d.expense_type_id,
+                            NVL(d.released_quantity, 0) req_release_quantity,
+                            NVL(d.released_amount, 0) req_release_amount,
+                            NVL(d.primary_quantity, 0) - NVL(d.released_quantity, 0) req_unrelease_quantity,
+                            NVL(d.requisition_amount, 0) - NVL(d.released_amount, 0) req_unrelease_amount,
+                            NVL(d.requisition_functional_amount, 0) - NVL(d.released_functional_amount, 0) req_unrelease_functional_amt,
+                            (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = l.employee_id
+                            ) expense_employee_name,
+                            d.period_name,
+                            h.currency_code,
+                            d.exchange_rate,
+                            d.exchange_rate_type,
+                            d.exchange_rate_quotation,
+                            d.released_functional_amount,
+                            d.company_id,
+                            (SELECT
+                                fc.set_of_books_id
+                            FROM
+                                fnd_companies fc
+                            WHERE
+                                fc.company_id = d.company_id
+                            ) set_of_books_id,
+                            (SELECT
+                                fcv.company_short_name
+                            FROM
+                                fnd_companies_vl fcv
+                            WHERE
+                                fcv.company_id = d.company_id
+                            ) company_desc,
+                            (SELECT
+                                frcv.responsibility_center_name
+                            FROM
+                                fnd_responsibility_centers_vl frcv
+                            WHERE
+                                frcv.responsibility_center_id = d.responsibility_center_id
+                            ) responsibility_center_name,
+                            d.responsibility_center_id,
+                            d.unit_id,
+                            (SELECT
+                                eou.description
+                            FROM
+                                exp_org_unit_vl eou
+                            WHERE
+                                eou.unit_id = d.unit_id
+                            ) unit_desc,
+                            (SELECT ee.name FROM exp_employees ee WHERE ee.employee_id = d.employee_id
+                            ) employee_name,
+                            d.employee_id,
+                            d.position_id,
+                            (SELECT
+                                description
+                            FROM
+                                exp_org_position_vl pv
+                            WHERE
+                                pv.position_id = d.position_id
+                            ) position_id_display,
+                            d.description,
+                            d.dimension1_id e1,
+                            d.dimension2_id e2,
+                            d.dimension3_id e3,
+                            d.dimension4_id e4,
+                            d.dimension5_id e5,
+                            d.dimension6_id e6,
+                            d.dimension7_id e7,
+                            d.dimension8_id e8,
+                            d.dimension9_id e9,
+                            d.dimension10_id e10,
+                            l.place_type_id,
+                            l.place_id,
+                            (SELECT
+                                vvt.place_desc
+                            FROM
+                                exp_policy_places_vl vvt
+                            WHERE
+                                vvt.place_id = l.place_id
+                            ) place_from,
+                            (SELECT
+                                vvtl.description
+                            FROM
+                                exp_policy_place_types_vl vvtl
+                            WHERE
+                                vvtl.place_type_id = l.place_type_id
+                            ) place_type,
+                            l.place_to_id,
+                            (SELECT
+                                vvt.place_desc
+                            FROM
+                                exp_policy_places_vl vvt
+                            WHERE
+                                vvt.place_id = l.place_to_id
+                            ) place_to,
+                            l.transportation,
+                            (SELECT
+                                b.code_value_name
+                            FROM
+                                sys_code_values_vl b,
+                                sys_codes a
+                            WHERE
+                                a.code_id    = b.code_id AND
+                                a.code       ='TRANSPORTATION' AND
+                                b.code_value = l.transportation
+                            )transport_name,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension1_id
+                            ) d1,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension2_id
+                            ) d2,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension3_id
+                            ) d3,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension4_id
+                            ) d4,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension5_id
+                            ) d5,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension6_id
+                            ) d6,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension7_id
+                            ) d7,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension8_id
+                            ) d8,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension9_id
+                            ) d9,
+                            (SELECT
+                                fdv.description
+                            FROM
+                                fnd_dimension_values_vl fdv
+                            WHERE
+                                fdv.dimension_value_id = d.dimension10_id
+                            ) d10,
+                            d.exp_requisition_dists_id,
+                            d.exp_requisition_line_id,
+                            h.exp_requisition_header_id,
+                            h.exp_requisition_type_id,
+                            h.requisition_date,
+                            DECODE(d.payee_category, 'EMPLOYEE',
+                            (SELECT
+                                employee_code
+                                || '-'
+                                || name
+                            FROM
+                                exp_employees ee
+                            WHERE
+                                ee.employee_id = d.payee_id
+                            ), 'CUSTOMER',
+                            (SELECT
+                                vc.customer_code
+                                || '-'
+                                || vc.description
+                            FROM
+                                ord_system_customers_vl vc
+                            WHERE
+                                vc.customer_id = d.payee_id
+                            ),
+                            (SELECT
+                                vv.vender_code
+                                || '-'
+                                || vv.description
+                            FROM
+                                pur_system_venders_vl vv
+                            WHERE
+                                vv.vender_id = d.payee_id
+                            )) payee_code,
+                            exp_report_util_pkg.get_expense_item_id(d.exp_req_item_id) req_item_id1,
+                            exp_report_util_pkg.get_expense_item_desc(d.exp_req_item_id) req_item_id1_display,
+                            TO_CHAR(l.date_from, 'yyyy-mm-dd') date_from,
+                            TO_CHAR(l.date_to, 'yyyy-mm-dd') date_to,
+                            d.requisition_amount - d.released_amount this_amount,
+                            d.requisition_functional_amount - d.released_functional_amount this_functional_amount,
+                            v.contract_number contract_header_code,
+                            v.payment_schedule_line_id,
+                            v.contract_header_id,
+                            v.payment_schedule_line_number payment_schedule_line_code,
+                            (SELECT
+                                vv.expense_report_type_id
+                            FROM
+                                exp_expense_req_types vv
+                            WHERE
+                                h.exp_requisition_type_id = vv.expense_requisition_type_id
+                            ) expense_report_type_id,
+                            l.city,
+                            h.company_id compay_id1,
+                            (SELECT
+                                fcv.company_short_name
+                            FROM
+                                fnd_companies_vl fcv
+                            WHERE
+                                fcv.company_id = h.company_id
+                            ) h_company_desc
+                        FROM
+                            exp_requisition_headers h,
+                            exp_requisition_lines l,
+                            exp_requisition_dists d,
+                            /*exp_expense_req_types_vl vv,*/
+                            (
+                            SELECT
+                                cch.contract_header_id,
+                                cch.contract_number,
+                                cps.payment_schedule_line_id,
+                                cps.payment_schedule_line_number,
+                                cdf.source_document_id,
+                                cdf.source_document_line_id
+                            FROM
+                                con_document_flows cdf,
+                                con_contract_headers cch,
+                                con_payment_schedules cps
+                            WHERE
+                                cdf.document_type        = 'CON_CONTRACT' AND
+                                cdf.source_document_type = 'EXP_REQUISITION_LINES' AND
+                                cdf.document_id          = cch.contract_header_id AND
+                                cdf.document_line_id     = cps.payment_schedule_line_id(+) AND
+                                cdf.document_id          = cps.contract_header_id(+)
+                            ) v,
+                            exp_expense_req_types rt
+                        WHERE
+                            h.exp_requisition_header_id  = l.exp_requisition_header_id AND
+                            h.requisition_status         = 'COMPLETELY_APPROVED' AND
+                            l.exp_requisition_line_id    = d.exp_requisition_line_id AND
+                            h.reversed_flag             IS NULL AND
+                            d.close_flag                 = 'N' AND
+                            v.source_document_id(+)      = l.exp_requisition_header_id AND
+                            v.source_document_line_id(+) = l.exp_requisition_line_id AND
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                exp_expense_req_types eert
+                            WHERE
+                                eert.expense_requisition_type_id = h.exp_requisition_type_id AND
+                                eert.expense_report_type_id      = ? AND
+                                eert.company_id                  = ? AND
+                                eert.enabled_flag                = 'Y'
+                            ) AND
+                            (
+                                h.company_id = ? OR
+                                l.company_id = ?
+                            )
+                            AND
+                            (
+                                (
+                                    ?            = 'Y' AND
+                                    d.requisition_amount > NVL(d.released_amount, 0)
+                                )
+                                OR
+                                (
+                                    ? = 'N'
+                                )
+                            )
+                            AND
+                            (
+                                l.employee_id IN
+                                (SELECT * FROM emp_temp
+                                ) OR
+                                exp_req_assign_pkg.check_exp_req_assign_emp(p_exp_requisition_header_id => l.exp_requisition_header_id, p_exp_requisition_line_id => l.exp_requisition_line_id, p_company_id => ?, p_user_id => ?) = 'Y'
+                            )
+                            AND
+                            h.exp_requisition_type_id = rt.expense_requisition_type_id AND
+                            rt.expense_report_type_id = ?
+                        ) v1
+                    ) v  WHERE currency_code = ?
+                ORDER BY
+                    v.exp_requisition_number DESC,
+                    v.exp_requisition_line_id,
+                    v.dist_number
+            
+---------------------Binding info---------------------
+No.1	Access path:/session/@user_id	Data type of passed value :java.lang.Long	Value:2242	Output:false	Database Type:null	
+No.2	Access path:@authority	Data type of passed value :[null]	Value:null	Output:false	Database Type:null	
+No.3	Access path:@authority	Data type of passed value :[null]	Value:null	Output:false	Database Type:null	
+No.4	Access path:/session/@user_id	Data type of passed value :java.lang.Long	Value:2242	Output:false	Database Type:null	
+No.5	Access path:/session/@company_id	Data type of passed value :java.lang.String	Value:835	Output:false	Database Type:null	
+No.6	Access path:@exp_report_type_id	Data type of passed value :java.lang.String	Value:453	Output:false	Database Type:null	
+No.7	Access path:/session/@company_id	Data type of passed value :java.lang.String	Value:835	Output:false	Database Type:null	
+No.8	Access path:/session/@company_id	Data type of passed value :java.lang.String	Value:835	Output:false	Database Type:null	
+No.9	Access path:/session/@company_id	Data type of passed value :java.lang.String	Value:835	Output:false	Database Type:null	
+No.10	Access path:@check	Data type of passed value :java.lang.String	Value:Y	Output:false	Database Type:null	
+No.11	Access path:@check	Data type of passed value :java.lang.String	Value:Y	Output:false	Database Type:null	
+No.12	Access path:/session/@company_id	Data type of passed value :java.lang.String	Value:835	Output:false	Database Type:null	
+No.13	Access path:/session/@user_id	Data type of passed value :java.lang.Long	Value:2242	Output:false	Database Type:null	
+No.14	Access path:@exp_report_type_id	Data type of passed value :java.lang.String	Value:453	Output:false	Database Type:null	
+No.15	Access path:@currency_code	Data type of passed value :java.lang.String	Value:CNY	Output:false	Database Type:null	
+
+=============== END [query] SQL Statement execution dump ============
+
+2018-10-16 09:30:19.490 [aurora.database] [CONFIG] ===================================== prepare to run model-query expm.exp_report_fromreq_obj_query==============================
+2018-10-16 09:30:19.495 [uncertain.proc] [CONFIG] [action] DecideSqlGenerationMode
+2018-10-16 09:30:19.495 [uncertain.proc] [FINE] aurora.database.service.BusinessModelService.onDecideSqlGenerationMode
+2018-10-16 09:30:19.495 [uncertain.proc] [CONFIG] [action] CreateOperationSql
+2018-10-16 09:30:19.495 [uncertain.proc] [CONFIG] [action] PopulateOperationSql
+2018-10-16 09:30:19.495 [uncertain.proc] [FINE] aurora.database.features.OrderByClauseCreator.onPopulateOperationSql
+2018-10-16 09:30:19.495 [uncertain.proc] [FINE] aurora.database.features.WhereClauseCreator.onPopulateOperationSql
+2018-10-16 09:30:19.495 [uncertain.proc] [CONFIG] [action] ExecuteQuery
+2018-10-16 09:30:19.495 [uncertain.proc] [FINE] aurora.bm.QuerySqlCreator.onExecuteQuery
+2018-10-16 09:30:19.496 [uncertain.proc] [CONFIG] [action] QueryFinish
+2018-10-16 09:30:19.496 [uncertain.proc] [FINE] aurora.database.features.AutoQueryCounter.onQueryFinish
+2018-10-16 09:30:19.497 [uncertain.proc] [CONFIG] [action] FetchResultSet
+2018-10-16 09:30:19.497 [uncertain.proc] [FINE] aurora.database.features.CacheBasedLookUpField.postFetchResultSet
+2018-10-16 09:30:19.497 [aurora.database] [CONFIG] 
+============= BEGIN [query] SQL Statement execution dump ============
+
+select eol.expense_object_type_id,
+       ero.expense_object_id,
+       exp_expense_object_types_pkg.get_object_code(eol.expense_object_type_id,
+                                                    ero.expense_object_id) expense_object_code,
+       nvl(exp_expense_object_types_pkg.get_object_description(eol.expense_object_type_id,
+                                                               ero.expense_object_id),
+           ero.expense_object_desc) expense_object_description,
+       '#' || eol.expense_object_type_id as forname,
+       v.description,
+       l.exp_requisition_line_id,
+       eol.expense_object_type_id,
+       '^#' || v.expense_object_type_id as expense_object_type_code
+  from exp_req_objects_layouts     eol,
+       exp_requisition_objects     ero,
+       exp_expense_object_types_vl v,
+       exp_requisition_lines       l
+ where eol.layout_position = 'DOCUMENTS_LINE'
+   and eol.expense_object_type_id = ero.expense_object_type_id
+   and eol.expense_requisition_header_id = l.exp_requisition_header_id
+   and ero.expense_requisition_line_id = l.exp_requisition_line_id
+   and v.expense_object_type_id = ero.expense_object_type_id
+   AND eol.expense_requisition_header_id in (
+		   	select l.exp_requisition_header_id
+			  from exp_requisition_lines l,
+			       exp_requisition_headers h,
+			       exp_expense_req_types rt,
+		       (select t2.employee_id
+		          from exp_document_authorities a,
+		               exp_employee_assigns     t,
+		               exp_employee_assigns     t2,
+		               exp_org_position         p,
+		               exp_org_unit             u,
+		               sys_user                 su
+		         where su.user_id = ?
+		           and a.document_type = '01'
+		           and (a.granted_position_id is null or
+		               a.granted_position_id = t.position_id and
+		               t.enabled_flag = 'Y' and t.company_id = a.company_id and
+		               t.employee_id = su.employee_id)
+		           and nvl(a.granted_employee_id, su.employee_id) = su.employee_id
+		           and t2.enabled_flag = 'Y'
+		           and p.enabled_flag = 'Y'
+		           and u.enabled_flag = 'Y'
+		           and p.position_id = t2.position_id
+		           and u.unit_id = p.unit_id
+		           and a.start_date <= sysdate
+		           and (a.end_date is null or a.end_date + 1 >= sysdate)
+		           and ((? = 'MAINTENANCE' and
+		               a.maintenance_authority = 'Y') or
+		               (? is null and a.query_authority = 'Y'))
+		           and t2.company_id = a.company_id
+		           and (a.org_unit_id is null or a.org_unit_id = u.unit_id)
+		           and (a.position_id is null or a.position_id = p.position_id)
+		           and (a.employee_id is null or a.employee_id = t2.employee_id)
+		         group by t2.employee_id
+		        union
+		        select su2.employee_id
+		          from sys_user su2
+		         where su2.user_id = ?) x
+		   where l.exp_requisition_header_id = h.exp_requisition_header_id
+		   and h.exp_requisition_type_id = rt.expense_requisition_type_id
+		   and rt.expense_report_type_id = ?
+		   and h.employee_id = x.employee_id
+		   and h.company_id = ?
+		   and h.currency_code = ?
+		   and not exists  (select 1
+					          from exp_requisition_headers eh,
+					               exp_requisition_lines   el,
+					               exp_requisition_dists   ed
+					         where eh.exp_requisition_header_id = el.exp_requisition_header_id
+					           and el.exp_requisition_line_id = ed.exp_requisition_line_id
+					           and ed.close_flag = 'Y'
+					           and eh.exp_requisition_header_id = l.exp_requisition_header_id)
+   )
+ order by l.exp_requisition_line_id, eol.layout_priority
+ 
+ 
+---------------------Binding info---------------------
+No.1	Access path:/session/@user_id	Data type of passed value :java.lang.Long	Value:2242	Output:false	Database Type:null	
+No.2	Access path:@authority	Data type of passed value :[null]	Value:null	Output:false	Database Type:null	
+No.3	Access path:@authority	Data type of passed value :[null]	Value:null	Output:false	Database Type:null	
+No.4	Access path:/session/@user_id	Data type of passed value :java.lang.Long	Value:2242	Output:false	Database Type:null	
+No.5	Access path:@exp_report_type_id	Data type of passed value :java.lang.String	Value:453	Output:false	Database Type:null	
+No.6	Access path:/session/@company_id	Data type of passed value :java.lang.String	Value:835	Output:false	Database Type:null	
+No.7	Access path:@currency_code	Data type of passed value :java.lang.String	Value:CNY	Output:false	Database Type:null	
+
+=============== END [query] SQL Statement execution dump ============
+
+2018-10-16 09:30:19.498 [uncertain.proc] [CONFIG] [action] CreateSuccessResponse

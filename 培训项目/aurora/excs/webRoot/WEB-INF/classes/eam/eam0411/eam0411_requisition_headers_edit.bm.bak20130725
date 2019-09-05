@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2013-3-1 下午2:41:12  
+    $Revision: 1.0  
+    $Purpose: 资产业务申请单头文件操作BM
+-->
+<ns1:model xmlns:ns1="http://www.aurora-framework.org/schema/bm" alias="t1" defaultOrderBy="last_update_date desc" extend="eam.eam_requisition_headers" extendMode="reference">
+    <ns1:fields>
+        <ns1:field name="requisition_header_id"/>
+        <ns1:field name="asset_book_id"/>
+        <ns1:field name="asset_book_desc" expression="(SELECT v.asset_book_code || &apos;-&apos; || v.description FROM eam_asset_books_vl v WHERE v.asset_book_id = t1.asset_book_id)" prompt="EAM_ASSET_BOOKS"/>
+        <ns1:field name="requisition_number" prompt="ACP_REQUISITION.REQUEST_NO"/>
+        <ns1:field name="company_id"/>
+        <ns1:field name="value_type"/>
+        <ns1:field name="value_type_desc" expression="(SELECT v.code_value_name FROM sys_code_values_v v WHERE v.code = &apos;EAM_VALUE_TYPE&apos; and v.code_value=t1.value_type)"/>
+        <ns1:field name="operation_unit_id"/>
+        <ns1:field name="employee_id"/>
+        <ns1:field name="employee_name" expression="(select e.employee_code||&apos;-&apos;||e.name from exp_employees e where e.employee_id=t1.employee_id)" prompt="WORKFLOW_VIEW.APPLICANT"/>
+        <ns1:field name="position_id"/>
+        <ns1:field name="position_name" expression="(select v.description from exp_org_position_vl v where v.position_id= t1.position_id)" prompt="EXP_ORG_POSITION.POS"/>
+        <ns1:field name="unit_id"/>
+        <ns1:field name="ast_requisition_type_id"/>
+        <ns1:field name="ast_requisition_type_desc" expression="(select t.ast_requisition_type_code || &apos;-&apos; || d.description_text from eam_requisition_types t, fnd_descriptions d where t.description_id = d.description_id and t.ast_requisition_type_id=t1.ast_requisition_type_id and d.language=${/session/@lang})" prompt="EAM_REQUISITION_TYPES.AST_REQUISITION_TYPE_CODE"/>
+        <ns1:field name="base_trx_category" expression="(select t.base_trx_category from eam_requisition_types t where t.ast_requisition_type_id=t1.ast_requisition_type_id)" prompt="EAM_REQUISITION_TYPES.BASE_TRX_CATEGORY"/>
+        <ns1:field name="transaction_type_id" expression="(select t.default_trx_type_id from eam_requisition_types t where t.ast_requisition_type_id=t1.ast_requisition_type_id)"/>
+        <ns1:field name="trans_type_desc" expression="( SELECT  (SELECT         fd.description_text     FROM         fnd_descriptions fd     WHERE         ET.description_id=fd.description_id AND         fd.language      = ${/session/@lang}     ) AS description FROM     EAM_TRANSACTION_TYPES ET WHERE ET.transaction_type_id = (select t.default_trx_type_id from eam_requisition_types t where t.ast_requisition_type_id=t1.ast_requisition_type_id))"/>
+        <ns1:field name="user_group_id"/>
+        <ns1:field name="requisition_date" prompt="WORKFLOW_VIEW.CREATION_DATE"/>
+        <ns1:field name="period_name"/>
+        <ns1:field name="requisition_status"/>
+        <ns1:field name="req_status_desc" expression="(SELECT v.code_value_name FROM sys_code_values_v v WHERE v.code = &apos;EAM_REQUISITION_STATUS&apos; and v.code_value=t1.requisition_status)" prompt="EXP_REQUISITION_HEADERS.REQUISITION_STATUSII"/>
+        <ns1:field name="attachment_num"/>
+        <ns1:field name="description" prompt="AST_REQUISITION_DESC"/>
+        <ns1:field name="release_status"/>
+        <ns1:field name="reversed_flag"/>
+        <ns1:field name="reversed_by"/>
+        <ns1:field name="reverse_date"/>
+        <ns1:field name="source_req_header_id"/>
+        <ns1:field name="source_type"/>
+    </ns1:fields>
+    <ns1:query-fields>
+        <ns1:query-field field="requisition_header_id" queryOperator="="/>
+        <ns1:query-field field="ast_requisition_type_id" queryOperator="="/>
+        <ns1:query-field field="asset_book_id" queryOperator="="/>
+        <ns1:query-field name="req_date_from" queryExpression="t1.requisition_date&gt;=to_date(${@req_date_from}, &apos;yyyy-MM-dd&apos;)"/>
+        <ns1:query-field name="req_date_to" queryExpression="t1.requisition_date&lt;=to_date(${@req_date_to}, &apos;yyyy-MM-dd&apos;)"/>
+        <ns1:query-field name="req_number_from" queryExpression="t1.requisition_number&gt;=${@req_number_from}"/>
+        <ns1:query-field name="req_number_to" queryExpression="t1.requisition_number&lt;=${@req_number_to}"/>
+    </ns1:query-fields>
+    <ns1:data-filters>
+        <ns1:data-filter expression="t1.requisition_status in (&apos;GENERATE&apos;, &apos;REJECTED&apos;, &apos;TAKEN_BACK&apos;)"/>
+        <ns1:data-filter expression="t1.ast_requisition_type_id in (SELECT        t1.AST_REQUISITION_TYPE_ID    FROM        EAM_REQUISITION_TYPES t1    WHERE        t1.ENABLED_FLAG     =&apos;Y&apos; AND        t1.base_trx_category in (&apos;ADJ&apos;,&apos;REV&apos;))"/>
+        <ns1:data-filter expression="(t1.created_by = ${/session/@user_id} or exists (select 1 from sys_user su where su.user_id = ${/session/@user_id} and su.employee_id = t1.employee_id))"/>
+    </ns1:data-filters>
+    <ns1:operations>
+        <ns1:operation name="insert">
+            <ns1:parameters>
+                <ns1:parameter name="requisition_header_id" output="true" outputPath="@requisition_header_id"/>
+            </ns1:parameters>
+            <ns1:update-sql><![CDATA[
+                BEGIN
+                	eam_requisition_pkg.insert_eam_requisition_header(
+                						  p_requisition_header_id    =>${@requisition_header_id},
+                                          p_asset_book_id           =>${@asset_book_id},
+                                          p_company_id              =>${/session/@company_id},
+                                          p_operation_unit_id       =>${@operation_unit_id},
+                                          p_employee_id             =>${@employee_id},
+                                          p_position_id             =>${@position_id},
+                                          p_unit_id                 =>${@unit_id},
+                                          p_ast_requisition_type_id =>${@ast_requisition_type_id},
+                                          p_requisition_date        =>to_date(${@requisition_date}, 'yyyy-mm-dd'),
+                                          p_period_name             =>${@period_name},
+                                          p_attachment_num          =>${@attachment_num},
+                                          p_description             =>${@description},
+                                          p_release_status          =>${@release_status},
+                                          p_reversed_flag           =>${@reversed_flag},
+                                          p_reversed_by             =>${@reversed_by},
+                                          p_reverse_date            =>${@reverse_date},
+                                          p_source_req_header_id    =>${@source_req_header_id},
+                                          p_source_type             =>${@source_type},
+                                          p_value_type				=>${@value_type},
+                                          p_user_id                 =>${/session/@user_id});
+                END;
+            ]]></ns1:update-sql>
+        </ns1:operation>
+        <ns1:operation name="update">
+            <ns1:update-sql><![CDATA[
+    			begin
+    				eam_requisition_pkg.update_eam_requisition_header(
+                						  p_requisition_header_id    =>${@requisition_header_id},
+                                          p_asset_book_id           =>${@asset_book_id},
+                                          p_company_id              =>${/session/@company_id},
+                                          p_operation_unit_id       =>${@operation_unit_id},
+                                          p_employee_id             =>${@employee_id},
+                                          p_position_id             =>${@position_id},
+                                          p_unit_id                 =>${@unit_id},
+                                          p_ast_requisition_type_id =>${@ast_requisition_type_id},
+                                          p_requisition_date        =>to_date(${@requisition_date}, 'yyyy-mm-dd'),
+                                          p_period_name             =>${@period_name},
+                                          p_attachment_num          =>${@attachment_num},
+                                          p_description             =>${@description},
+                                          p_release_status          =>${@release_status},
+                                          p_source_req_header_id    =>${@source_req_header_id},
+                                          p_source_type             =>${@source_type},
+                                          p_value_type				=>${@value_type},
+                                          p_user_id                 =>${/session/@user_id});
+    			end;
+    		]]></ns1:update-sql>
+        </ns1:operation>
+        <ns1:operation name="delete">
+            <ns1:update-sql><![CDATA[
+            	begin
+            		eam_requisition_pkg.delete_eam_requisition_header(p_requisition_header_id =>${@requisition_header_id},
+                                          p_user_id               =>${/session/@user_id});
+            	end;
+            ]]></ns1:update-sql>
+        </ns1:operation>
+        <ns1:operation name="execute">
+            <ns1:update-sql><![CDATA[
+            	begin
+            		eam_requisition_pkg.submit_eam_requisition(p_requisition_header_id =>${@requisition_header_id},
+                                          p_user_id               =>${/session/@user_id});
+            	end;
+            ]]></ns1:update-sql>
+        </ns1:operation>
+    </ns1:operations>
+</ns1:model>

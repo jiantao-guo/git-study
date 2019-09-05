@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: waiwaids  
+    $Date: 2011-8-22 上午1:12:38  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <!--requisition_status原本等于 COMPLETELY_APPROVED，改为了1做测试-->
+            <bm:query-sql><![CDATA[
+                  select * 
+				from( select 
+				    h.pur_requisition_header_id requisition_header_id,--单据id
+				    l.pur_requisition_line_id requisition_line_id,--行id
+				    l.item_id,--物品id
+				    l.company_id,--行公司id
+				        (select  fd.description_text  from inv_system_items isi,fnd_descriptions fd 
+				        where isi.description_id=fd.description_id and fd.language =${/session/@lang} and isi.item_id = l.item_id)
+				         item_description,
+				    l.expense_item_id,--费用项目id
+				    (select  fd.description_text  from exp_expense_items eei,fnd_descriptions fd 
+				    where eei.description_id=fd.description_id and fd.language =${/session/@lang} and eei.expense_item_id = l.expense_item_id
+				    ) expense_item_description,--费用项目名称
+				    to_char(l.date_from,'yyyy-mm-dd') date_from,--需求日期从
+				    l.date_to,--需求日期至
+				    l.employee_id,--申请人id
+				    (select t.name from exp_employees t
+				    where t.employee_id = l.employee_id
+				    ) employee_description,--申请人名
+				    l.unit_id,--部门id
+				    ( select fd.description_text||'-'||eou.unit_code from EXP_ORG_UNIT eou,fnd_descriptions fd 
+				    where eou.description_id=fd.description_id and fd.language =${/session/@lang} 
+				     and eou.unit_id = l.unit_id
+				    ) unit_description,
+				    l.primary_quantity,
+				    nvl(l.release_quantity,0) release_quantity ,-- 已下达的数量
+				    (select l.primary_quantity-l.release_quantity from dual) rel_quantity,--这次下达数量
+				    h.pur_requisition_number,
+				    l.buyer_id,
+				    l.line_number ,--行号
+				    h.currency_code,--币种
+				    l.requisition_amount,
+				    h.pur_requisition_type_id requisition_type_id,--申请单类型
+				    (select (l.quotation_price/l.quotation_price_qty)*l.requisition_amount from dual) quotation_total_amount,--报价金额
+				    h.requisition_date, --申请日期
+				    h.pur_requisition_number requisition_number,--单据编号
+				    l.vender_id,
+				        (select fd.description_text from pur_system_venders psv,fnd_descriptions fd 
+				        where psv.description_id=fd.description_id and fd.language =${/session/@lang}
+				          and psv.vender_id = l.vender_id) vender_name
+				  from pur_requisition_headers h, pur_requisition_lines l
+				   where h.pur_requisition_header_id = l.pur_requisition_header_id
+				   and h.requisition_status ='COMPLETELY_APPROVED'
+				   and nvl(l.close_status,'N') !='C'
+				   and nvl(l.cancel_status,'N') !='C'
+				   and nvl(l.release_status,'N') !='C'
+				   and nvl(l.quotation_status,'N') = 'C'
+				  ) v
+				  #WHERE_CLAUSE#
+				  order by v.requisition_line_id
+                 ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="v.employee_id = ${@employee_id}"/>
+        <bm:query-field name="unit_id" dataType="java.lang.Long" queryExpression="v.unit_id = ${@unit_id}"/>
+        <bm:query-field name="company_id" dataType="java.lang.Long" queryExpression="company_id = ${@company_id}"/>
+        <bm:query-field name="requisition_type_id" dataType="java.lang.Long" queryExpression="requisition_type_id = ${@requisition_type_id} "/>
+        <bm:query-field name="item_type_id" dataType="java.lang.Long" queryExpression="exists (select 1        
+                                               from inv_system_items t where t.item_type_id = ${@item_type_id}       
+                                               and t.item_id = v.item_id )"/>
+        <bm:query-field name="expense_item_id" dataType="java.lang.Long" queryExpression="expense_item_id = ${@expense_item_id}"/>
+        <bm:query-field name="buyer_id" dataType="java.lang.Long" queryExpression="buyer_id = ${@buyer_id}"/>
+        <bm:query-field name="requisition_number" dataType="java.lang.String" queryExpression="requisition_number = ${@requisition_number}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="currency_code = ${@currency_code}"/>
+        <bm:query-field name="item_code" dataType="java.lang.String" queryExpression="exists (select 1       
+                                               from inv_system_items t        
+                                               where t.item_code like &apos;%&apos;||${@item_code}||&apos;%&apos;        
+                                               and t.item_id = v.item_id)"/>
+        <bm:query-field name="item_description" dataType="java.lang.String" queryExpression="v.item_description like &apos;%&apos;||${@item_description}||&apos;%&apos;"/>
+        <bm:query-field name="expense_item_code" dataType="java.lang.String" queryExpression="exists (select 1        
+                                                   from exp_expense_items  t        
+                                                   where t.expense_item_code like &apos;%&apos;||${@expense_item_code}||&apos;%&apos;       
+                                                   and t.expense_item_id = v.expense_item_id)"/>
+        <bm:query-field name="expense_item_description" dataType="java.lang.String" queryExpression="expense_item_description like &apos;%&apos;||${@expense_item_description}||&apos;%&apos;"/>
+        <bm:query-field name="date_from" dataType="java.lang.String" queryExpression="date_from &gt;= ${@date_from}"/>
+        <bm:query-field name="date_to" dataType="java.sql.Date" queryExpression="exists (select 1       
+                                           from dual        
+                                           where trunc(date_to) &lt;= trunc(${@date_to})       
+                                             or date_to is null)"/>
+        <bm:query-field name="requisition_date_from" dataType="java.sql.Date" queryExpression="trunc(requisition_date) &gt;= trunc(${@requisition_date_from})"/>
+        <bm:query-field name="requisition_date_to" dataType="java.sql.Date" queryExpression="exists (select 1       
+                                                    from dual        
+                                                    where trunc(requisition_date) &lt;= trunc(${@requisition_date_to})       
+                                                     or requisition_date is null)"/>
+        <bm:query-field name="requisition_number" dataType="java.lang.String" queryExpression="requisition_number like &apos;%&apos;||${@requisition_number}||&apos;%&apos;"/>
+        <bm:query-field name="buyer_id" dataType="java.lang.Long" queryExpression="buyer_id = ${@buyer_id}"/>
+    </bm:query-fields>
+</bm:model>

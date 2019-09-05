@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mapper>
+	<query>
+
+
+
+		<!--报销头,查询 -->
+		<select id="exp_report_head" page="false"><![CDATA[
+					SELECT h.exp_report_number attr_1,
+			       (SELECT tv.description
+			          FROM exp_expense_report_types_vl tv
+			         WHERE tv.expense_report_type_id = h.exp_report_type_id) attr_2,
+			       to_char(h.report_date, 'yyyy-mm-dd') attr_3,
+			       to_char((SELECT SUM(t.report_amount)
+			                 FROM exp_report_lines t
+			                WHERE t.exp_report_header_id = h.exp_report_header_id),
+			               'fm99,999,999,999,999,990.00') attr_4,
+			       
+			       (SELECT ee.employee_code || ' - ' || NAME
+			          FROM exp_employees ee
+			         WHERE ee.employee_id = h.employee_id) attr_5,
+			       (SELECT eop.description
+			          FROM exp_org_position_vl eop
+			         WHERE eop.position_id = h.position_id) attr_6,
+			       (SELECT gv.currency_name
+			          FROM gld_currency_vl gv
+			         WHERE gv.currency_code = h.currency_code) attr_7,
+			       attachment_num attr_8,
+			       (SELECT ees.name
+			          FROM exp_employees ees, sys_user su
+			         WHERE ees.employee_id = su.employee_id
+			           AND su.user_id = h.created_by) attr_9,
+			       (SELECT sv.code_value_name
+			          FROM sys_code_values_vl sv, sys_codes sc
+			         WHERE sv.code_id = sc.code_id
+			           AND sc.code = 'EXP_EXPENSE_REPORT_STATUS'
+			           AND sv.code_value = h.report_status) attr_10,
+			       h.description attr_11
+			  FROM exp_report_headers h
+			 WHERE h.exp_report_number = ${@param_1}
+			 AND (${@param_2} is null or EXISTS
+			   (SELECT 1
+			            FROM wfl_instance_node_recipient wi, wfl_workflow_instance wwi
+			           WHERE wi.instance_id = wwi.instance_id
+			             AND wwi.document_number = h.exp_report_number
+			             AND wi.record_id = nvl(${@param_2}, wi.record_id)
+			             ))
+		
+       ]]>
+		</select>
+
+
+		<!--报销行,查询 -->
+		<select id="exp_report_lines" page="true"><![CDATA[
+					SELECT l.line_number attr_1,
+					       l.description attr_2,
+					       fc.company_short_name attr_3,
+					       (SELECT description_text
+					          FROM fnd_descriptions fd
+					         WHERE fd.description_id = et.description_id
+					           AND LANGUAGE = 'ZHS') AS attr_4,
+					       (SELECT description_text
+					          FROM fnd_descriptions fd
+					         WHERE fd.description_id = ei.description_id
+					           AND LANGUAGE = 'ZHS') AS attr_5,
+					       (SELECT e.type_name
+					          FROM exp_ygz_invoice_types e
+					         WHERE e.type_code = l.invoice_type) AS attr_6,
+					       l.invoice_code attr_7,
+					       l.invoice_number attr_8,
+					       l.invoice_item attr_9,
+					       (SELECT scv.code_value_name
+					          FROM sys_code_values_v scv
+					         WHERE scv.code = 'VMS_INVOICE_STATUS'
+					           AND scv.code_value = l.invoice_status) attr_10,
+					       to_char(l.invoice_date, 'yyyy-mm-dd') attr_11,
+					       to_char(l.report_amount, 'fm99,999,999,999,999,990.00') attr_12,
+					       to_char(l.tax_amount, 'fm99,999,999,999,999,990.00') attr_13,
+					       l.tax_rate * 100 || '%' attr_14,
+					       to_char(l.sale_amount, 'fm99,999,999,999,999,990.00') attr_15,
+					       (SELECT description_text
+					          FROM fnd_descriptions fd
+					         WHERE fd.description_id = ft.responsibility_center_name_id
+					           AND LANGUAGE = 'ZHS') attr_16,
+					       (SELECT description_text
+					          FROM fnd_descriptions fd
+					         WHERE fd.description_id = eou.description_id
+					           AND LANGUAGE = 'ZHS') attr_17,
+					       (SELECT eouv.description
+					          FROM exp_org_unit_vl eouv
+					         WHERE eouv.unit_code = eou.first_unit_code
+					           AND eouv.company_id = eou.company_id) attr_18,
+					       ee.name AS attr_19,
+					       (SELECT description_text
+					          FROM fnd_descriptions fd
+					         WHERE fd.description_id = ep.description_id
+					           AND LANGUAGE = 'ZHS') AS attr_20,
+					       (SELECT fdv.description
+					          FROM fnd_dimension_values_vl fdv
+					         WHERE fdv.dimension_value_id = l.dimension4_id) AS attr_21,
+					       (SELECT fdv.description
+					          FROM fnd_dimension_values_vl fdv
+					         WHERE fdv.dimension_value_id = l.dimension5_id) AS attr_22,
+					       (SELECT fdv.description
+					          FROM fnd_dimension_values_vl fdv
+					         WHERE fdv.dimension_value_id = l.dimension8_id) AS attr_23,
+					       (SELECT a.description
+					          FROM exp_policy_place_types_vl a
+					         WHERE a.place_type_id = l.place_type_id) AS attr_24,
+					       to_char(l.date_from, 'yyyy-mm-dd') attr_25,
+					       to_char(l.date_to, 'yyyy-mm-dd') attr_26,
+					       (SELECT a.place_desc
+					          FROM exp_policy_places_vl a
+					         WHERE a.place_id = l.place_id) AS attr_27,
+					       (SELECT a.place_desc
+					          FROM exp_policy_places_vl a
+					         WHERE a.place_id = l.place_to_id) AS attr_28,
+					       (SELECT b.code_value_name
+					          FROM sys_codes a, sys_code_values_vl b
+					         WHERE a.code_id = b.code_id
+					           AND a.code = 'TRANSPORTATION'
+					           AND b.code_value = l.transportation) AS attr_29
+					  FROM exp_report_lines l
+					  LEFT OUTER JOIN fnd_companies_vl fc
+					    ON l.company_id = fc.company_id
+					  LEFT OUTER JOIN exp_org_unit eou
+					    ON l.unit_id = eou.unit_id
+					  LEFT OUTER JOIN exp_expense_types et
+					    ON l.expense_type_id = et.expense_type_id
+					  LEFT OUTER JOIN exp_expense_items ei
+					    ON l.expense_item_id = ei.expense_item_id
+					  LEFT OUTER JOIN fnd_responsibility_centers ft
+					    ON l.responsibility_center_id = ft.responsibility_center_id
+					  LEFT OUTER JOIN exp_org_position ep
+					    ON l.position_id = ep.position_id
+					  LEFT OUTER JOIN exp_employees ee
+					    ON l.employee_id = ee.employee_id
+					  LEFT OUTER JOIN gld_exchangerate_types ge
+					    ON l.exchange_rate_type = ge.type_code
+					  LEFT OUTER JOIN con_exp_report_detail_v cer
+					    ON l.exp_report_header_id = cer.source_document_id
+					   AND l.exp_report_line_id = cer.source_document_line_id
+					   AND cer.source_document_type = 'EXP_REPORT_LINES',
+					 exp_report_headers h
+					 WHERE h.exp_report_header_id = l.exp_report_header_id
+				   AND h.exp_report_number = ${@param_1}
+				    AND (${@param_2} is null or EXISTS
+			   (SELECT 1
+			            FROM wfl_instance_node_recipient wi, wfl_workflow_instance wwi
+			           WHERE wi.instance_id = wwi.instance_id
+			             AND wwi.document_number = h.exp_report_number
+			             AND wi.record_id = nvl(${@param_2}, wi.record_id)
+			             ))
+				 order by l.line_number
+				 
+       ]]>
+		</select>
+
+
+		<!--报销计划付款行,查询 -->
+		<select id="exp_report_pmt_schedules" page="true"><![CDATA[
+				SELECT rownum * 10 attr_1,
+			       (SELECT nvl(SUM(cwo.csh_write_off_amount), 0)
+			          FROM csh_write_off cwo
+			         WHERE cwo.document_line_id = ss.payment_schedule_line_id
+			           AND cwo.document_header_id = ss.exp_report_header_id
+			           AND cwo.document_source = 'EXPENSE_REPORT'
+			           AND cwo.write_off_type = 'PREPAYMENT_EXPENSE_REPORT') AS attr_2,
+			       ss.description attr_3,
+			       gl.currency_name attr_4,
+			       ss.due_amount attr_5,
+			       b.code_value_name attr_6,
+			       decode(b.code_value,
+			              'EMPLOYEE',
+			              (SELECT ees.name
+			                 FROM exp_employees ees
+			                WHERE ees.employee_id = ss.payee_id),
+			              'VENDER',
+			              (SELECT pv.description
+			                 FROM pur_system_venders_vl pv
+			                WHERE pv.vender_id = ss.payee_id),
+			              'CUSTOMER',
+			              (SELECT ov.description
+			                 FROM ord_system_customers_vl ov
+			                WHERE ov.customer_id = ss.payee_id)) attr_7,
+			       decode(ss.payee_category,
+			              'EMPLOYEE',
+			              decode(ss.account_number,
+			                     NULL,
+			                     NULL,
+			                     '*******' || substr(ss.account_number, -4, 4)),
+			              ss.account_number) attr_8,
+			       ss.account_name attr_9,
+			       (SELECT c.description
+			          FROM csh_payment_methods_vl c
+			         WHERE c.payment_method_id = ss.payment_type_id) attr_10,
+			       (SELECT v.description
+			          FROM csh_payment_usedes_vl v
+			         WHERE v.usedes_code = ss.usedes) attr_11,
+			       (SELECT cch.contract_number
+			          FROM con_contract_headers cch
+			         WHERE cch.contract_header_id = cdf.document_id) attr_12,
+			       (SELECT cps.payment_schedule_line_number
+			          FROM con_payment_schedules cps
+			         WHERE cps.payment_schedule_line_id = cdf.document_line_id) attr_13
+			
+			  FROM exp_report_pmt_schedules ss,
+			       sys_code_values_vl       b,
+			       sys_codes                a,
+			       gld_currency_vl          gl,
+			       fnd_companies_vl         fv,
+			       con_document_flows       cdf,
+			       exp_report_headers       h
+			 WHERE b.code_id = a.code_id
+			   AND cdf.source_document_id(+) = ss.exp_report_header_id
+			   AND cdf.source_document_line_id(+) = ss.payment_schedule_line_id
+			   AND a.code = 'PAYMENT_OBJECT'
+			   AND ss.payee_category = b.code_value
+			   AND ss.currency = gl.currency_code
+			   AND ss.company_id = fv.company_id
+			   AND ss.exp_report_header_id = h.exp_report_header_id
+			   AND h.exp_report_number = ${@param_1}
+				 AND (${@param_2} is null or EXISTS
+					   (SELECT 1
+					            FROM wfl_instance_node_recipient wi, wfl_workflow_instance wwi
+					           WHERE wi.instance_id = wwi.instance_id
+					             AND wwi.document_number = h.exp_report_number
+					             AND wi.record_id = nvl(${@param_2}, wi.record_id)
+					             ))
+			 ORDER BY ss.payment_schedule_line_id
+				
+	    ]]>
+		</select>
+		
+			<!--超预算日志 -->
+		<select id="exp_report_bgt_check" page="true"><![CDATA[
+				SELECT rownum attr_1,
+		       l.bgt_budget_function_amount attr_2,
+		       l.bgt_reverse_function_amount attr_3,
+		       l.functional_amount attr_4,
+		       l.available_amount - l.functional_amount attr_5,
+		       s.control_strategy_code || s.control_strategy_desc attr_6,
+		       iv.budget_item_code || '-' || iv.description attr_7,
+		       decode(rv.responsibility_center_code || '-' ||
+		              rv.responsibility_center_name,
+		              '-',
+		              '',
+		              rv.responsibility_center_code || '-' ||
+		              rv.responsibility_center_name) attr_8,
+		       decode(uv.unit_code || '-' || uv.description,
+		              '-',
+		              '',
+		              uv.unit_code || '-' || uv.description) attr_9,
+		       (SELECT fcv.company_short_name
+		          FROM fnd_companies_vl fcv
+		         WHERE fcv.company_id = l.company_id) attr_10,
+		       (SELECT vs.description
+		          FROM fnd_dimension_values_vl vs
+		         WHERE vs.dimension_value_id = l.dimension5_id) attr_11,
+		       (SELECT vs.description
+		          FROM fnd_dimension_values_vl vs
+		         WHERE vs.dimension_value_id = l.dimension4_id) attr_12,
+		       (SELECT vs.description
+		          FROM fnd_dimension_values_vl vs
+		         WHERE vs.dimension_value_id = l.dimension8_id) attr_13
+		
+		  FROM bgt_control_strategies        s,
+		       bgt_check_logs                l,
+		       bgt_scenarios_vl              a,
+		       bgt_budget_structures_vl      sv,
+		       bgt_versions_vl               vv,
+		       bgt_budget_items_vl           iv,
+		       fnd_responsibility_centers_vl rv,
+		       bgt_organizations_vl          ov,
+		       exp_org_unit_vl               uv,
+		       exp_org_position_vl           pv,
+		       exp_employees                 ee,
+		       bgt_control_rules_vl          rv
+		 WHERE s.control_strategy_id = l.control_strategy_id
+		   AND a.scenario_id = l.scenario_id
+		   AND sv.budget_structure_id = l.budget_structure_id
+		   AND rv.control_rule_id = l.budget_control_rule_id
+		   AND vv.version_id = l.version_id
+		   AND iv.budget_item_id(+) = l.budget_item_id
+		   AND rv.responsibility_center_id(+) = l.responsibility_center_id
+		   AND ov.bgt_org_id = l.bgt_org_id
+		   AND l.unit_id = uv.unit_id(+)
+		   AND l.position_id = pv.position_id(+)
+		   AND l.employee_id = ee.employee_id(+)
+		   AND l.document_type = 'EXP_REPORT'
+		   AND l.document_id =
+		       (SELECT h.exp_report_header_id
+		          FROM exp_report_headers h
+		         WHERE h.exp_report_number = ${@param_1})
+		]]>
+		</select>
+
+	
+	<!--报销费用政策查询 -->
+		<select id="exp_report_policies" page="true"><![CDATA[
+				SELECT l.line_number attr_1,
+				       l.report_amount attr_2,
+				       (SELECT vt.code_value_name
+				          FROM sys_code_values_vl vt, sys_codes sc
+				         WHERE sc.code = 'TRANSPORTATION'
+				           AND vt.code_id = sc.code_id
+				           AND vt.code_value = l.transportation) attr_3,
+				       l.description attr_4,
+				       (SELECT eeiv.description
+				          FROM exp_expense_items_vl eeiv
+				         WHERE eeiv.expense_item_id = l.expense_item_id) attr_5,
+				       eep.priority attr_6,
+				       eep.expense_standard attr_7,
+				       (SELECT vt.code_value_name
+				          FROM sys_code_values_vl vt, sys_codes sc
+				         WHERE sc.code = 'TRANSPORTATION'
+				           AND vt.code_id = sc.code_id
+				           AND vt.code_value = eep.transportation) attr_8,
+				       ept.msg attr_9,
+				       eep.description attr_10
+				  FROM exp_expense_policies_tmp ept,
+				       exp_report_lines         l,
+				       exp_expense_policies     eep,
+				       exp_report_headers       h
+				 WHERE ept.exp_report_header_id = h.exp_report_header_id
+				   AND ept.exp_report_header_id = l.exp_report_header_id
+				   AND ept.line_number = l.line_number
+				   AND ept.expense_policies_id = eep.expense_policies_id
+				   AND h.exp_report_number = ${@param_1}
+		
+		]]>
+		</select>
+		
+		<!--EKP 文档标题 -->
+	<select id="ekp_title" page="true"><![CDATA[
+		SELECT t1.exp_report_text attr_1
+		  FROM exp_report_oasign t1, exp_report_headers h
+		 WHERE t1.exp_report_header_id = h.exp_report_header_id
+   		 AND h.exp_report_number = ${@param_1}
+	       ]]>
+	</select>
+	</query>
+</mapper>

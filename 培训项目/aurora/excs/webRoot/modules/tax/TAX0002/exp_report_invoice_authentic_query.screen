@@ -1,0 +1,634 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: dante  
+    $Date: 2016-6-1 下午4:38:01  
+    $Revision: 1.0  
+    $Purpose: 发票验真
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="exp.EXP1330.exp_ygz_usage_types_lov" rootPath="usage_type"/>
+        <a:model-query fetchAll="true" model="exp.EXP1340.exp_ygz_invoice_types_lov" rootPath="invoice_type"/>
+        <a:model-query fetchAll="true" model="tax.TAX2000.exp_report_invoice_status_50" rootPath="invoice_status_50"/>
+        <a:model-query fetchAll="true" model="tax.TAX2000.exp_report_invoice_warning" rootPath="invoice_warning"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_report_invoice_authentic_query_link_1" model="tax.TAX2000.exp_report_invoice_authentic_query" modelaction="query"/>
+        <a:link id="exp_report_invoice_authentic_query_link_2" model="tax.TAX2000.exp_report_invoice_authentic_query_com" modelaction="query"/>
+        <a:link id="exp_report_invoice_submit_authentic_link" url="${/request/@context_path}/modules/tax/TAX0002/exp_invoice_submit_authentic.svc"/>
+        <!-- <a:link id="exp_report_invoice_reject_authentic_link" url="${/request/@context_path}/modules/tax/TAX0002/exp_invoice_reject_reason.screen"/> -->
+        <a:link id="exp_report_invoice_confirm_decuctions_link" url="${/request/@context_path}/modules/tax/TAX0002/exp_invoice_confirm_deductions.svc"/>
+        <a:link id="exp_report_invoice_cancel_decuctions_link" url="${/request/@context_path}/modules/tax/TAX0002/exp_invoice_cancel_deductions.svc"/>
+        <a:link id="exp_report_invoice_reject_authentic_link" url="${/request/@context_path}/modules/tax/TAX0002/exp_invoice_reject_authentic.svc"/>
+        <a:link id="exp_report_invoice_save_authentic_link" url="${/request/@context_path}/modules/tax/TAX0002/exp_invoice_save_authentic.svc"/>
+        <a:link id="exp_report_readonly_link" url="${/request/@context_path}/modules/expm/public/exp_report_readonly_wfl.screen"/>
+        <a:link id="exp_report_invoice_tax_audit_link" model="tax.TAX2000.exp_invoice_tax_audit" modelaction="batch_update"/>
+        <script><![CDATA[
+            //JS小数相加误差处理
+            function numAdd(num1,num2){
+                var baseNum,baseNum1,baseNum2;
+                try{
+                    baseNum1 = num1.toString().split('.')[1].length;
+                }catch(e){
+                    baseNum1 = 0;
+                }
+                try{
+                    baseNum2 = num1.toString().split('.')[1].length;
+                }catch(e){
+                    baseNum2 = 0;
+                }
+                    baseNum = Math.pow(10,Math.max(baseNum1,baseNum2));
+                    return (num1*baseNum + num2*baseNum)/baseNum;
+            }
+            function loadComplete() {
+        		if('${/model/invoice_status_50/record/@exp_report_line_id}' != ''){
+                        Aurora.showInfoMessage('${l:PROMPT}', '当前存在无法验真的发票', null, 350, 120);
+                    }
+               if('${/model/invoice_warning/record/@exp_report_line_id}' != ''){
+                    Aurora.showInfoMessage('${l:PROMPT}', '当前存在发票日期与系统日期相隔超过60天的发票', null, 350, 120);
+                }
+
+        	}
+            function query() {
+              
+                $('exp_report_invoice_authentic_result_ds').query();
+            }
+            
+            function reset() {
+                $('exp_report_invoice_authentic_query_ds').reset();
+            
+            }
+            
+            function column_detail(value, record, name) {
+                var head_id = record.get('exp_report_header_id');
+                return '<a href="javascript:openDetail(' + head_id + ',' + record.get('employee_id') + ',\'' + record.get('page_name') + '\')">' + value + '</a>';
+            }
+            
+            function openDetail(id, employee_id, pageName) {
+                url = '${/request/@context_path}/' + pageName + '?exp_report_header_id=' + id + '&employee_id=' + employee_id;
+                new Aurora.Window({
+                    id: 'new_report_detail_window',
+                    fullScreen: true,
+                    url: url,
+                    width: 960,
+                    height: 640
+                });
+            }
+            function expRepNumRenderer(value, record, name) {
+                var header_id = record.get('exp_report_header_id');
+                var type_id = record.get('exp_report_type_id');
+                return '<a href="javascript:detailNewWindow(' + header_id + ',' + type_id + ');">' + value + '</a>';
+            }
+            
+            function detailNewWindow(header_id, type_id) {
+                new Aurora.Window({
+                    title: '',
+                    id: 'exp_report_maintain_screen',
+                    fullScreen: true,
+                    url: /*${/request/@context_path}/modules/expm/exp_report_readonly_wfl.screen*/
+                    $('exp_report_readonly_link').getUrl() + '?exp_report_header_id=' + header_id + '&exp_report_type_id=' + type_id,
+                    width: 950,
+                    height: 600
+                });
+            }
+            //发票认证提交
+            function submit_authentic(){
+                var recordsData = $('exp_report_invoice_authentic_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选中数据提交', null, 350, 120);
+                    return;
+                }
+                for(var i=0;i<recordsData.length ;i++){
+	    	        if(recordsData[i].authentic_status != '0'){
+	    	            var message='单据编号:'+recordsData[i].exp_report_number+',发票号码:'+recordsData[i].invoice_number+'的认证状态必须为待认证才可以提交！';
+	    	            Aurora.showErrorMessage('提示',message,null,320,120 );
+	    	            return;
+	    	        }
+	    	    }
+	    	    
+	    	    for(var i=0;i<recordsData.length ;i++){
+	    	        if(recordsData[i].invoice_type != '0'){
+	    	            var message='单据编号:'+recordsData[i].exp_report_number +'的发票类型必须为增值税专用发票才可以提交认证！';
+	    	            Aurora.showErrorMessage('提示',message,null,320,120 );
+	    	            return;
+	    	        }
+	    	    }
+                
+                var record = $('exp_report_invoice_authentic_result_ds').getCurrentRecord();
+                Aurora.request({
+                    url: $('exp_report_invoice_submit_authentic_link').getUrl(),
+                    para: recordsData,
+                    success: $('exp_report_invoice_authentic_result_ds').query() + '?authentic_status=0',
+                    scope: this
+               		 });
+                
+                
+                // var exp_report_number = record.get('exp_report_number');
+                // var msgBox = Aurora.showConfirm('${l:PROMPT}','确认删除选中的数据？',function(){
+					// msgBox.close();
+					// Aurora.request({
+                    // url: $('exp_report_batch_delete_link').getUrl(),
+                    // para: recordsData,
+                    // success: sys_delete_image(exp_report_number, query),
+                    // scope: this
+               		 // });
+					// },null,250,100);
+            }
+            
+            //发票认证拒绝
+            function reject_authentic(){
+                var recordsData = $('exp_report_invoice_authentic_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选中数据拒绝', null, 350, 120);
+                    return;
+                }
+                //已提交认证并且等待天数超过7天的可以拒绝
+                for(var i=0;i<recordsData.length ;i++){
+	    	        // if(recordsData[i].authentic_status != '1' && recordsData[i].authentic_wait_days_flag != '1'){
+	    	            // var message='单据编号:'+recordsData[i].exp_report_number+',发票号码:'+recordsData[i].invoice_number+'的认证状态必须为已提交认证并且等待天数超过7天的可以拒绝！';
+	    	            // Aurora.showErrorMessage('提示',message,null,320,130 );
+	    	            // return;
+	    	        // }
+	    	        if(recordsData[i].authentic_status == '3'){
+	    	            var message='单据编号:'+recordsData[i].exp_report_number+',发票号码:'+recordsData[i].invoice_number+'的认证状态为已认证不可以拒绝！';
+	    	            Aurora.showErrorMessage('提示',message,null,320,130 );
+	    	            return;
+	    	        }
+	    	    }
+                
+                var url = $('exp_report_invoice_reject_authentic_link').getUrl();
+	                new Aurora.Window({
+	                    id: 'exp_invoice_reject_reason',
+	                    fullScreen: false,
+	                    url: url,
+	                    width: 370,
+	                    height: 230
+	                });
+            }
+            
+            //三小票的认证状态可以直接在界面上更改进行保存
+            function save(){
+                var recordsData = $('exp_report_invoice_authentic_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选中数据保存', null, 350, 120);
+                    return;
+                }
+                for(var i=0;i<recordsData.length ;i++){
+                    //仅当“抵扣规则”选择“组合抵扣”时，校验“调整后全额抵扣税额”、“调整后部分抵扣税额”、“调整后不抵扣税额”三个字段的数值之和需要与“税额”字段的数值相等
+	    	        if( recordsData[i].usage_type== 'YT004'){
+	    	            var adjusted_full_deductions = recordsData[i].adjusted_full_deductions;
+	    	            var adjusted_partial_deductions = recordsData[i].adjusted_partial_deductions;
+	    	            var adjustable_tax_deductible = recordsData[i].adjustable_tax_deductible;
+	    	            var tax_amount = recordsData[i].tax_amount;
+	    	            var deductions_amount = numAdd(numAdd(adjusted_full_deductions,adjusted_partial_deductions),adjustable_tax_deductible);
+						if(deductions_amount != tax_amount){
+						     Aurora.showErrorMessage('提示',"“调整后全额抵扣税额”、“调整后部分抵扣税额”、“调整后不抵扣税额”三个字段的数值之和需要与“税额”字段的数值相等",null,320,130 );
+	    	            return;
+						}
+	    	        }
+	    	    }
+                var record = $('exp_report_invoice_authentic_result_ds').getCurrentRecord();
+                Aurora.request({
+                    url: $('exp_report_invoice_save_authentic_link').getUrl(),
+                    para: recordsData,
+                    success: $('exp_report_invoice_authentic_result_ds').query(),
+                    scope: this
+               		 });
+            }
+            
+            function invoice_save(){
+                
+            }
+            
+            // function authentic_status_edit(record, name) {
+                // //代扣代缴税收通用缴款书、海关进口增值税专用缴款书、农产品收购发票或者销售或者两种通行费发票状态可以改
+                // if ( record.get('invoice_type') == '1' || record.get('invoice_type') == '2' || record.get('invoice_type') == '3' || record.get('invoice_type') == '4' || record.get('invoice_type') == '5' ) {
+                    // //if(record.get('authentic_status') == '0'){//发票状态为待认证
+                        // record.getMeta().getField('authentic_status_desc').setReadOnly(false);
+                         // return 'type_comb';
+                    // //}
+                    
+                // }else{
+                    // return '';
+                // }
+            // }
+             function confirm_decuctions(){
+                 var recordsData = $('exp_report_invoice_authentic_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选中数据', null, 350, 120);
+                    return;
+                }
+                Aurora.request({
+                    url: $('exp_report_invoice_confirm_decuctions_link').getUrl(),
+                    para: recordsData,
+                    success: $('exp_report_invoice_authentic_result_ds').query(),
+                    scope: this
+               		 });
+             }
+             function cancel_decuctions(){
+                 var recordsData = $('exp_report_invoice_authentic_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选中数据', null, 350, 120);
+                    return;
+                }
+                Aurora.request({
+                    url: $('exp_report_invoice_cancel_decuctions_link').getUrl(),
+                    para: recordsData,
+                    success: $('exp_report_invoice_authentic_result_ds').query(),
+                    scope: this
+               		 });
+             }
+             function tax_audit(){
+                 var recordsData = $('exp_report_invoice_authentic_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选中数据', null, 350, 120);
+                    return;
+                }
+                for(var i=0;i<recordsData.length ;i++){
+                    //仅当“抵扣规则”选择“组合抵扣”时
+	    	        if( recordsData[i].usage_type == 'YT004'){
+	    	            var adjusted_full_deductions = recordsData[i].adjusted_full_deductions;
+	    	            var adjusted_partial_deductions = recordsData[i].adjusted_partial_deductions;
+	    	            var adjustable_tax_deductible = recordsData[i].adjustable_tax_deductible;
+						if(adjusted_full_deductions == undefined || adjusted_partial_deductions == undefined || adjustable_tax_deductible == undefined ){
+						     Aurora.showErrorMessage('提示',"抵扣规则为组合抵扣时需填写调整后税额",null,320,130 );
+	    	            return;
+						}
+	    	        }
+	    	    }
+                var datas = [];
+                for (var i = 0,
+                    l = recordsData.length;i < l;i++) {
+                    var data = {
+                        exp_report_header_id: recordsData[i]['exp_report_header_id'],
+                        exp_report_line_id: recordsData[i]['exp_report_line_id'],
+                        _status: 'execute'
+                    };
+                    datas.push(data);
+                }
+               
+                Aurora.request({
+                    url: $('exp_report_invoice_tax_audit_link').getUrl(),
+                    para: datas,
+                    success: $('exp_report_invoice_authentic_result_ds').query(),
+                    scope: this
+               		 });
+             }
+             
+             function reject_invoice(){
+                 var recordsData = $('exp_report_invoice_authentic_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请选中数据拒绝', null, 350, 120);
+                    return;
+                }
+                 for(var i=0;i<recordsData.length ;i++){
+	    	            var invoice_status = recordsData[i].invoice_status;
+						if(invoice_status != '40'){
+						     Aurora.showErrorMessage('提示',"除“验真失败”发票状态以外，其他状态发票不可进行拒绝操作",null,320,130 );
+	    	            return;
+						}
+						var je_creation_status = recordsData[i].je_creation_status;
+						if(je_creation_status == 'SUCCESS'){
+						     Aurora.showErrorMessage('提示',"已经创建凭证的报销单不可进行拒绝操作",null,320,130 );
+	    	            return;
+						}
+	    	    }
+                 Aurora.showConfirm('确认', '请确认是否拒绝', function() {
+                        Aurora.request({
+                            url: $('exp_report_invoice_reject_authentic_link').getUrl(),
+                            para: recordsData,
+                            success: $('exp_report_invoice_authentic_result_ds').query(),
+                            scope: this
+                        });
+            
+                }, null, null, 100);
+             }
+             function lineLoadFunction(ds) {
+                Linerecords = $('exp_report_invoice_authentic_result_ds').getAll();
+               /*  for (var i = 0;i < Linerecords.length;i++) {
+                    var record = Linerecords[i];
+                    if(record.get('invoice_status') == '50'){
+                        Aurora.showInfoMessage('${l:PROMPT}', '当前存在无法验真的发票', null, 350, 120);
+                        break;
+                    }
+                } */
+                /* var warning_days = $('exp_report_invoice_authentic_query_ds').getAt(0).get('warning_days');
+                 for (var i = 0;i < Linerecords.length;i++) {
+                    var record = Linerecords[i];
+                    if(record.get('day_apart') >= warning_days){
+                        Aurora.showInfoMessage('${l:PROMPT}', '当前存在发票日期与系统日期相隔'+ warning_days +'天的发票', null, 350, 120);
+                        break;
+                    }
+                }
+              */
+                 for (var i = 0;i < Linerecords.length;i++) {
+                    var record = Linerecords[i];
+                    if(record.get('usage_type') =='YT004'){
+                       record.getField('adjusted_full_deductions').setRequired(true);
+                        record.getField('adjusted_partial_deductions').setRequired(true);
+                        record.getField('adjustable_tax_deductible').setRequired(true);
+                        record.getField('adjusted_full_deductions').setReadOnly(false);
+                        record.getField('adjusted_partial_deductions').setReadOnly(false);
+                        record.getField('adjustable_tax_deductible').setReadOnly(false);
+                    }else{
+                        record.getField('adjusted_full_deductions').setRequired(false);
+                        record.getField('adjusted_partial_deductions').setRequired(false);
+                        record.getField('adjustable_tax_deductible').setRequired(false);
+                        record.getField('adjusted_full_deductions').setReadOnly(true);
+                        record.getField('adjusted_partial_deductions').setReadOnly(true);
+                        record.getField('adjustable_tax_deductible').setReadOnly(true);
+                        record.set('adjusted_full_deductions','');
+                        record.set('adjusted_partial_deductions','');
+                        record.set('adjustable_tax_deductible','');
+                    }
+                   /*  if(record.get('audit_flag') =='Y' && record.get('audit_date') != ''){
+                        record.getField('invoice_status_desc').setReadOnly(true);
+                    } */
+                     
+                    if(record.get('je_creation_status') == 'SUCCESS'){
+                       
+                        record.getField('usage_type_desc').setReadOnly(true);
+                        record.getField('adjusted_full_deductions').setReadOnly(true);
+                        record.getField('adjusted_partial_deductions').setReadOnly(true);
+                        record.getField('adjustable_tax_deductible').setReadOnly(true);
+                        record.getField('invoice_status_desc').setReadOnly(true);
+                    }
+                }
+            }
+            function lineUpdateFunction(dataSet, record, name, value, oldvalue){
+                if (name == 'usage_type') {
+                    if(value == 'YT004'){
+                        record.getField('adjusted_full_deductions').setRequired(true);
+                        record.getField('adjusted_partial_deductions').setRequired(true);
+                        record.getField('adjustable_tax_deductible').setRequired(true);
+                        record.getField('adjusted_full_deductions').setReadOnly(false);
+                        record.getField('adjusted_partial_deductions').setReadOnly(false);
+                        record.getField('adjustable_tax_deductible').setReadOnly(false);
+                    }else{
+                        record.getField('adjusted_full_deductions').setRequired(false);
+                        record.getField('adjusted_partial_deductions').setRequired(false);
+                        record.getField('adjustable_tax_deductible').setRequired(false);
+                        record.getField('adjusted_full_deductions').setReadOnly(true);
+                        record.getField('adjusted_partial_deductions').setReadOnly(true);
+                        record.getField('adjustable_tax_deductible').setReadOnly(true);
+                        record.set('adjusted_full_deductions','');
+                        record.set('adjusted_partial_deductions','');
+                        record.set('adjustable_tax_deductible','');
+                    }
+                }
+            }
+            function render_invoice_status(value, record, name) {
+                var status = record.get('invoice_status');
+                if (status == '50'||status =='40'){
+                    return "<span style='color: red;'>" + value + "</span>";
+                }else{
+                    return value;
+                }
+            }
+            function gridcellclick(grid, row, name, record){
+                 if (name == 'input_tax_struc_detail_desc') {
+                    if (record.get('special_invoice') == 'Y') {
+                        $('vat_input_tax_structure_detail_ds').setQueryParameter('tax_rate', Number(record.get('tax_rate')/100));
+                        $('vat_input_tax_structure_detail_ds').query();
+                    }
+                }
+            }
+            function summaryRenderer(datas, name) {
+                var sum = 0;
+                for (var i = 0;i < datas.length;i++) {
+                    var r = datas[i];
+                    var d = r.get(name);
+                    var n = parseFloat(d);
+                    if (!isNaN(n)) {
+                        sum += n;
+                    }
+                }   
+                   var total = (typeof(sum) == 'undefined' ? '' : parseFloat(sum).toFixed(3));
+                   if(name == 'report_amount'){
+                    return '<font>' + '报销金额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'tax_amount'){
+                    return '<font>' + '税额额合计：' + Convert(total) + '</font>';
+                  }
+                   if(name == 'sale_amount'){
+                    return '<font>' + '不含税金额合计：' + Convert(total) + '</font>';
+                  }
+                  if(name == 'roll_out_amount'){
+                    return '<font>' + '转出金额合计：' + Convert(total) + '</font>';
+                  }
+                  if(name == 'invoice_amount'){
+                    return '<font>' + '发票金额合计：' + Convert(total) + '</font>';
+                  }
+                  if(name == 'invoice_tax_amount'){
+                    return '<font>' + '发票税额合计：' + Convert(total) + '</font>';
+                  }
+                 
+            }
+             function Convert(value) {
+                if(value){
+            	var s = value;
+            	 s += "";
+            	 if (s.indexOf(".") == -1){ s += ".00";}
+            	 if (/\.\d$/.test(s)){ s += "0";}   //正则判断
+                 while (/\d{4}(\.|,)/.test(s)){
+            	 	s = s.replace(/(\d)(\d{3}(\.|,))/, "$1,$2"); 
+            	 }       
+            	   return s;  
+                }else{
+                    return '';
+                }      
+           }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="vat_invoice_status_ds" lookupCode="VMS_INVOICE_STATUS"/>
+            <a:dataSet id="exp_report_status_ds" lookupCode="EXP_EXPENSE_REPORT_STATUS"/>
+            <a:dataSet id="yes_or_no_ds" lookupCode="YES_NO"/>
+            <a:dataSet id="vat_usage_type_ds">
+                <a:datas dataSource="/model/usage_type"/>
+            </a:dataSet>
+            <a:dataSet id="confirm_decuctions_ds">
+                <a:datas>
+                    <a:record name="是" value="Y"/>
+                    <a:record name="否" value="N"/>
+                    <a:record name="空" value="NAN"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="invoice_type_ds">
+                <a:datas dataSource="/model/invoice_type"/>
+            </a:dataSet>
+            <a:dataSet id="vat_input_tax_structure_detail_ds" fetchAll="true" loadData="true" model="exp.EXP1350.exp_ygz_input_tax_struc_dtl_lov"/>
+            <a:dataSet id="exp_report_invoice_authentic_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="exp_report_number"/>
+                    <a:field name="report_date_from"/>
+                    <a:field name="report_date_to"/>
+                    <a:field name="invoice_type" defaultValue="INV001"/>
+                    <a:field name="invoice_type_desc" defaultValue="增值税专用发票" displayField="type_name" options="invoice_type_ds" prompt="发票类型" returnField="invoice_type" valueField="type_code">
+                        <a:mapping>
+                            <a:map from="special_invoice" to="special_invoice"/>
+                            <a:map from="einvoice_flag" to="einvoice_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="invoice_code"/>
+                    <a:field name="invoice_number"/>
+                    <a:field name="invoice_date_from"/>
+                    <a:field name="invoice_date_to"/>
+                    <a:field name="invoice_amount"/>
+                    <a:field name="warning_days_from"/>
+                    <a:field name="warning_days_to"/>
+                    <a:field name="audit_date_from"/>
+                    <a:field name="audit_date_to"/>
+                    <a:field name="audit_flag"/>
+                    <a:field name="audit_flag_desc" displayField="code_value_name" options="yes_or_no_ds" returnField="audit_flag" valueField="code_value"/>
+                    <a:field name="confirm_deductions"/>
+                    <a:field name="confirm_deductions_desc" displayField="name" options="confirm_decuctions_ds" returnField="confirm_deductions" valueField="value"/>
+                    <a:field name="invoice_status_desc" displayField="code_value_name" options="vat_invoice_status_ds" returnField="invoice_status" valueField="code_value"/>
+                    <a:field name="invoice_status"/>
+                    <a:field name="usage_type_desc" displayField="type_name" options="vat_usage_type_ds" returnField="usage_type" valueField="type_code"/>
+                    <a:field name="usage_type"/>
+                    <a:field name="input_tax_structure_detail"/>
+                    <a:field name="input_tax_struc_detail_desc" displayField="type_name" options="vat_input_tax_structure_detail_ds" returnField="input_tax_structure_detail" valueField="type_code"/>
+                    <a:field name="report_status"/>
+                    <a:field name="report_status_desc" displayField="code_value_name" options="exp_report_status_ds" returnField="report_status" valueField="code_value"/>
+                    <a:field name="tax_audit_flag"/>
+                    <a:field name="tax_audit_flag_desc" displayField="code_value_name" options="yes_or_no_ds" returnField="tax_audit_flag" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exp_report_invoice_authentic_result_ds" autoCount="true" autoQuery="true" fetchAll="false" model="tax.TAX2000.exp_report_invoice_authentic_query" pageSize="15" queryDataSet="exp_report_invoice_authentic_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="invoice_status_desc" displayField="code_value_name" options="vat_invoice_status_ds" returnField="invoice_status" valueField="code_value"/>
+                    <a:field name="invoice_status"/>
+                    <a:field name="usage_type_desc" displayField="type_name" options="vat_usage_type_ds" returnField="usage_type" valueField="type_code"/>
+                    <a:field name="usage_type"/>
+                    <a:field name="input_tax_structure_detail"/>
+                    <a:field name="input_tax_struc_detail_desc" displayField="type_name" options="vat_input_tax_structure_detail_ds" returnField="input_tax_structure_detail" valueField="type_code"/>
+                    <a:field name="invoice_type"/>
+                    <a:field name="invoice_type_desc" displayField="type_name" options="invoice_type_ds" required="true" returnField="invoice_type" valueField="type_code">
+                        <a:mapping>
+                            <a:map from="special_invoice" to="special_invoice"/>
+                            <a:map from="einvoice_flag" to="einvoice_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="special_invoice"/>
+                    <a:field name="report_status"/>
+                    <a:field name="report_status_desc" displayField="code_value_name" options="exp_report_status_ds" returnField="report_status" valueField="code_value"/>
+                    <a:field name="audit_flag"/>
+                    <a:field name="audit_flag_desc" displayField="code_value_name" options="yes_or_no_ds" returnField="audit_flag" valueField="code_value"/>
+                    <a:field name="audit_flag_date"/>
+                    <a:field name="confirm_deductions"/>
+                    <a:field name="confirm_deductions_desc" displayField="code_value_name" options="yes_or_no_ds" returnField="confirm_deductions" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="lineLoadFunction"/>
+                    <a:event name="update" handler="lineUpdateFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="reset" text="重置" width="80"/>
+                <a:toolbarButton click="save" text="保存" width="80"/>
+                <a:toolbarButton click="reject_invoice" text="拒绝" width="80"/>
+                <a:toolbarButton click="confirm_decuctions" text="确认抵扣" width="80"/>
+                <a:toolbarButton click="cancel_decuctions" text="取消抵扣" width="80"/>
+                <a:toolbarButton click="tax_audit" text="税务审核" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="exp_report_invoice_authentic_query_ds" resultTarget="exp_report_invoice_authentic_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="exp_report_number" bindTarget="exp_report_invoice_authentic_query_ds" prompt="单据编号"/>
+                    <a:datePicker name="report_date_from" bindTarget="exp_report_invoice_authentic_query_ds" prompt="报销日期从"/>
+                    <a:datePicker name="report_date_to" bindTarget="exp_report_invoice_authentic_query_ds" prompt="报销日期到"/>
+                    <a:comboBox name="invoice_type_desc" bindTarget="exp_report_invoice_authentic_query_ds" prompt="发票类型"/>
+                </a:formToolBar>
+                <a:formBody column="5">
+                    <a:textField name="invoice_code" bindTarget="exp_report_invoice_authentic_query_ds" prompt="发票代码"/>
+                    <a:textField name="invoice_number" bindTarget="exp_report_invoice_authentic_query_ds" prompt="发票号码"/>
+                    <a:datePicker name="invoice_date_from" bindTarget="exp_report_invoice_authentic_query_ds" prompt="发票日期从"/>
+                    <a:datePicker name="invoice_date_to" bindTarget="exp_report_invoice_authentic_query_ds" prompt="发票日期到"/>
+                    <a:numberField name="invoice_amount" bindTarget="exp_report_invoice_authentic_query_ds" prompt="发票金额"/>
+                    <a:numberField name="invoice_tax_amount" bindTarget="exp_report_invoice_authentic_query_ds" prompt="发票税额"/>
+                    <a:numberField name="report_amount_from" bindTarget="exp_report_invoice_authentic_query_ds" prompt="报销金额从"/>
+                    <a:numberField name="report_amount_to" bindTarget="exp_report_invoice_authentic_query_ds" prompt="报销金额到"/>
+                    <a:textField name="tax_rate" bindTarget="exp_report_invoice_authentic_query_ds" prompt="税率(%)"/>
+                    <a:numberField name="tax_amount_from" bindTarget="exp_report_invoice_authentic_query_ds" prompt="税额从"/>
+                    <a:numberField name="tax_amount_to" bindTarget="exp_report_invoice_authentic_query_ds" prompt="税额到"/>
+                    <a:numberField name="sale_amount_from" bindTarget="exp_report_invoice_authentic_query_ds" prompt="不含税金额从"/>
+                    <a:numberField name="sale_amount_to" bindTarget="exp_report_invoice_authentic_query_ds" prompt="不含税金额到"/>
+                    <a:numberField name="adjusted_full_deductions" bindTarget="exp_report_invoice_authentic_query_ds" decimalPrecision="2" prompt="调整后全额抵扣税额"/>
+                    <a:numberField name="adjusted_partial_deductions" bindTarget="exp_report_invoice_authentic_query_ds" decimalPrecision="2" prompt="调整后部分抵扣税额"/>
+                    <a:numberField name="adjustable_tax_deductible" bindTarget="exp_report_invoice_authentic_query_ds" decimalPrecision="2" prompt="调整后不抵扣税额"/>
+                    <a:comboBox name="invoice_status_desc" bindTarget="exp_report_invoice_authentic_query_ds" prompt="发票状态"/>
+                    <a:comboBox name="report_status_desc" bindTarget="exp_report_invoice_authentic_query_ds" prompt="状态"/>
+                    <a:comboBox name="usage_type_desc" bindTarget="exp_report_invoice_authentic_query_ds" prompt="抵扣规则"/>
+                    <a:comboBox name="input_tax_struc_detail_desc" bindTarget="exp_report_invoice_authentic_query_ds" prompt="进项分类"/>
+                    <a:numberField name="warning_days_from" allowDecimals="false" bindTarget="exp_report_invoice_authentic_query_ds" prompt="预警天数从"/>
+                    <a:numberField name="warning_days_to" allowDecimals="false" bindTarget="exp_report_invoice_authentic_query_ds" prompt="预警天数到"/>
+                    <a:comboBox name="audit_flag_desc" bindTarget="exp_report_invoice_authentic_query_ds" prompt="审核标志"/>
+                    <a:datePicker name="audit_date_from" bindTarget="exp_report_invoice_authentic_query_ds" prompt="审核日期从"/>
+                    <a:datePicker name="audit_date_to" bindTarget="exp_report_invoice_authentic_query_ds" prompt="审核日期到"/>
+                    <a:comboBox name="confirm_deductions_desc" bindTarget="exp_report_invoice_authentic_query_ds" prompt="确认抵扣"/>
+                    <a:datePicker name="deductions_time_from" bindTarget="exp_report_invoice_authentic_query_ds" prompt="确认时间从"/>
+                    <a:datePicker name="deductions_time_to" bindTarget="exp_report_invoice_authentic_query_ds" prompt="确认时间到"/>
+                    <a:textField name="deductions_remark" bindTarget="exp_report_invoice_authentic_query_ds" prompt="抵扣备注"/>
+                    <a:comboBox name="tax_audit_flag_desc" bindTarget="exp_report_invoice_authentic_query_ds" prompt="税务审核"/>
+                    <a:dateTimePicker name="tax_audit_date_from" bindTarget="exp_report_invoice_authentic_query_ds" prompt="税务审核日期从"/>
+                    <a:dateTimePicker name="tax_audit_date_to" bindTarget="exp_report_invoice_authentic_query_ds" prompt="税务审核日期到"/>
+                </a:formBody>
+            </a:queryForm>
+            <!-- <a:form column="4" labelWidth="100" style="margin-top:5px;margin-left:5px;width:98%" title="发票认证批量处理">
+                
+            </a:form> -->
+            <!--  <a:hBox style="margin-top:5px;margin-left:5px;">
+                <a:button click="query" text="HAP_QUERY"/>
+                <a:button click="reset" text="HAP_RESET"/>
+            </a:hBox> -->
+            <a:grid bindTarget="exp_report_invoice_authentic_result_ds" height="470" marginWidth="30" navBar="true" style="margin-left:5px;margin-top:5px">
+                <a:toolBar>
+                    <a:button type="excel"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="exp_report_number" align="center" prompt="EXP_REPORT_HEADERS.EXP_REPORT_NUMBER" renderer="expRepNumRenderer" width="150"/>
+                    <a:column name="line_number" align="center" prompt="行号" width="60"/>
+                    <a:column name="report_date" align="center" prompt="报销日期" sortable="true" width="80"/>
+                    <a:column name="invoice_type_desc" align="center" prompt="发票类型" width="100"/>
+                    <a:column name="invoice_code" align="center" prompt="发票代码" width="100"/>
+                    <a:column name="invoice_number" align="center" prompt="发票号码" width="100"/>
+                    <a:column name="invoice_date" align="center" prompt="发票日期" sortable="true" width="80"/>
+                    <a:column name="invoice_amount" align="center" footerRenderer="summaryRenderer" prompt="发票金额" renderer="Aurora.formatMoney" width="160"/>
+                    <a:column name="invoice_tax_amount" align="center" footerRenderer="summaryRenderer" prompt="发票税额" renderer="Aurora.formatMoney" width="160"/>
+                    <a:column name="report_amount" align="center" footerRenderer="summaryRenderer" prompt="报销金额" renderer="Aurora.formatMoney" width="170"/>
+                    <a:column name="tax_rate" align="center" prompt="税率(%)" width="80"/>
+                    <a:column name="tax_amount" align="center" footerRenderer="summaryRenderer" prompt="税额" renderer="Aurora.formatMoney" width="140"/>
+                    <a:column name="sale_amount" align="center" footerRenderer="summaryRenderer" prompt="不含税金额" renderer="Aurora.formatMoney" width="170"/>
+                    <a:column name="roll_out_amount" align="center" footerRenderer="summaryRenderer" prompt="转出金额" renderer="Aurora.formatMoney" width="140"/>
+                    <a:column name="usage_type_desc" align="center" editor="type_comb" prompt="抵扣规则" width="120"/>
+                    <a:column name="adjusted_full_deductions" align="center" editor="numberField_editor" prompt="调整后全额抵扣税额" renderer="Aurora.formatMoney" width="120"/>
+                    <a:column name="adjusted_partial_deductions" align="center" editor="numberField_editor" prompt="调整后部分抵扣税额" renderer="Aurora.formatMoney" width="120"/>
+                    <a:column name="adjustable_tax_deductible" align="center" editor="numberField_editor" prompt="调整后不抵扣税额" renderer="Aurora.formatMoney" width="120"/>
+                    <a:column name="input_tax_struc_detail_desc" align="center" editor="type_comb" prompt="进项分类" width="120"/>
+                    <a:column name="invoice_status_desc" align="center" editor="type_comb" prompt="发票状态" renderer="render_invoice_status" width="80"/>
+                    <a:column name="report_status_desc" align="center" prompt="状态" width="80"/>
+                    <a:column name="je_creation_status_desc" align="center" prompt="创建凭证" width="80"/>
+                    <a:column name="audit_flag_desc" align="center" prompt="审核标志" width="80"/>
+                    <a:column name="audit_date" align="center" prompt="凭证日期" sortable="true" width="100"/>
+                    <a:column name="confirm_deductions_desc" align="center" prompt="确认抵扣" width="80"/>
+                    <a:column name="deductions_time" align="center" prompt="确认抵扣时间" width="100"/>
+                    <a:column name="deductions_remark" editor="textField_editor" prompt="抵扣备注" width="160"/>
+                    <a:column name="tax_audit_flag_desc" align="center" prompt="税务审核" width="80"/>
+                    <a:column name="tax_audit_date" align="center" prompt="税务审核日期" width="140"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="type_comb"/>
+                    <a:textField id="textField_editor"/>
+                    <a:numberField id="numberField_editor"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="gridcellclick"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        	loadComplete();
+        ]]></script>
+    </a:view>
+</a:screen>

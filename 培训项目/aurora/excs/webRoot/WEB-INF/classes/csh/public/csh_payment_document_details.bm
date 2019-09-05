@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: majianjian  
+    $Date: 2015-2-11 下午3:54:27  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    'EXP_REPORT' doc_type,
+                    h.exp_report_header_id doc_header_id,
+                    h.exp_report_number doc_number,
+                    ps.schedule_line_number
+                    || '' line_number,
+                    c.csh_write_off_amount payment_amount
+                FROM
+                    exp_report_headers h,
+                    exp_report_pmt_schedules ps,
+                    (SELECT DISTINCT
+                        cwo.document_line_id,
+                        cwo.csh_write_off_amount
+                    FROM
+                        csh_write_off cwo
+                    WHERE
+                        cwo.csh_transaction_line_id = (DECODE(
+                        (SELECT
+                            th.returned_flag FROM csh_transaction_headers th WHERE th.transaction_header_id = ${@transaction_header_id}
+                        ), 'R',
+                        (SELECT
+                            ctl.transaction_line_id
+                        FROM
+                            csh_transaction_lines ctl
+                        WHERE
+                            ctl.transaction_header_id =
+                            (SELECT
+                                MIN(transaction_header_id)
+                            FROM
+                                csh_transaction_headers START
+                            WITH transaction_header_id = ${@transaction_header_id} CONNECT BY prior source_header_id = transaction_header_id
+                            ) AND
+                            rownum = 1
+                        ), DECODE(
+                        (SELECT
+                            th.reversed_flag FROM csh_transaction_headers th WHERE th.transaction_header_id = ${@transaction_header_id}
+                        ), 'R',
+                        (SELECT
+                            ctl.transaction_line_id
+                        FROM
+                            csh_transaction_lines ctl
+                        WHERE
+                            ctl.transaction_header_id =
+                            (SELECT
+                                th.source_header_id
+                            FROM
+                                csh_transaction_headers th
+                            WHERE
+                                th.transaction_header_id = ${@transaction_header_id}
+                            ) AND
+                            rownum = 1
+                        ),
+                        (SELECT
+                            tl.transaction_line_id
+                        FROM
+                            csh_transaction_lines tl
+                        WHERE
+                            tl.transaction_header_id = ${@transaction_header_id}
+                        ))))
+                    ) c
+                WHERE
+                    h.exp_report_header_id = ps.exp_report_header_id AND
+                    c.document_line_id     = ps.payment_schedule_line_id
+                UNION
+                SELECT
+                    'PAYMENT_REQUISITION' doc_type,
+                    rh.payment_requisition_header_id doc_header_id,
+                    rh.requisition_number doc_number,
+                    '第'
+                    ||
+                    (SELECT
+                        COUNT(1)
+                    FROM
+                        csh_payment_requisition_lns prl
+                    WHERE
+                        prl.payment_requisition_header_id = rh.payment_requisition_header_id AND
+                        prl.payment_requisition_line_id  <= rl.payment_requisition_line_id
+                    )
+                    || '行' line_number,
+                    c.amount payment_amount
+                FROM
+                    csh_payment_requisition_hds rh,
+                    csh_payment_requisition_lns rl,
+                    (SELECT DISTINCT
+                        a.payment_requisition_line_id,
+                        a.amount
+                    FROM
+                        csh_payment_requisition_refs a
+                    WHERE
+                        a.csh_transaction_line_id = (DECODE(
+                        (SELECT
+                            th.returned_flag FROM csh_transaction_headers th WHERE th.transaction_header_id = ${@transaction_header_id}
+                        ), 'R',
+                        (SELECT
+                            ctl.transaction_line_id
+                        FROM
+                            csh_transaction_lines ctl
+                        WHERE
+                            ctl.transaction_header_id =
+                            (SELECT
+                                MIN(TRANSACTION_HEADER_ID)
+                            FROM
+                                CSH_TRANSACTION_HEADERS START
+                            WITH TRANSACTION_HEADER_ID = ${@transaction_header_id} CONNECT BY PRIOR SOURCE_HEADER_ID = TRANSACTION_HEADER_ID
+                            ) AND
+                            rownum = 1
+                        ), DECODE(
+                        (SELECT
+                            th.reversed_flag FROM csh_transaction_headers th WHERE th.transaction_header_id = ${@transaction_header_id}
+                        ), 'R',
+                        (SELECT
+                            ctl.transaction_line_id
+                        FROM
+                            csh_transaction_lines ctl
+                        WHERE
+                            ctl.transaction_header_id =
+                            (SELECT
+                                th.source_header_id
+                            FROM
+                                csh_transaction_headers th
+                            WHERE
+                                th.transaction_header_id = ${@transaction_header_id}
+                            ) AND
+                            rownum = 1
+                        ),
+                        (SELECT
+                            tl.transaction_line_id
+                        FROM
+                            csh_transaction_lines tl
+                        WHERE
+                            tl.transaction_header_id = ${@transaction_header_id}
+                        ))))
+                    ) c
+                WHERE
+                    rh.payment_requisition_header_id = rl.payment_requisition_header_id AND
+                    rl.payment_requisition_line_id   = c.payment_requisition_line_id
+                UNION
+                SELECT
+                    'ACP_REQUISITION' doc_type,
+                    ah.acp_requisition_header_id doc_header_id,
+                    ah.requisition_number doc_number,
+                    '第'
+                    ||
+                    (SELECT
+                        COUNT(1)
+                    FROM
+                        acp_acp_requisition_lns arl
+                    WHERE
+                        arl.acp_requisition_line_id <= al.acp_requisition_line_id
+                    )
+                    || '行' line_number,
+                    c.amount payment_amount
+                FROM
+                    acp_acp_requisition_hds ah,
+                    acp_acp_requisition_lns al,
+                    (SELECT
+                        b.acp_requisition_line_id,
+                        b.amount
+                    FROM
+                        acp_acp_requisition_refs b,
+                        csh_transaction_lines tl
+                    WHERE
+                        b.csh_transaction_line_id = tl.transaction_line_id AND
+                        tl.transaction_header_id  = ${@transaction_header_id}
+                    ) c
+                WHERE
+                    ah.acp_requisition_header_id = al.acp_requisition_header_id AND
+                    al.acp_requisition_line_id   = c.acp_requisition_line_id
+                UNION
+                SELECT
+                    'PAYMENT_REQUISITION' doc_type,
+                    cprh.payment_requisition_header_id doc_header_id,
+                    cprh.requisition_number doc_number,
+                    '第'
+                    ||
+                    (SELECT
+                        COUNT(1)
+                    FROM
+                        csh_payment_requisition_lns prl
+                    WHERE
+                        prl.payment_requisition_header_id = cprh.payment_requisition_header_id AND
+                        prl.payment_requisition_line_id  <= cprl.payment_requisition_line_id
+                    )
+                    || '行' line_number,
+                    cc.amount payment_amount
+                FROM
+                    csh_payment_requisition_hds cprh,
+                    csh_payment_requisition_lns cprl,
+                    (SELECT DISTINCT
+                        a.payment_requisition_line_id,
+                        a.amount,
+                        a.write_off_id
+                    FROM
+                        csh_payment_requisition_refs a
+                    WHERE
+                        a.csh_transaction_line_id = DECODE(
+                        (SELECT
+                            th.returned_flag FROM csh_transaction_headers th WHERE th.transaction_header_id = ${@transaction_header_id}
+                        ), 'R',
+                        (SELECT
+                            ctl.transaction_line_id
+                        FROM
+                            csh_transaction_lines ctl
+                        WHERE
+                            ctl.transaction_header_id =
+                            (SELECT
+                                bb.source_payment_header_id
+                            FROM
+                                csh_transaction_headers bb
+                            WHERE
+                                bb.transaction_header_id =
+                                (SELECT
+                                    MIN(transaction_header_id)
+                                FROM
+                                    csh_transaction_headers START
+                                WITH transaction_header_id = ${@transaction_header_id} CONNECT BY prior source_header_id = transaction_header_id
+                                )
+                            )
+                        ), (DECODE(
+                        (SELECT
+                            th.reversed_flag FROM csh_transaction_headers th WHERE th.transaction_header_id = ${@transaction_header_id}
+                        ), 'R',
+                        (SELECT
+                            ctl.transaction_line_id
+                        FROM
+                            csh_transaction_lines ctl
+                        WHERE
+                            ctl.transaction_header_id =
+                            (SELECT
+                                bb.source_payment_header_id
+                            FROM
+                                csh_transaction_headers bb
+                            WHERE
+                                bb.transaction_header_id =
+                                (SELECT
+                                    th.source_header_id
+                                FROM
+                                    csh_transaction_headers th
+                                WHERE
+                                    th.transaction_header_id = ${@transaction_header_id}
+                                )
+                            ) AND
+                            rownum = 1
+                        ),
+                        (SELECT
+                            b.transaction_line_id
+                        FROM
+                            csh_transaction_lines b
+                        WHERE
+                            b.transaction_header_id =
+                            (SELECT
+                                c.source_payment_header_id
+                            FROM
+                                CSH_TRANSACTION_HEADERS c
+                            WHERE
+                                c.transaction_header_id = ${@transaction_header_id}
+                            )
+                        ))))
+                    ) cc,
+                    csh_write_off wo
+                WHERE
+                    cprh.payment_requisition_header_id = cprl.payment_requisition_header_id AND
+                    cprl.payment_requisition_line_id   = cc.payment_requisition_line_id AND
+                    wo.write_off_id                    = cc.write_off_id AND
+                    wo.source_csh_trx_line_id          = ${@transaction_header_id}
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

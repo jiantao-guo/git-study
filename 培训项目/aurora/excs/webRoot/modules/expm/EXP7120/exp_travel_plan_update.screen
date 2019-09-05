@@ -1,0 +1,1593 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" model="expm.EXP7110.exp_tvp_get_created_by_name" rootPath="created_by_name"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_employee_positionlist_init" rootPath="emp_position_list"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_policy_init" rootPath="policy_place_enabled"/>
+        <a:model-query autoCount="false" defaultWhereClause="com_travel_plan_id=${/parameter/@travel_plan_type_id}" fetchAll="true" model="expm.EXP7110.exp_com_travel_plan_types_vl" rootPath="exp_com_tvp_type"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.exp_requisition_currency_code_init" rootPath="currency_code"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.EXP7110.exp_tvp_dimension" rootPath="head_dimension"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.EXP7110.exp_tvp_head_object" rootPath="head_object"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.EXP7110.exp_tvp_trans_dimension" rootPath="trans_dimension"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.EXP7110.exp_tvp_accom_dimension" rootPath="accom_dimension"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.EXP7110.exp_tvp_other_dimension" rootPath="other_dimension"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.EXP7110.exp_tvp_trans_object" rootPath="trans_object"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.EXP7110.exp_tvp_accom_object" rootPath="accom_object"/>
+        <a:model-query autoCount="false" fetchAll="true" model="expm.EXP7110.exp_tvp_other_object" rootPath="other_object"/>
+        <a:model-query autoCount="true" model="expm.EXP7110.exp_tvp_get_check_log_count" rootPath="check_log_count"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="exp_travel_plan_type_choice_link" url="${/request/@context_path}/modules/expm/EXP7110/exp_travel_plan_type_choice.screen"/>
+        <a:link id="exp_employee_info_init_link" model="db.exp_requisition_pkg.get_employee_info" modelaction="batch_update"/>
+        <a:link id="exp_tvp_get_period_name_link" model="csh.sys_fun_get_period_name" modelaction="query"/>
+        <a:link id="exp_tvp_get_bgt_period_name_link" model="csh.sys_fun_get_bgt_period_name" modelaction="query"/>
+        <a:link id="exp_tvp_get_exchange_rate_link" model="expm.get_exchange_rate" modelaction="query"/>
+        <a:link id="exp_tvp_create_control_link" url="${/request/@context_path}/modules/expm/EXP7110/exp_travel_plan_create_control.svc"/>
+        <a:link id="exp_tp_policy_info_link" model="expm.exp_req_policy_infoinit" modelaction="update"/>
+        <a:link id="exp_travel_plan_delete_link" model="db.exp_travel_plan_pkg.delete_exp_travel_plan_headers" modelaction="delete"/>
+        <a:link id="exp_travel_plan_submit_link" model="db.exp_travel_plan_pkg.submit_travel_plan" modelaction="execute"/>
+        <a:link id="exp_travel_plan_maintain_link" url="${/request/@context_path}/modules/expm/EXP7120/exp_travel_plan_maintain.screen"/>
+        <a:link id="uploadFile_link_10" url="${/request/@context_path}/uploadFile.screen"/>
+        <a:link id="exp_document_tp_policy_query_link" url="${/request/@context_path}/modules/exp/public/exp_document_tp_policy_query.screen"/>
+        <a:link id="exp_budget_check_log_link_9" url="${/request/@context_path}/modules/expm/public/exp_tp_budget_check_log.screen"/>
+        <a:link id="exp_tp_query_history_link_6" url="${/request/@context_path}/modules/exp/public/exp_tp_query_history.screen"/>
+        <a:link id="exp_tp_bgt_check_link" model="db.bgt_check_pkg.tp_bgt_check" modelaction="execute"/>
+        <script><![CDATA[
+            var emp_info = [];
+            var line_emp_info = [];
+            var lineNum = -1;
+            var headDim = [];
+            var headObj = [];
+            var saveFlag = false;
+            
+            var transObj = [];
+            var accomObj = [];
+            var otherObj = [];
+            var travel_plan_header_id_bak = '${/parameter/@travel_plan_header_id}';
+            
+            function initDynamic() {
+                var headObjRecords = $('head_object_ds').getAll();
+                for (var i = 0;i < headObjRecords.length;i++) {
+                    headObj.push(headObjRecords[i].data);
+                }
+                var headDimRecords = $('head_dimension_ds').getAll();
+                for (i = 0;i < headDimRecords.length;i++) {
+                    headDim.push(headDimRecords[i].data);
+                }
+                var transObjRecords = $('trans_object_ds').getAll();
+                for (i = 0;i < transObjRecords.length;i++) {
+                    transObj.push(transObjRecords[i].data);
+                }
+                var otherObjRecords = $('other_object_ds').getAll();
+                for (i = 0;i < otherObjRecords.length;i++) {
+                    otherObj.push(otherObjRecords[i].data);
+                }
+                var accomObjRecords = $('accom_object_ds').getAll();
+                for (i = 0;i < accomObjRecords.length;i++) {
+                    accomObj.push(accomObjRecords[i].data);
+                }
+            }
+            
+            function exp_tvp_header_load(ds) {
+                ds.getAt(0).set('created_by', '${/model/created_by_name/record/@name}');
+                var travel_plan_header_id = ds.getAt(0).get('travel_plan_header_id');
+                lineNum = ds.getAt(0).get('line_num');
+                $('exp_tvp_line_transportation_ds').setQueryParameter('travel_plan_header_id', travel_plan_header_id);
+                $('exp_tvp_line_transportation_ds').setQueryParameter('code_value', 'TRANSPORTATION');
+                $('exp_tvp_line_transportation_ds').setQueryParameter('travel_line_category', 'TRANSPORTATION');
+                $('exp_tvp_line_transportation_ds').query();
+            
+                $('exp_tvp_line_accommodation_ds').setQueryParameter('travel_plan_header_id', travel_plan_header_id);
+                $('exp_tvp_line_accommodation_ds').setQueryParameter('code_value', 'ACCOMMODATION');
+                $('exp_tvp_line_accommodation_ds').setQueryParameter('travel_line_category', 'ACCOMMODATION');
+                $('exp_tvp_line_accommodation_ds').query();
+            
+                $('exp_tvp_line_other_ds').setQueryParameter('travel_plan_header_id', travel_plan_header_id);
+                $('exp_tvp_line_other_ds').setQueryParameter('code_value', 'OTHER');
+                $('exp_tvp_line_other_ds').setQueryParameter('travel_line_category', 'OTHER');
+                $('exp_tvp_line_other_ds').query();
+                saveFlag = true;
+                if ($('exp_travel_plan_header_ds').getAt(0).get('transportation_line_flag') == 'N') {
+                    document.getElementById('transportation_div').style.display = "none";
+                }
+                if ($('exp_travel_plan_header_ds').getAt(0).get('accommodation_line_flag') == 'N') {
+                    document.getElementById('accommodation_div').style.display = "none";
+                }
+                if ($('exp_travel_plan_header_ds').getAt(0).get('others_line_flag') == 'N') {
+                    document.getElementById('others_div').style.display = "none";
+                }
+            }
+            
+            function tvp_header_init() {
+                var tvp_header_ds = $('exp_travel_plan_header_ds');
+                tvp_header_ds.setQueryParameter('travel_plan_header_id', '${/parameter/@travel_plan_header_id}');
+                tvp_header_ds.query();
+            }
+            
+            function tvp_lines_init() {
+                var line_cat_ds = $('travel_line_category_ds');
+                for (var i = 0;i < line_cat_ds.getAll().length;i++) {
+                    if (line_cat_ds.getAt(i).get('code_value') == 'TRANSPORTATION') {
+                        $('TRANSPORTATION').setValue(line_cat_ds.getAt(i).get('code_value_name'));
+                    }
+                    if (line_cat_ds.getAt(i).get('code_value') == 'ACCOMMODATION') {
+                        $('ACCOMMODATION').setValue(line_cat_ds.getAt(i).get('code_value_name'));
+                    }
+                    if (line_cat_ds.getAt(i).get('code_value') == 'OTHER') {
+                        $('OTHER').setValue(line_cat_ds.getAt(i).get('code_value_name'));
+                    }
+                }
+            }
+            
+            function lines_ds_onAdd(ds, record, index) {
+                saveFlag = false;
+                var head = $('exp_travel_plan_header_ds');
+                head.getAt(0).getField('application_date').setReadOnly(true);
+                head.getAt(0).getField('position_code').setReadOnly(true);
+                if (record.get('copy_flag')) {
+                    return;
+                }
+                lineNum += 10;
+                record.set('line_num', lineNum);
+                // alert(head.getAt(0).get('currency_name'));
+                record.set('currency_code', head.getAt(0).get('currency_code'));
+                record.set('currency_name', head.getAt(0).get('currency_code_name'));
+                record.set('employee_id', head.getAt(0).get('employee_id'));
+                record.set('employee_name', head.getAt(0).get('employee_name'));
+                record.set('company_id', emp_info.company_id);
+                record.get('position_id', emp_info.position_id);
+                record.set('position_code', emp_info.position_code);
+                record.set('unit_id', emp_info.unit_id);
+                record.set('unit_code', emp_info.unit_code);
+                record.set('responsibility_center_id', emp_info.responsibility_center_id);
+                record.set('responsibility_center_code', emp_info.responsibility_center_code);
+                record.set('line_exchange_rate', head.getAt(0).get('exchange_rate'));
+                record.set('line_exchange_rate_type', head.getAt(0).get('exchange_rate_type'));
+                record.set('line_exchange_rate_quotation', head.getAt(0).get('exchange_rate_quotation'));
+                if (record.get('travel_line_category') == 'TRANSPORTATION') {
+                    record.getField('req_item_code').setLovPara('travel_plan_type_id', $('exp_travel_plan_header_ds').getCurrentRecord().get('travel_plan_type_id'));
+                    record.getField('req_item_code').setLovPara('item_category', 'TRAVEL_ROUTE');
+                    record.set('req_item_code', '${/model/exp_com_tvp_type/record/@default_trans_item_desc}');
+                    record.set('req_item_id', '${/model/exp_com_tvp_type/record/@default_trans_item}');
+                }
+                if (record.get('travel_line_category') == 'ACCOMMODATION') {
+                    record.getField('req_item_code').setLovPara('travel_plan_type_id', $('exp_travel_plan_header_ds').getCurrentRecord().get('travel_plan_type_id'));
+                    record.getField('req_item_code').setLovPara('item_category', 'QUARTER');
+                    record.set('req_item_code', '${/model/exp_com_tvp_type/record/@default_accomm_item_desc}');
+                    record.set('req_item_id', '${/model/exp_com_tvp_type/record/@default_accomm_item}');
+                }
+                if (record.get('travel_line_category') == 'OTHER') {
+                    record.getField('req_item_code').setLovPara('travel_plan_type_id', $('exp_travel_plan_header_ds').getCurrentRecord().get('travel_plan_type_id'));
+                    record.getField('req_item_code').setLovPara('item_category', 'OTHERS');
+                    record.set('req_item_code', '${/model/exp_com_tvp_type/record/@default_others_item_desc}');
+                    record.set('req_item_id', '${/model/exp_com_tvp_type/record/@default_others_item}');
+                }
+            }
+            
+            function getDisplayByValue(value, valueName, displayName, dsName) {
+                var dataSet = $(dsName);
+                var records = dataSet.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get(valueName) == value) {
+                        return records[i].get(displayName);
+                    }
+                }
+            }
+            
+            function exp_tvp_set_head_exchange_rate(res) {
+                if (res) {
+                    var exchange_rate = res.result.record.exchange_rate;
+                    var exchange_rate_quotation = res.result.record.exchange_rate_quotation;
+                    if (exchange_rate) {
+                        $('exp_travel_plan_header_ds').getAt(0).set('exchange_rate', exchange_rate);
+                    }
+                    if (exchange_rate_quotation) {
+                        $('exp_travel_plan_header_ds').getAt(0).set('exchange_rate_quotation', exchange_rate_quotation);
+                        $('exp_travel_plan_header_ds').getAt(0).set('exchange_rate_quo_display', getDisplayByValue(res.result.record.exchange_rate_quotation, 'code_value', 'code_value_name', 'exchange_rate_quotation_ds'));
+                    }
+                }
+            }
+            
+            function getExchangeRate(param) {
+                Aurora.request({
+                    url: $('exp_tvp_get_exchange_rate_link').getUrl(),
+                    para: {
+                        from_currency: param.fromCur,
+                        to_currency: param.toCur,
+                        exchange_date: param.exchangeDate,
+                        exchange_period_name: param.periodName,
+                        exchange_rate_type: param.exchangeRateType
+                    },
+                    success: exp_tvp_set_head_exchange_rate,
+                    scope: this
+                });
+            }
+            
+            function exp_tvp_set_head_period_name(res) {
+                if (res) {
+                    var period_name = res.result.record.period_name;
+                    if (period_name) {
+                        $('exp_travel_plan_header_ds').getAt(0).set('period_name', period_name);
+                    } else {
+                        $('exp_travel_plan_header_ds').getAt(0).set('period_name', '');
+                    }
+                }
+            }
+            
+            function exp_tvp_get_period(record) {
+                var app_date = record.get('application_date');
+                app_date = Aurora.formatDate(app_date);
+                if ('${/model/exp_com_tvp_type/record/@buget_control_enabled_flag}' == 'Y') {
+                    Aurora.request({
+                        url: $('exp_tvp_get_bgt_period_name_link').getUrl(),
+                        para: {
+                            p_date: app_date
+                        },
+                        success: exp_tvp_set_head_period_name,
+                        scope: this
+                    });
+                } else {
+                    Aurora.request({
+                        url: $('exp_tvp_get_period_name_link').getUrl(),
+                        para: {
+                            p_date: app_date
+                        },
+                        success: exp_tvp_set_head_period_name,
+                        scope: this
+                    });
+                }
+            }
+            
+            function exp_tvp_header_onUpdate(ds, record, name, value, oldValue) {
+                saveFlag = false;
+                if (name == 'application_date') {
+                    exp_tvp_get_period(record);
+                } else if (name == 'period_name') {
+                    var rateQuotation = record.get('exchange_rate_quotation');
+                    if (rateQuotation == 'PERIOD' || rateQuotation == 'DAILY' || rateQuotation == 'FIXED') {
+                        record.getField('exchange_rate_quo_display').setReadOnly(true);
+                        record.getField('exchange_rate_quo_display').setRequired(false);
+                        record.getField('exchange_rate').setReadOnly(true);
+                        record.set('exchange_rate', '');
+                        getExchangeRate({
+                            fromCur: '${/model/currency_code/record/@functional_currency_code}',
+                            toCur: record.get('currency_code'),
+                            exchangeRateType: record.get('exchange_rate_type'),
+                            exchangeDate: record.get('application_date'),
+                            periodName: record.get('period_name')
+                        });
+                    }
+                } else if (name == 'exchange_rate_type') {
+                    if (value == 'PERIOD' || value == 'DAILY' || value == 'FIXED') {
+                        record.getField('exchange_rate_quo_display').setReadOnly(true);
+                        record.getField('exchange_rate_quo_display').setRequired(false);
+                        record.getField('exchange_rate').setReadOnly(true);
+                        record.set('exchange_rate', '');
+                        getExchangeRate({
+                            fromCur: '${/model/currency_code/record/@functional_currency_code}',
+                            toCur: record.get('currency_code'),
+                            exchangeRateType: record.get('exchange_rate_type'),
+                            exchangeDate: record.get('application_date'),
+                            periodName: record.get('period_name')
+                        });
+                    } else {
+                        record.getField('exchange_rate_quo_display').setReadOnly(false);
+                        record.getField('exchange_rate').setReadOnly(false);
+                        record.getField('exchange_rate_quo_display').setRequired(true);
+                        record.getField('exchange_rate').setRequired(true);
+                        record.set('exchange_rate_quo_display', '');
+                        record.set('exchange_rate', '');
+                    }
+                } else if (name == 'currency_code') {
+                    if (value == '${/model/currency_code/record/@functional_currency_code}') {
+                        record.getField('exchange_rate_type_name').setReadOnly(true);
+                        record.getField('exchange_rate_quo_display').setReadOnly(true);
+                        record.getField('exchange_rate').setReadOnly(true);
+                        record.getField('exchange_rate_type_name').setRequired(false);
+                        record.set('exchange_rate', 1);
+                    } else {
+                        record.getField('exchange_rate_type_name').setReadOnly(false);
+                        record.getField('exchange_rate_type_name').setRequired(true);
+                    }
+                }
+            }
+            
+            function lines_ds_onUpdate(ds, record, name, value, oldValue) {
+                saveFlag = false;
+                if (name == 'employee_id') {
+                    record.getField('position_code').setLovPara('employee_id', record.get('employee_id'));
+                    Aurora.request({
+                        url: $('exp_employee_info_init_link').getUrl(),
+                        para: [{
+                            employee_id: value,
+                            _status: 'update'
+                        }],
+                        success: function(res) {
+                            line_emp_info = res.result.record;
+                            record.set('company_id', line_emp_info.company_id);
+                            record.set('unit_id', line_emp_info.unit_id);
+                            record.set('unit_code', line_emp_info.unit_code);
+                            record.set('position_id', line_emp_info.position_id);
+                            record.set('position_code', line_emp_info.position_code);
+                            record.set('responsibility_center_id', line_emp_info.responsibility_center_id);
+                            record.set('responsibility_center_code', line_emp_info.responsibility_center_code);
+                        },
+                        scope: this
+                    });
+                    return;
+                }
+                if (name == 'company_id') {
+                    record.getField('responsibility_center_code').setLovPara('company_id', value);
+                    record.getField('unit_code').setLovPara('company_id', value);
+                    return;
+                }
+                if (name == 'price' || name == 'quantity') {
+                    var price = record.get('price');
+                    var rate = record.get('exchange_rate');
+                    var quantity = record.get('quantity');
+                    var result = 0;
+                    var head_currency_amount = (price * quantity).toFixed(2);
+                    if (record.get('exchange_rate_quotation') == '') {
+                        result = (price * rate).toFixed(2);
+                        record.set('functional_amount', result);
+                    } else if (record.get('exchange_rate_quotation') == 'DIRECT QUOTATION') {
+                        result = (price * rate * quantity).toFixed(2);
+                        record.set('functional_amount', result);
+                    } else {
+                        result = (price * quantity / rate).toFixed(2);
+                        record.set('functional_amount', result);
+                    }
+                    record.set('head_currency_amount', head_currency_amount);
+                    record.set('amount', head_currency_amount);
+                    return;
+                }
+                if (name == 'amount') {
+                    headAmountChanged();
+                }
+                if (name == 'accommodation_days') {
+                    record.set('quantity', value);
+                }
+                if (name == 'place' || name == 'place_id' || name == 'req_item_id' || name == 'position_id') {
+                    travellineInfoInit(record);
+                }
+            }
+            
+            function travellineInfoInit(record) {
+                if (record.get('employee_id')) {
+                    record.set('expense_item_id', record.get('req_item_id'));
+                    record.set('p_rep_date', $('exp_travel_plan_header_ds').getAt(0).get('application_date'));
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/expm.exp_req_policy_infoinit/update*/
+                        $('exp_tp_policy_info_link').getUrl(),
+                        para: record.data,
+                        success: function(res) {
+                            var resData = res.result;
+                            record.set('p_upper_limit', resData['p_upper_limit']);
+                            record.set('p_lower_limit', resData['p_lower_limit']);
+                            if (resData['p_count'] == 1) {
+                                record.set('p_event_name', resData['p_event_name']);
+                                record.set('p_commit_flag', resData['p_commit_flag']);
+                                record.set('p_changeable_flag', resData['p_changeable_flag']);
+                                record.set('p_id', resData['p_id']);
+                                if (resData['p_default_flag'] == 'Y' && record.isNew) {
+                                    record.set('price', resData['p_expense_standard']);
+                                }
+                            } else {
+                                record.set('p_changeable_flag', resData['p_changeable_flag']);
+                            }
+                            if (record.get('p_changeable_flag') && record.get('p_changeable_flag') == 'N') {
+                                record.getMeta().getField('price').setReadOnly(true);
+                            } else {
+                                record.getMeta().getField('price').setReadOnly(false);
+                            }
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function exp_tvp_header_onSubmitsuccess() {
+                // Aurora.go($('exp_travel_plan_create_link').getUrl());
+            }
+            
+            function save() {
+                if (!$('exp_travel_plan_header_ds').validate()) {
+                    return;
+                }
+                if (!$('exp_tvp_head_dimension').validate()) {
+                    return;
+                }
+                if (!$('exp_tvp_head_object').validate()) {
+                    return;
+                }
+                if (($('exp_tvp_line_transportation_ds').getAll().length == 0 && $('exp_tvp_line_accommodation_ds').getAll().length == 0 && $('exp_tvp_line_other_ds').getAll().length == 0)) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PLEASE_INSERT_LINE_DATA}', null, 250, 100);
+                    return;
+                }
+                if (!($('exp_tvp_line_transportation_ds').validate() && $('exp_tvp_line_accommodation_ds').validate() && $('exp_tvp_line_other_ds').validate())) {
+                    return;
+                }
+                var headRecord = $('exp_travel_plan_header_ds').getAt(0);
+                var transRecords = $('exp_tvp_line_transportation_ds').getAll();
+                // alert(transRecords.length);
+                var accomRecords = $('exp_tvp_line_accommodation_ds').getAll();
+                var otherRecords = $('exp_tvp_line_other_ds').getAll();
+            
+                var headDimData = $('exp_tvp_head_dimension').getAt(0).data;
+                var headObjData = $('exp_tvp_head_object').getAt(0).data;
+            
+                var param = headRecord.data;
+                if (typeof(headRecord.get('travel_plan_header_id')) != 'undefined' && !Aurora.isEmpty(headRecord.get('travel_plan_header_id'))) {
+                    param['_status'] = "update";
+                } else {
+                    param['_status'] = "insert";
+                }
+            
+                for (var key in headDimData) {
+                    param[key] = headDimData[key];
+                }
+                for (key in headObjData) {
+                    param[key] = headObjData[key];
+                }
+            
+                var records = $('exp_tvp_head_object').getAll();
+                for (var i = 0;i < headObj.length;i++) {
+                    headObj[i]['expense_object_id'] = records[0].get(headObj[i].forname);
+                    headObj[i]['desc'] = records[0].get(headObj[i].expense_object_type_code);
+                    if (records[0].isNew && Aurora.isEmpty(headRecord.get('travel_plan_header_id'))) {
+                        headObj[i]['_status'] = 'insert';
+                    } else {
+                        headObj[i]['_status'] = 'update';
+                    }
+                }
+            
+                param['head_objs'] = headObj;
+            
+                param['transportations'] = [];
+                for (i = 0;i < transRecords.length;i++) {
+                    var record = transRecords[i];
+            
+                    for (var j = 0;j < headDim.length;j++) {
+                        record.set(headDim[j].dimension_code1, $('exp_tvp_head_dimension').getAt(0).get(headDim[j].dimension_code1));
+                    }
+            
+                    if (record.dirty) {
+                        record.data['_status'] = 'update';
+                    }
+                    if (record.isNew) {
+                        record.data['_status'] = 'insert';
+                    }
+            
+                    for (var k = 0;k < transObj.length;k++) {
+                        transObj[k]['expense_object_id'] = record.get(transObj[k].forname);
+                        transObj[k]['desc'] = record.get(transObj[k].expense_object_type_code);
+                        if (record.isNew && Aurora.isEmpty(record.get('travel_plan_line_id'))) {
+                            transObj[k]['_status'] = 'insert';
+                        } else {
+                            transObj[k]['_status'] = 'update';
+                        }
+                    }
+                    record.data['transObjs'] = transObj;
+                    param['transportations'].push(record.data);
+                }
+                param['accommodations'] = [];
+                for (i = 0;i < accomRecords.length;i++) {
+                    var record = accomRecords[i];
+            
+                    for (var j = 0;j < headDim.length;j++) {
+                        record.set(headDim[j].dimension_code1, $('exp_tvp_head_dimension').getAt(0).get(headDim[j].dimension_code1));
+                    }
+            
+                    if (record.dirty) {
+                        record.data['_status'] = 'update';
+                    }
+                    if (record.isNew) {
+                        record.data['_status'] = 'insert';
+                    }
+            
+                    for (var k = 0;k < accomObj.length;k++) {
+                        accomObj[k]['expense_object_id'] = record.get(accomObj[k].forname);
+                        accomObj[k]['desc'] = record.get(accomObj[k].expense_object_type_code);
+                        if (record.isNew && Aurora.isEmpty(record.get('travel_plan_line_id'))) {
+                            accomObj[k]['_status'] = 'insert';
+                        } else {
+                            accomObj[k]['_status'] = 'update';
+                        }
+                    }
+                    record.data['accomObjs'] = accomObj;
+                    param['accommodations'].push(record.data);
+                }
+            
+                param['others'] = [];
+                for (i = 0;i < otherRecords.length;i++) {
+                    var record = otherRecords[i];
+                    // if (!record.isNew && !record.dirty) {
+                    // continue;
+                    // }
+                    for (var j = 0;j < headDim.length;j++) {
+                        record.set(headDim[j].dimension_code1, $('exp_tvp_head_dimension').getAt(0).get(headDim[j].dimension_code1));
+                    }
+                    if (record.dirty) {
+                        record.data['_status'] = 'update';
+                    }
+                    if (record.isNew) {
+                        record.data['_status'] = 'insert';
+                    }
+                    // record.set('source_document_type', 'EXP_REQUISITION_LINES');
+                    for (var k = 0;k < otherObj.length;k++) {
+                        otherObj[k]['expense_object_id'] = record.get(otherObj[k].forname);
+                        otherObj[k]['desc'] = record.get(otherObj[k].expense_object_type_code);
+                        if (record.isNew && Aurora.isEmpty(record.get('travel_plan_line_id'))) {
+                            otherObj[k]['_status'] = 'insert';
+                        } else {
+                            otherObj[k]['_status'] = 'update';
+                        }
+                    }
+                    record.data['otherObjs'] = otherObj;
+                    param['others'].push(record.data);
+                }
+            
+                Aurora.request({
+                    url: /*exp_tvp_create_control.svc*/
+                    $('exp_tvp_create_control_link').getUrl(),
+                    para: param,
+                    success: function(res) {
+                        // alert(res.result.travel_plan_number);
+                        $('exp_travel_plan_header_ds').getAt(0).set('travel_plan_number', res.result.travel_plan_number);
+                        $('exp_travel_plan_header_ds').getAt(0).set('travel_plan_header_id', res.result.travel_plan_header_id);
+                        // alert($('exp_travel_plan_header_ds').getAt(0).get('travel_plan_header_id'));
+                        var travel_plan_header_id = res.result.travel_plan_header_id;
+                        $('exp_tvp_line_transportation_ds').setQueryParameter('travel_plan_header_id', travel_plan_header_id);
+                        $('exp_tvp_line_transportation_ds').setQueryParameter('code_value', 'TRANSPORTATION');
+                        $('exp_tvp_line_transportation_ds').setQueryParameter('travel_line_category', 'TRANSPORTATION');
+                        $('exp_tvp_line_transportation_ds').query();
+            
+                        $('exp_tvp_line_accommodation_ds').setQueryParameter('travel_plan_header_id', travel_plan_header_id);
+                        $('exp_tvp_line_accommodation_ds').setQueryParameter('code_value', 'ACCOMMODATION');
+                        $('exp_tvp_line_accommodation_ds').setQueryParameter('travel_line_category', 'ACCOMMODATION');
+                        $('exp_tvp_line_accommodation_ds').query();
+            
+                        $('exp_tvp_line_other_ds').setQueryParameter('travel_plan_header_id', travel_plan_header_id);
+                        $('exp_tvp_line_other_ds').setQueryParameter('code_value', 'OTHER');
+                        $('exp_tvp_line_other_ds').setQueryParameter('travel_line_category', 'OTHER');
+                        $('exp_tvp_line_other_ds').query();
+                    },
+                    falure: function(res) {
+                        alert("failure:" + res);
+                    },
+                    error: function(res) {
+                        alert("error" + res);
+                    },
+                    scope: this
+                });
+                saveFlag = true;
+            }
+            
+            function new_tvp() {
+                var okCan = Aurora.showConfirm('${l:PROMPT}', '${l:PROMPTS.SAVE_CONTINUE}', function() {
+                    if (($('exp_tvp_line_transportation_ds').getAll().length == 0 && $('exp_tvp_line_accommodation_ds').getAll().length == 0 && $('exp_tvp_line_other_ds').getAll().length == 0)) {
+                        Aurora.showInfoMessage('${l:PROMPT}', '${l:PLEASE_INSERT_LINE_DATA}', null, 250, 100);
+                        return;
+                    }
+                    $('exp_travel_plan_header_ds').submit();
+                    window.location.href = $('exp_travel_plan_type_choice_link').getUrl();
+                    okCan.close();
+                }, null, 250, 100);
+            }
+            
+            function deleteAllFunction() {
+                var okCan = Aurora.showConfirm('${l:PROMPT}', '${l:EXP_REQUESTION_READONLY.SURE_DELETE_REQ}', function() {
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/expm.exp_requisition_head_delete/delete*/
+                        $('exp_travel_plan_delete_link').getUrl(),
+                        para: {
+                            travel_plan_header_id: $('exp_travel_plan_header_ds').getAt(0).get('travel_plan_header_id')
+                        },
+                        success: function() {
+                            okCan.close();
+                            window.location.href = /*exp_requisition_maintain.screen*/
+                            $('exp_travel_plan_maintain_link').getUrl();
+                        },
+                        scope: this
+                    });
+                }, function() {
+                    okCan.close();
+                }, 250, 100);
+            }
+            
+            
+            function bgtCheck() {
+                if ($('exp_travel_plan_header_ds').getAt(0).get('budget_control_enabled') == 'Y') {
+                    Aurora.request({
+                        url: $('exp_tp_bgt_check_link').getUrl(),
+                        para: {
+                            travel_plan_header_id: travel_plan_header_id_bak,
+                            flag: 'N'
+                        },
+                        success: nextProcess,
+                        scope: this
+                    });
+                } else {
+                    finalSubmit();
+                }
+            }
+            
+            function nextProcess(res) {
+                var t = res.result['error_level_code'];
+                if (!t) {
+                    checkSubmit();
+                } else if (t == 'ALLOWED') {
+                    var okCan = Aurora.showConfirm('${l:PROMPT}', res.result.message_code, function() {
+                        checkSubmit('Y');
+                        okCan.close();
+                    }, function() {
+                        okCan.close();
+                    }, 300, 200);
+                } else if (t == 'BLOCK') {
+                    Aurora.showInfoMessage('${l:PROMPT}', res.result.message_code, null, 250, 100);
+                }
+            }
+            
+            function checkSubmit(flag) {
+                if (flag) {
+                    Aurora.request({
+                        url: $('exp_tp_bgt_check_link').getUrl(),
+                        para: {
+                            travel_plan_header_id: travel_plan_header_id_bak,
+                            flag: 'Y'
+                        },
+                        success: finalSubmit,
+                        scope: this
+                    });
+                } else {
+                    finalSubmit();
+                }
+            }
+            
+            function finalSubmit() {
+                if (saveFlag) {
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/expm.exp_requisition_submit/update*/
+                        $('exp_travel_plan_submit_link').getUrl(),
+                        para: {
+                            travel_plan_header_id: $('exp_travel_plan_header_ds').getAt(0).get('travel_plan_header_id')
+                        },
+                        success: function() {
+                            window.location.href = /*exp_requisition_maintain.screen*/
+                            $('exp_travel_plan_maintain_link').getUrl();
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function submitFunction() {
+                bgtCheck();
+            }
+            
+            function place_editorFunction() {
+                var enabled_flag = '${/model/policy_place_enabled/record/@policy_enabled}';
+                if (enabled_flag == 'Y') {
+                    return 'common_lov';
+                }
+                return 'grid_tf';
+            }
+            
+            function currency_editorFunction() {
+                var multi_currency_flag = '${/parameter/@multiple_currency_support_flag}';
+                if (multi_currency_flag == 'Y') {
+                    return 'common_lov';
+                }
+                return '';
+            }
+            
+            function dateValidator(record, name, value) {
+                if (name == 'departure_date' || name == 'arrival_date') {
+                    var departure_date = record.get('departure_date');
+                    var arrival_date = record.get('arrival_date');
+                    if (typeof(arrival_date) != 'undefined' && !Aurora.isEmpty(arrival_date)) {
+                        if (departure_date > arrival_date) {
+                            return '${l:START_GREATER_THAN_END}';
+                        }
+                    }
+                    return true;
+                }
+                if (name == 'accommodation_date_from' || name == 'accommodation_date_to') {
+                    var accommodation_date_from = record.get('accommodation_date_from');
+                    var accommodation_date_to = record.get('accommodation_date_to');
+                    if (typeof(accommodation_date_to) != 'undefined' && !Aurora.isEmpty(accommodation_date_to)) {
+                        if (accommodation_date_from > accommodation_date_to) {
+                            return '${l:START_GREATER_THAN_END}';
+                        }
+            
+                    }
+                    if (accommodation_date_from && accommodation_date_to) {
+                        var days = (new Date(accommodation_date_to).getTime() - new Date(accommodation_date_from).getTime()) / 86400000;
+                        if (!record.get('accommodation_days') || record.get('accommodation_days') > days) {
+                            record.set('accommodation_days', days);
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function headAmountChanged() {
+                var transportations = $('exp_tvp_line_transportation_ds').getAll();
+                var accommodations = $('exp_tvp_line_accommodation_ds').getAll();
+                var others = $('exp_tvp_line_other_ds').getAll();
+                var lineAmount = 0;
+                for (var i = 0;i < transportations.length;i++) {
+                    if (isNaN(transportations[i].get('functional_amount'))) {
+                        transportations[i].set('functional_amount', '0');
+                    }
+                    var amount = parseFloat(transportations[i].get('amount'));
+                    lineAmount += amount;
+                }
+                for (var i = 0;i < accommodations.length;i++) {
+                    if (isNaN(accommodations[i].get('functional_amount'))) {
+                        accommodations[i].set('functional_amount', '0');
+                    }
+                    var amount = parseFloat(accommodations[i].get('amount'));
+                    lineAmount += amount;
+                }
+                for (var i = 0;i < others.length;i++) {
+                    if (isNaN(others[i].get('functional_amount'))) {
+                        others[i].set('functional_amount', '0');
+                    }
+                    var amount = parseFloat(others[i].get('amount'));
+                    lineAmount += amount;
+                }
+                $('exp_travel_plan_header_ds').getAt(0).set('sum_amount', lineAmount);
+            
+            }
+            
+            function priceValidator(record, name, value) {
+            
+                if (record.get('p_upper_limit')) {
+                    if (parseFloat(value) > parseFloat(record.get('p_upper_limit')) && record.get('p_commit_flag') && record.get('p_commit_flag') == 'N') {
+                        return '${l:EXP_REPORT_CREATE.CHECK1}';
+                    }
+                }
+            
+                if (record.get('p_lower_limit')) {
+                    if (parseFloat(value) < parseFloat(record.get('p_lower_limit')) && record.get('p_commit_flag') && record.get('p_commit_flag') == 'N') {
+                        return '${l:EXP_REPORT_CREATE.CHECK2}';
+                    }
+                }
+            
+                return true;
+            }
+            
+            
+            
+            function gridcellclick(grid, row, name, record) {
+            
+                var metadata = record.getMeta();
+                var r = record.getMeta();
+                if (name == 'unit_code') {
+                    var unit_code = r.getField('unit_code');
+                    unit_code.setLovPara('company_id', record.get('company_id'));
+                }
+                if (name == 'responsibility_center_code') {
+                    var responsibility_center_code = r.getField('responsibility_center_code');
+                    responsibility_center_code.setLovPara('company_id', record.get('company_id'));
+                }
+                if (name == 'employee_name') {
+                    var employee_name = r.getField('employee_name');
+                    employee_name.setLovPara('company_id', record.get('company_id'));
+                    employee_name.setLovPara('employee_id', $('exp_travel_plan_header_ds').getAt(0).get('employee_id'));
+                }
+                if (name == 'position_code') {
+            
+                    var position_code = r.getField('position_code');
+            
+                    position_code.setLovPara('company_id', record.get('company_id'));
+                    position_code.setLovPara('employee_id', $('exp_travel_plan_header_ds').getAt(0).get('employee_id'));
+                }
+            
+            }
+            
+            
+            function policyFunction() {
+                var data = $('exp_travel_plan_header_ds').getAt(0);
+                new Aurora.Window({
+                    url: $('exp_document_tp_policy_query_link').getUrl() + '?travel_plan_header_id=' + data.get('travel_plan_header_id') + '&travel_plan_number=' + data.get('travel_plan_number') + '&tp_date=' + data.get('application_date').format("yyyy-mm-dd"),
+                    title: '${l:PROMPT.VIEW_POLICIES}',
+                    id: 'exp_document_tp_policy_query_window',
+                    fullScreen: true
+                });
+            }
+            
+            function seeLog() {
+                var url = $('exp_budget_check_log_link_9').getUrl() + '?exp_travel_plan_header_id=' + travel_plan_header_id_bak + '&document_type=EXP_TRAVEL_PLAN&doc_header_id=' + travel_plan_header_id_bak + '&exp_requisition_header_id=' + travel_plan_header_id_bak;
+                new Aurora.Window({
+                    id: 'exp_budget_check_log_screen',
+                    url: url,
+                    title: '${l:EXP_REQUESTION_CREATE_SERVICE.LOG}',
+                    fullScreen: true
+                });
+            }
+            
+            function seeHistory() {
+                var data = $('exp_travel_plan_header_ds').getAt(0);
+                var url = $('exp_tp_query_history_link_6').getUrl() + '?head_id=' + travel_plan_header_id_bak + '&travel_plan_number=' + data.get('travel_plan_number') + '&tp_date=' + data.get('application_date').format("yyyy-mm-dd");
+                new Aurora.Window({
+                    id: 'exp_tp_history_window',
+                    url: url,
+                    title: '${l:REC_REQUISITION_HISTORY}',
+                    fullScreen: true
+                });
+            }
+            
+            
+            function uploadFile() {
+                var url = /*${/request/@context_path}/uploadFile.screen*/
+                $('uploadFile_link_10').getUrl() + '?table_name=EXP_TRAVEL_PLAN_HEADERS&header_id=' + travel_plan_header_id_bak
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'check_upload_file_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+            
+            function createTransLineRecord() {
+                var ds = $('exp_tvp_line_transportation_ds');
+                var linerecord = ds.getSelected();
+                if (linerecord.length == 0) {
+                    ds.create();
+                } else {
+                    for (i = 0;i < linerecord.length;i++) {
+                        var data = linerecord[i].data;
+                        var newdata = {};
+                        var len = ds.getAll().length;
+                        for (var name in data) {
+                            newdata[name] = data[name];
+                        }
+                        newdata['copy_flag'] = 1;
+                        var record = new Aurora.Record(newdata);
+                        record.isNew = 'true';
+                        record.dirty = 'false';
+                        lineNum = lineNum + 10;
+                        record.data['travel_plan_line_id'] = '';
+                        record.data['line_num'] = lineNum;
+                        ds.add(record);
+                    }
+                }
+            }
+            
+            function createAccommLineRecord() {
+                var ds = $('exp_tvp_line_accommodation_ds');
+                var linerecord = ds.getSelected();
+                if (linerecord.length == 0) {
+                    ds.create();
+                } else {
+                    for (i = 0;i < linerecord.length;i++) {
+                        var data = linerecord[i].data;
+                        var newdata = {};
+                        var len = ds.getAll().length;
+                        for (var name in data) {
+                            newdata[name] = data[name];
+                        }
+                        newdata['copy_flag'] = 1;
+                        var record = new Aurora.Record(newdata);
+                        record.isNew = 'true';
+                        record.dirty = 'false';
+                        lineNum = lineNum + 10;
+                        record.data['travel_plan_line_id'] = '';
+                        record.data['line_num'] = lineNum;
+                        ds.add(record);
+                    }
+                }
+            }
+            
+            function createOtherLineRecord() {
+                var ds = $('exp_tvp_line_other_ds');
+                var linerecord = ds.getSelected();
+                if (linerecord.length == 0) {
+                    ds.create();
+                } else {
+                    for (i = 0;i < linerecord.length;i++) {
+                        var data = linerecord[i].data;
+                        var newdata = {};
+                        var len = ds.getAll().length;
+                        for (var name in data) {
+                            newdata[name] = data[name];
+                        }
+                        newdata['copy_flag'] = 1;
+                        var record = new Aurora.Record(newdata);
+                        record.isNew = 'true';
+                        record.dirty = 'false';
+                        lineNum = lineNum + 10;
+                        record.data['travel_plan_line_id'] = '';
+                        record.data['line_num'] = lineNum;
+                        ds.add(record);
+                    }
+                }
+            }
+            
+            function daysValidator(record, name, value) {
+                if (name == 'accommodation_days') {
+                    var accommodation_date_from = record.get('accommodation_date_from');
+                    var accommodation_date_to = record.get('accommodation_date_to');
+            
+                    if (accommodation_date_from && accommodation_date_to) {
+                        var days = (new Date(accommodation_date_to).getTime() - new Date(accommodation_date_from).getTime()) / 86400000;
+                        if (value > days) {
+                            return '${l:EXP_TRAVEL_PLAN.ACCOMM_DAYS_ERROR}';
+                        }
+            
+                    }
+                    return true;
+                }
+                return true;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="emp_position_list_init_ds">
+                <a:datas dataSource="/model/emp_position_list"/>
+            </a:dataSet>
+            <a:dataSet id="exchange_rate_quotation_ds" lookupCode="EXCHANGE_RATE_QUOTATION"/>
+            <a:dataSet id="travel_line_category_ds" autoQuery="true" fetchAll="true" lookupCode="TRAVEL_LINE_CATEGORY"/>
+            <a:dataSet id="transportation_ds" autoQuery="true" lookupCode="TRANSPORTATION"/>
+            <a:dataSet id="position_ds" model="exp.exp_org_position"/>
+            <a:dataSet id="head_dimension_ds">
+                <a:datas dataSource="/model/head_dimension"/>
+            </a:dataSet>
+            <a:dataSet id="head_object_ds">
+                <a:datas dataSource="/model/head_object"/>
+            </a:dataSet>
+            <a:dataSet id="trans_object_ds">
+                <a:datas dataSource="/model/trans_object"/>
+            </a:dataSet>
+            <a:dataSet id="accom_object_ds">
+                <a:datas dataSource="/model/accom_object"/>
+            </a:dataSet>
+            <a:dataSet id="other_object_ds">
+                <a:datas dataSource="/model/other_object"/>
+            </a:dataSet>
+            <a:dataSet id="exp_tvp_head_dimension" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="dynamicHeadDimFields"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exp_tvp_head_object" autoCreate="true">
+                <a:fields>
+                    <a:placeHolder id="dynamicHeadObjFields"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="exp_tvp_trans_dimension" autoCreate="true">
+                <a:datas dataSource="/model/trans_dimension"/>
+            </a:dataSet>
+            <a:dataSet id="exp_tvp_accom_dimension" autoCreate="true">
+                <a:datas dataSource="/model/accom_dimension"/>
+            </a:dataSet>
+            <a:dataSet id="exp_tvp_other_dimension" autoCreate="true">
+                <a:datas dataSource="/model/other_dimension"/>
+            </a:dataSet>
+            <a:dataSet id="exp_travel_plan_header_ds" autoQuery="true" model="expm.EXP7110.exp_travel_plan_headers" submitUrl="${/request/@context_path}/modules/expm/EXP7110/exp_travel_plan_create_control.svc">
+                <a:fields>
+                    <a:field name="travel_plan_header_id"/>
+                    <a:field name="travel_plan_type_id"/>
+                    <a:field name="travel_plan_type_name" readOnly="true"/>
+                    <a:field name="travel_plan_number" readOnly="true"/>
+                    <a:field name="status"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="currency_code_name" readOnly="true"/>
+                    <a:field name="application_date" readOnly="true" required="true"/>
+                    <a:field name="company_id"/>
+                    <a:field name="unit_id"/>
+                    <a:field name="position_id"/>
+                    <a:field name="position_code" displayField="position_code" options="emp_position_list_init_ds" readOnly="true" required="true" returnField="position_id" valueField="position_id"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="employee_name" readOnly="true"/>
+                    <a:field name="description"/>
+                    <a:field name="sum_amount" readOnly="true"/>
+                    <a:field name="exchange_rate_type_name" autoComplete="true" autoCompleteField="type_name_code" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovService="gld.gld_exchage_rate_types" lovWidth="500" prompt="EXP_REQUISITION_HEADERS.EXCHANGE_RATE_TYPE" readOnly="true" title="EXP_REQUISITION_HEADERS.EXCHANGE_RATE_TYPE">
+                        <a:mapping>
+                            <a:map from="type_name" to="exchange_rate_type_name"/>
+                            <a:map from="type_code" to="exchange_rate_type"/>
+                            <a:map from="rate_method_code" to="rate_method_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate_type"/>
+                    <a:field name="rate_method_code"/>
+                    <a:field name="exchange_rate_quo_display" displayField="code_value_name" options="exchange_rate_quotation_ds" prompt="EXP_REQUISITION_HEADERS.EXCHANGE_RATE_QUOTATION" readOnly="true">
+                        <a:mapping>
+                            <a:map from="code_value_name" to="exchange_rate_quo_display"/>
+                            <a:map from="code_value" to="exchange_rate_quotation"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate_quotation"/>
+                    <a:field name="exchange_rate" readOnly="true"/>
+                    <a:field name="period_name" prompt="EXP_REQUISITION_HEADERS.PERIOD_NAME" readOnly="true"/>
+                    <a:field name="created_by" prompt="EXP_REQUISITION_HEADERS.CREATED_BY" readOnly="true"/>
+                    <a:field name="attachment_num"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="exp_tvp_header_onSubmitsuccess"/>
+                    <a:event name="update" handler="exp_tvp_header_onUpdate"/>
+                    <a:event name="load" handler="exp_tvp_header_load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_tvp_line_transportation_ds" model="expm.EXP7110.exp_travel_plan_lines" selectable="true">
+                <a:fields>
+                    <a:field name="travel_line_category" defaultValue="TRANSPORTATION" required="true"/>
+                    <a:field name="travel_plan_line_id"/>
+                    <a:field name="travel_plan_header_id"/>
+                    <a:field name="line_num" required="true"/>
+                    <a:field name="req_item_code" lovGridHeight="350" lovHeight="480" lovService="expm.EXP7110.exp_tvp_req_items?travel_plan_type_id=${/parameter/@travel_plan_type_id}&amp;item_category=TRAVEL_ROUTE" lovWidth="500" prompt="EXP_TRAVEL_PLAN_LINES.REQ_ITEM_ID" required="true" title="EXP_TRAVEL_PLAN_LINES.REQ_ITEM_ID">
+                        <a:mapping>
+                            <a:map from="exp_req_item_id" to="req_item_id"/>
+                            <a:map from="description" to="req_item_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="req_item_id"/>
+                    <a:field name="budget_item_id"/>
+                    <a:field name="transportation_disp" displayField="code_value_name" options="transportation_ds" prompt="EXP_TRAVEL_PLAN_LINES.TRANSPORTATION" required="true" returnField="transportation" valueField="code_value"/>
+                    <a:field name="transportation"/>
+                    <a:field name="departure_place" autoComplete="true" autoCompleteField="place_desc" fetchRemote="false" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovLabelWidth="120" lovService="expm.exp_expense_policy_place_lov" lovWidth="520" required="true" title="EXP_REQUISITION_LINES.PLACE_ID">
+                        <a:mapping>
+                            <a:map from="place_desc" to="departure_place"/>
+                            <a:map from="place_id" to="departure_place_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="departure_place_id"/>
+                    <a:field name="departure_date" required="true" validator="dateValidator"/>
+                    <a:field name="arrival_place" autoComplete="true" autoCompleteField="place_desc" fetchRemote="false" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovLabelWidth="120" lovService="expm.exp_expense_policy_place_lov" lovWidth="520" required="true" title="EXP_REQUISITION_LINES.PLACE_ID">
+                        <a:mapping>
+                            <a:map from="place_desc" to="arrival_place"/>
+                            <a:map from="place_id" to="arrival_place_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="arrival_place_id"/>
+                    <a:field name="arrival_date" required="true" validator="dateValidator"/>
+                    <a:field name="currency_name" displayField="currency_name" lovService="gld.gld_currency_lov" lovWidth="500" prompt="EXP_TRAVEL_PLAN_LINES.CURRENCY_CODE" required="true" returnField="currency_code">
+                        <a:mapping>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="currency_name" to="currency_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency_code"/>
+                    <a:field name="line_exchange_rate_type"/>
+                    <a:field name="line_exchange_rate_quotation"/>
+                    <a:field name="line_exchange_rate"/>
+                    <a:field name="price" prompt="EXP_TRAVEL_PLAN_LINES.AMOUNT" required="true" validator="priceValidator"/>
+                    <a:field name="quantity" defaultValue="1" required="true"/>
+                    <a:field name="amount" required="true"/>
+                    <a:field name="head_currency_amount"/>
+                    <a:field name="functional_amount"/>
+                    <a:field name="description"/>
+                    <a:field name="employee_name" lovGridHeight="300" lovHeight="450" lovService="expm.exp_travel_plan_employeelist" lovWidth="300" prompt="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID" required="true" title="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID">
+                        <a:mapping>
+                            <a:map from="employeename" to="employee_name"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="employee_id"/>
+                    <a:field name="company_id"/>
+                    <a:field name="position_code" lovHeight="480" lovService="exp.exp_org_position" lovWidth="500" title="EXP_TRAVEL_PLAN_LINES.POSITION_ID">
+                        <a:mapping>
+                            <a:map from="position_name" to="position_code"/>
+                            <a:map from="position_id" to="position_id"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="unit_name" to="unit_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="position_id"/>
+                    <a:field name="unit_code" autoComplete="true" autoCompleteField="unit_code_name" lovGridHeight="320" lovHeight="460" lovWidth="500" lovservice="exp.exp_org_unit" required="true" title="EXP_REPORT_LINES.UNIT_ID">
+                        <a:mapping>
+                            <a:map from="org_unit_description" to="unit_code"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_id" required="true"/>
+                    <a:field name="responsibility_center_code" autoComplete="true" autoCompleteField="resp_center_code_name" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovService="fnd.fnd_responsibility_centers_lov" lovWidth="500" prompt="EXP_REQUISITION_LINES.RESPONSIBILITY_CENTER_ID" required="true" title="EXP_REQUISITION_LINES.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="responsibility_center_name" to="responsibility_center_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:placeHolder id="dynamicTransDimFields"/>
+                    <a:placeHolder id="dynamicTransObjFields"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="lines_ds_onAdd"/>
+                    <a:event name="update" handler="lines_ds_onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_tvp_line_accommodation_ds" model="expm.EXP7110.exp_travel_plan_lines" selectable="true">
+                <a:fields>
+                    <a:field name="travel_line_category" defaultValue="ACCOMMODATION" required="true"/>
+                    <a:field name="travel_plan_line_id"/>
+                    <a:field name="travel_plan_header_id"/>
+                    <a:field name="line_num" required="true"/>
+                    <a:field name="req_item_code" lovGridHeight="350" lovHeight="480" lovService="expm.EXP7110.exp_tvp_req_items?travel_plan_type_id=${/parameter/@travel_plan_type_id}&amp;item_category=QUARTER" lovWidth="500" prompt="EXP_TRAVEL_PLAN_LINES.REQ_ITEM_ID" required="true" title="EXP_TRAVEL_PLAN_LINES.REQ_ITEM_ID">
+                        <a:mapping>
+                            <a:map from="exp_req_item_id" to="req_item_id"/>
+                            <a:map from="description" to="req_item_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="req_item_id"/>
+                    <a:field name="budget_item_id"/>
+                    <a:field name="place" autoComplete="true" autoCompleteField="place_code_name" fetchRemote="false" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovLabelWidth="120" lovService="expm.exp_expense_policy_place_lov" lovWidth="520" required="true" title="EXP_REQUISITION_LINES.PLACE_ID">
+                        <a:mapping>
+                            <a:map from="place_desc" to="place"/>
+                            <a:map from="place_id" to="place_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="place_id"/>
+                    <a:field name="accommodation_date_from" required="true" validator="dateValidator"/>
+                    <a:field name="accommodation_date_to" required="true" validator="dateValidator"/>
+                    <a:field name="accommodation_days" required="true" validator="daysValidator"/>
+                    <a:field name="currency_name" displayField="currency_name" lovService="gld.gld_currency_lov" lovWidth="500" prompt="EXP_TRAVEL_PLAN_LINES.CURRENCY_CODE" required="true" returnField="currency_code">
+                        <a:mapping>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="currency_name" to="currency_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency_code"/>
+                    <a:field name="line_exchange_rate_type"/>
+                    <a:field name="line_exchange_rate_quotation"/>
+                    <a:field name="line_exchange_rate"/>
+                    <a:field name="price" required="true" validator="priceValidator"/>
+                    <a:field name="quantity" required="true"/>
+                    <a:field name="amount" required="true"/>
+                    <a:field name="head_currency_amount"/>
+                    <a:field name="functional_amount"/>
+                    <a:field name="description"/>
+                    <a:field name="employee_name" lovGridHeight="300" lovHeight="450" lovService="expm.exp_travel_plan_employeelist" lovWidth="300" prompt="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID" required="true" title="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID">
+                        <a:mapping>
+                            <a:map from="employeename" to="employee_name"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="employee_id"/>
+                    <a:field name="company_id"/>
+                    <a:field name="position_code" lovHeight="480" lovService="exp.exp_org_position" lovWidth="500" title="EXP_TRAVEL_PLAN_LINES.POSITION_ID">
+                        <a:mapping>
+                            <a:map from="position_name" to="position_code"/>
+                            <a:map from="position_id" to="position_id"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="unit_name" to="unit_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="position_id"/>
+                    <a:field name="unit_code" autoComplete="true" autoCompleteField="unit_code_name" lovGridHeight="320" lovHeight="460" lovWidth="500" lovservice="exp.exp_org_unit" required="true" title="EXP_REPORT_LINES.UNIT_ID">
+                        <a:mapping>
+                            <a:map from="org_unit_description" to="unit_code"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_id" required="true"/>
+                    <a:field name="responsibility_center_code" autoComplete="true" autoCompleteField="resp_center_code_name" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovService="fnd.fnd_responsibility_centers_lov" lovWidth="500" prompt="EXP_REQUISITION_LINES.RESPONSIBILITY_CENTER_ID" required="true" title="EXP_REQUISITION_LINES.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="responsibility_center_name" to="responsibility_center_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:placeHolder id="dynamicAccomDimFields"/>
+                    <a:placeHolder id="dynamicAccomObjFields"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="lines_ds_onAdd"/>
+                    <a:event name="update" handler="lines_ds_onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="exp_tvp_line_other_ds" model="expm.EXP7110.exp_travel_plan_lines" selectable="true">
+                <a:fields>
+                    <a:field name="travel_line_category" defaultValue="OTHER" required="true"/>
+                    <a:field name="travel_plan_line_id"/>
+                    <a:field name="travel_plan_header_id"/>
+                    <a:field name="line_num" required="true"/>
+                    <a:field name="req_item_code" lovGridHeight="350" lovHeight="480" lovService="expm.EXP7110.exp_tvp_req_items?travel_plan_type_id=${/parameter/@travel_plan_type_id}&amp;item_category=OTHERS" lovWidth="500" prompt="EXP_TRAVEL_PLAN_LINES.REQ_ITEM_ID" required="true" title="EXP_TRAVEL_PLAN_LINES.REQ_ITEM_ID">
+                        <a:mapping>
+                            <a:map from="exp_req_item_id" to="req_item_id"/>
+                            <a:map from="description" to="req_item_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="req_item_id"/>
+                    <a:field name="budget_item_id"/>
+                    <a:field name="place" autoComplete="true" autoCompleteField="place_code_name" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovLabelWidth="120" lovService="expm.exp_expense_policy_place_lov" lovWidth="520" required="true" title="EXP_REQUISITION_LINES.PLACE_ID">
+                        <a:mapping>
+                            <a:map from="place_desc" to="place"/>
+                            <a:map from="place_id" to="place_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="place_id"/>
+                    <a:field name="currency_name" displayField="currency_name" lovService="gld.gld_currency_lov" lovWidth="500" prompt="EXP_TRAVEL_PLAN_LINES.CURRENCY_CODE" required="true" returnField="currency_code">
+                        <a:mapping>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="currency_name" to="currency_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency_code"/>
+                    <a:field name="line_exchange_rate_type"/>
+                    <a:field name="line_exchange_rate_quotation"/>
+                    <a:field name="line_exchange_rate"/>
+                    <a:field name="price" required="true" validator="priceValidator"/>
+                    <a:field name="quantity" required="true"/>
+                    <a:field name="amount" required="true"/>
+                    <a:field name="head_currency_amount"/>
+                    <a:field name="functional_amount"/>
+                    <a:field name="description"/>
+                    <a:field name="employee_name" lovGridHeight="300" lovHeight="450" lovService="expm.exp_travel_plan_employeelist" lovWidth="300" prompt="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID" required="true" title="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID">
+                        <a:mapping>
+                            <a:map from="employeename" to="employee_name"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="employee_id"/>
+                    <a:field name="company_id"/>
+                    <a:field name="position_code" lovHeight="480" lovService="exp.exp_org_position" lovWidth="500" title="EXP_TRAVEL_PLAN_LINES.POSITION_ID">
+                        <a:mapping>
+                            <a:map from="position_name" to="position_code"/>
+                            <a:map from="position_id" to="position_id"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="unit_name" to="unit_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="position_id"/>
+                    <a:field name="unit_code" autoComplete="true" autoCompleteField="unit_code_name" lovGridHeight="320" lovHeight="460" lovWidth="500" lovservice="exp.exp_org_unit" required="true" title="EXP_REPORT_LINES.UNIT_ID">
+                        <a:mapping>
+                            <a:map from="org_unit_description" to="unit_code"/>
+                            <a:map from="unit_id" to="unit_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_id" required="true"/>
+                    <a:field name="responsibility_center_code" autoComplete="true" autoCompleteField="resp_center_code_name" lovAutoQuery="true" lovGridHeight="320" lovHeight="450" lovService="fnd.fnd_responsibility_centers_lov" lovWidth="500" prompt="EXP_REQUISITION_LINES.RESPONSIBILITY_CENTER_ID" required="true" title="EXP_REQUISITION_LINES.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="responsibility_center_name" to="responsibility_center_code"/>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:placeHolder id="dynamicOtherDimFields"/>
+                    <a:placeHolder id="dynamicOtherObjFields"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="lines_ds_onAdd"/>
+                    <a:event name="update" handler="lines_ds_onUpdate"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar id="exp_tvp_type_choice_top_bar">
+                <a:screenTitle/>
+                <a:toolbarButton click="save" text="EXP_TRAVEL_PLAN_CREATE_SERVICE.SAVE" width="80"/>
+                <a:toolbarButton click="new_tvp" text="EXP_TRAVEL_PLAN_CREATE_SERVICE.NEW" width="80"/>
+                <a:toolbarButton id="uploadFileBtn" click="uploadFile" text="ATM.UPLOAD_ATTACHMENT" width="80"/>
+                <a:toolbarButton id="submitBtn" click="submitFunction" text="EXP_REQUESTION_CREATE_SERVICE.SUBMIT" width="80"/>
+                <a:toolbarButton id="deleteBtn" click="deleteAllFunction" text="EXP_REQUESTION_CREATE_SERVICE.DELETE" width="80"/>
+                <a:toolbarButton id="policy" click="policyFunction" text="PROMPT.VIEW_POLICIES" width="80"/>
+                <a:toolbarButton id="seeLog" click="seeLog" text="PROMPT.VIEW_LOG" width="80"/>
+                <a:toolbarButton id="seeHisBtn" click="seeHistory" text="PROMPT.HISTORY" width="80"/>
+            </a:screenTopToolbar>
+            <a:form id="exp_tvp_create_head_form" column="1" title="EXP_TRAVEL_PLAN_CREATE_SERVICE.TITLE">
+                <a:box id="exp_tvp_create_box" column="4" labelWidth="100" style="width:100%;">
+                    <a:textField name="travel_plan_number" bindTarget="exp_travel_plan_header_ds"/>
+                    <a:textField name="travel_plan_type_name" bindTarget="exp_travel_plan_header_ds" prompt="EXP_TRAVEL_PLAN_HEADERS.TRAVEL_PLAN_TYPE_ID"/>
+                    <a:textField name="currency_code_name" bindTarget="exp_travel_plan_header_ds" prompt="EXP_TRAVEL_PLAN_HEADERS.CURRENCY_CODE"/>
+                    <a:numberField name="sum_amount" allowFormat="true" bindTarget="exp_travel_plan_header_ds" prompt="EXP_TRAVEL_PLAN_HEADERS.SUM_AMOUNT" readOnly="true"/>
+                    <a:datePicker name="application_date" bindTarget="exp_travel_plan_header_ds"/>
+                    <a:textField name="employee_name" bindTarget="exp_travel_plan_header_ds" prompt="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID"/>
+                    <a:comboBox name="position_code" bindTarget="exp_travel_plan_header_ds" prompt="EXP_TRAVEL_PLAN_HEADERS.POSITION_ID"/>
+                    <a:textField name="created_by" bindTarget="exp_travel_plan_header_ds"/>
+                    <a:lov name="exchange_rate_type_name" bindTarget="exp_travel_plan_header_ds"/>
+                    <a:comboBox name="exchange_rate_quo_display" bindTarget="exp_travel_plan_header_ds"/>
+                    <a:textField name="exchange_rate" bindTarget="exp_travel_plan_header_ds"/>
+                    <a:numberField name="attachment_num" allowDecimals="false" allowNegative="false" bindTarget="exp_travel_plan_header_ds" prompt="EXP_TRAVEL_PLAN.ATTACHMENT_NUM" readOnly="true"/>
+                    <a:placeHolder id="dynamicHeadDimColumns"/>
+                    <a:placeHolder id="dynamicHeadObjColumns"/>
+                </a:box>
+                <a:box labelWidth="100" style="width:100%;">
+                    <a:textArea name="description" id="exp_tvp_create_ta" bindTarget="exp_travel_plan_header_ds"/>
+                </a:box>
+            </a:form>
+            <div id="transportation_div">
+                <a:grid id="exp_tvp_line_transportation_grid" bindTarget="exp_tvp_line_transportation_ds" marginHeight="400" navBar="true">
+                    <a:toolBar>
+                        <a:label name="TRANSPORTATION" id="TRANSPORTATION" bindTarget="travel_line_category_ds" width="50"/>
+                        <a:button click="createTransLineRecord" icon="${/request/@context_path}/images/add.gif" text="HAP_NEW"/>
+                        <a:button type="delete"/>
+                    </a:toolBar>
+                    <a:columns>
+                        <a:column name="line_num" editor="line_num_nf" width="50"/>
+                        <a:column name="req_item_code" editor="common_lov"/>
+                        <a:column name="transportation_disp" editor="common_cb" width="150"/>
+                        <a:column name="departure_date" editor="common_dp" renderer="Aurora.formatDate" width="80"/>
+                        <a:column name="departure_place" editorFunction="place_editorFunction"/>
+                        <a:column name="arrival_date" editor="common_dp" renderer="Aurora.formatDate" width="80"/>
+                        <a:column name="arrival_place" editorFunction="place_editorFunction"/>
+                        <a:column name="currency_name" editorFunction="currency_editorFunction"/>
+                        <a:column name="price" editor="common_nf" renderer="Aurora.formatMoney" width="100"/>
+                        <a:column name="description" editor="grid_tf"/>
+                        <a:column name="employee_name" editor="common_lov" prompt="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID" width="150"/>
+                        <a:column name="position_code" editor="common_lov" prompt="EXP_TRAVEL_PLAN_HEADERS.POSITION_ID" width="150"/>
+                        <a:column name="unit_code" editor="common_lov" prompt="EXP_TRAVEL_PLAN_HEADERS.UNIT_ID" width="150"/>
+                        <a:column name="responsibility_center_code" editor="common_lov"/>
+                        <a:placeHolder id="dynamicTransDimColumns"/>
+                        <a:placeHolder id="dynamicTransObjColumns"/>
+                    </a:columns>
+                    <a:editors>
+                        <a:textField id="grid_tf"/>
+                        <a:comboBox id="common_cb"/>
+                        <a:datePicker id="common_dp"/>
+                        <a:numberField id="line_num_nf" allowDecimals="false" allowNegative="false"/>
+                        <a:numberField id="common_nf" allowNegative="false"/>
+                        <a:lov id="common_lov"/>
+                        <a:textField id="textfield"/>
+                        <a:lov id="lov"/>
+                    </a:editors>
+                    <a:events>
+                        <a:event name="cellclick" handler="gridcellclick"/>
+                    </a:events>
+                </a:grid>
+            </div>
+            <div id="accommodation_div">
+                <a:grid id="exp_tvp_line_accommodation_grid" bindTarget="exp_tvp_line_accommodation_ds" marginHeight="400" navBar="true">
+                    <a:toolBar>
+                        <a:label name="ACCOMMODATION" id="ACCOMMODATION" bindTarget="travel_line_category_ds" width="50"/>
+                        <a:button click="createAccommLineRecord" icon="${/request/@context_path}/images/add.gif" text="HAP_NEW"/>
+                        <a:button type="delete"/>
+                    </a:toolBar>
+                    <a:columns>
+                        <a:column name="line_num" editor="line_num_nf" width="50"/>
+                        <a:column name="req_item_code" editor="common_lov"/>
+                        <a:column name="place" editorFunction="place_editorFunction"/>
+                        <a:column name="accommodation_date_from" editor="common_dp" renderer="Aurora.formatDate" width="80"/>
+                        <a:column name="accommodation_date_to" editor="common_dp" renderer="Aurora.formatDate" width="80"/>
+                        <a:column name="currency_name" editorFunction="currency_editorFunction"/>
+                        <a:column name="price" editor="common_nf" renderer="Aurora.formatMoney" width="100"/>
+                        <a:column name="accommodation_days" editor="line_num_nf"/>
+                        <a:column name="amount" renderer="Aurora.formatMoney" width="100"/>
+                        <a:column name="description" editor="grid_tf"/>
+                        <a:column name="employee_name" editor="common_lov" prompt="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID" width="150"/>
+                        <a:column name="position_code" editor="common_lov" prompt="EXP_TRAVEL_PLAN_HEADERS.POSITION_ID" width="150"/>
+                        <a:column name="unit_code" editor="common_lov" prompt="EXP_TRAVEL_PLAN_HEADERS.UNIT_ID" width="150"/>
+                        <a:column name="responsibility_center_code" editor="common_lov"/>
+                        <a:placeHolder id="dynamicAccomDimColumns"/>
+                        <a:placeHolder id="dynamicAccomObjColumns"/>
+                    </a:columns>
+                    <a:events>
+                        <a:event name="cellclick" handler="gridcellclick"/>
+                    </a:events>
+                </a:grid>
+            </div>
+            <div id="others_div">
+                <a:grid id="exp_tvp_line_other_grid" bindTarget="exp_tvp_line_other_ds" marginHeight="400" navBar="true">
+                    <a:toolBar>
+                        <a:label name="OTHER" id="OTHER" bindTarget="travel_line_category_ds" width="50"/>
+                        <a:button click="createOtherLineRecord" icon="${/request/@context_path}/images/add.gif" text="HAP_NEW"/>
+                        <a:button type="delete"/>
+                    </a:toolBar>
+                    <a:columns>
+                        <a:column name="line_num" editor="line_num_nf" width="50"/>
+                        <a:column name="req_item_code" editor="common_lov"/>
+                        <a:column name="place" editorFunction="place_editorFunction"/>
+                        <a:column name="currency_name" editorFunction="currency_editorFunction"/>
+                        <a:column name="price" editor="common_nf" renderer="Aurora.formatMoney" width="100"/>
+                        <a:column name="quantity" editor="line_num_nf"/>
+                        <a:column name="amount" renderer="Aurora.formatMoney" width="100"/>
+                        <a:column name="description" editor="grid_tf"/>
+                        <a:column name="employee_name" editor="common_lov" prompt="EXP_TRAVEL_PLAN_HEADERS.EMPLOYEE_ID" width="150"/>
+                        <a:column name="position_code" editor="common_lov" prompt="EXP_TRAVEL_PLAN_HEADERS.POSITION_ID" width="150"/>
+                        <a:column name="unit_code" editor="common_lov" prompt="EXP_TRAVEL_PLAN_HEADERS.UNIT_ID" width="150"/>
+                        <a:column name="responsibility_center_code" editor="common_lov"/>
+                        <a:placeHolder id="dynamicOtherDimColumns"/>
+                        <a:placeHolder id="dynamicOtherObjColumns"/>
+                    </a:columns>
+                    <a:events>
+                        <a:event name="cellclick" handler="gridcellclick"/>
+                    </a:events>
+                </a:grid>
+            </div>
+        </a:screenBody>
+        <script purpose="auto_resize"><![CDATA[
+            function expTvpCreateStandardInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+            　　    //设置组件的自适应宽度
+            　　    Ext.get('exp_tvp_create_head_form').setWidth(autoWidth + 4);
+            	   $('exp_tvp_line_transportation_grid').setWidth(autoWidth); 
+            	   $('exp_tvp_line_accommodation_grid').setWidth(autoWidth); 
+            	   $('exp_tvp_line_other_grid').setWidth(autoWidth);  
+                   //设置TextArea的自适应宽度,别问我最后那个10是哪里来的，试出来的                    
+                   Ext.get('exp_tvp_create_ta').setWidth(formInnerWidth - (formInnerWidth / colSpan - labelWidth - tagWidth) - labelWidth - 6);                
+            }
+        ]]></script>
+        <script><![CDATA[
+        Aurora.onReady(function(){
+            expTvpCreateStandardInitSize();
+            tvp_header_init();
+            tvp_lines_init();
+            initDynamic();
+            saveFlag = true;
+        });
+        
+		new function(){
+			if('${/model/check_log_count/record/@check_count}' > 0){
+			    $('seeLog').el.setStyle('color', 'red');
+            }else{
+                $('seeLog').el.setStyle('color', '');
+            }
+		}();
+        ]]></script>
+    </a:view>
+    <a:view-config>
+        <c:batch-config source="/model/head_dimension" targetId="dynamicHeadDimColumns">
+            <a:lov name="${@dimension_code}" bindTarget="exp_tvp_head_dimension"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicHeadDimFields">
+            <p:loop source="/model/head_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" autoComplete="true" autoCompleteField="code_name" defaultValue="${@value_description}" lovGridHeight="320" lovHeight="450" lovService="expm.EXP2010.exp_req_ref_dimension_dvc_lov?dimension_id=${@dimension_id}&amp;enabled_flag=Y" lovWidth="500" prompt="${@description}" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="dimension_value_id" to="${@dimension_code1}"/>
+                            <a:map from="description" to="${@dimension_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@dimension_code1}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dynamicHeadObjColumns">
+            <p:loop source="/model/head_object">
+                <p:switch test="@expense_object_method">
+                    <p:case value="VALUE_LIST">
+                        <c:process-config>
+                            <a:lov name="${@expense_object_type_code}" bindTarget="exp_tvp_head_object"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="SQL_TEXT">
+                        <c:process-config>
+                            <a:lov name="${@expense_object_type_code}" bindTarget="exp_tvp_head_object"/>
+                        </c:process-config>
+                    </p:case>
+                    <p:case value="*">
+                        <c:process-config>
+                            <a:textField name="${@expense_object_type_code}" bindTarget="exp_tvp_head_object"/>
+                        </c:process-config>
+                    </p:case>
+                </p:switch>
+            </p:loop>
+        </c:create-config>
+        <c:create-config targetId="dynamicHeadObjFields">
+            <p:loop source="/model/head_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovGridHeight="320" lovHeight="450" lovUrl="${/request/@context_path}/modules/expm/public/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" lovWidth="500" prompt="${@description}" required="${@required_flag}" title=" ">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/trans_dimension" targetId="dynamicTransDimColumns">
+            <a:column name="${@dimension_code}" align="center" editor="common_lov" prompt="${@description}" width="80"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicTransDimFields">
+            <p:loop source="/model/trans_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" autoComplete="true" autoCompleteField="code_name" defaultValue="${@value_description}" lovGridHeight="320" lovHeight="450" lovService="expm.EXP2010.exp_req_ref_dimension_dvc_lov?dimension_id=${@dimension_id}&amp;enabled_flag=Y" lovWidth="500" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="dimension_value_id" to="${@dimension_code1}"/>
+                            <a:map from="description" to="${@dimension_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@dimension_code1}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/accom_dimension" targetId="dynamicAccomDimColumns">
+            <a:column name="${@dimension_code}" align="center" editor="common_lov" prompt="${@description}" width="80"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicAccomDimFields">
+            <p:loop source="/model/accom_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" autoComplete="true" autoCompleteField="code_name" defaultValue="${@value_description}" lovGridHeight="320" lovHeight="450" lovService="expm.EXP2010.exp_req_ref_dimension_dvc_lov?dimension_id=${@dimension_id}&amp;enabled_flag=Y" lovWidth="500" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="dimension_value_id" to="${@dimension_code1}"/>
+                            <a:map from="description" to="${@dimension_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@dimension_code1}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/other_dimension" targetId="dynamicOtherDimColumns">
+            <a:column name="${@dimension_code}" align="center" editor="common_lov" prompt="${@description}" width="80"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicOtherDimFields">
+            <p:loop source="/model/other_dimension">
+                <c:process-config>
+                    <a:field name="${@dimension_code}" autoComplete="true" autoCompleteField="code_name" defaultValue="${@value_description}" lovGridHeight="320" lovHeight="450" lovService="expm.EXP2010.exp_req_ref_dimension_dvc_lov?dimension_id=${@dimension_id}&amp;enabled_flag=Y" lovWidth="500" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="dimension_value_id" to="${@dimension_code1}"/>
+                            <a:map from="description" to="${@dimension_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@dimension_code1}" defaultValue="${@default_dim_value_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/trans_object" targetId="dynamicTransObjColumns">
+            <a:column name="${@expense_object_type_code}" align="center" editor="${@eom}" width="80"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicTransObjFields">
+            <p:loop source="/model/trans_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovGridHeight="320" lovHeight="450" lovUrl="${/request/@context_path}/modules/expm/public/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" lovWidth="500" prompt="${@description}" required="${@required_flag}" title=" ">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/accom_object" targetId="dynamicAccomObjColumns">
+            <a:column name="${@expense_object_type_code}" align="center" editor="${@eom}" width="80"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicAccomObjFields">
+            <p:loop source="/model/trans_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovGridHeight="320" lovHeight="450" lovUrl="${/request/@context_path}/modules/expm/public/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" lovWidth="500" prompt="${@description}" required="${@required_flag}" title=" ">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+        <c:batch-config source="/model/other_object" targetId="dynamicOtherObjColumns">
+            <a:column name="${@expense_object_type_code}" align="center" editor="${@eom}" width="80"/>
+        </c:batch-config>
+        <c:create-config targetId="dynamicOtherObjFields">
+            <p:loop source="/model/trans_object">
+                <c:process-config>
+                    <a:field name="${@expense_object_type_code}" defaultValue="${@default_object_desc}" lovGridHeight="320" lovHeight="450" lovUrl="${/request/@context_path}/modules/expm/public/exp_req_ref_obj_sql_query_lov.screen?expense_object_type_id=${@expense_object_type_id}" lovWidth="500" prompt="${@description}" required="${@required_flag}" title=" ">
+                        <a:mapping>
+                            <a:map from="id" to="${@forname}"/>
+                            <a:map from="description" to="${@expense_object_type_code}"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="${@forname}" defaultValue="${@default_object_id}"/>
+                </c:process-config>
+            </p:loop>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2013-4-15 下午2:00:45  
+    $Revision: 1.0  
+    $Purpose: 目标资产lov
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+select *
+  from (SELECT h.asset_id,
+               h.asset_code,
+               (select fd.description_text
+                  from fnd_descriptions fd
+                 where fd.description_id = h.description_id
+                   and fd.language = ${/session/@lang}) asset_name,
+               h.brand,
+               h.model_number,
+               h.category_id,
+               (select c.description
+                  from eam_asset_categories_vl c
+                 where c.category_id = h.category_id) as category_desc,
+               h.entity_class_id,
+               (select e.description
+                  from eam_asset_entity_classes_vl e
+                 where e.class_id = h.entity_class_id) as entity_class_desc,
+               h.status,
+               (select s.code_value_name
+                  from sys_service_lookup_v s
+                 where s.code = 'EAM_ASSET_STATUS'
+                   AND s.language = ${/session/@lang}
+                   AND s.code_value = h.STATUS) as status_desc,
+               to_char(h.start_use_date, 'yyyy-mm-dd') as start_use_date,
+               h.location_id current_location_id,
+               l.DESCRIPTION current_location_desc,
+               efi.finance_class_id,
+               fc.DESCRIPTION finance_class_name,
+               h.asset_source_type
+          from eam_asset_headers        h,
+               eam_asset_categories     e,
+               eam_locations_vl         l,
+               eam_asset_finance_info   efi,
+               eam_asset_entity_classes eac,
+               eam_asset_fin_classes_vl fc
+         where h.category_id = e.category_id
+           and h.location_id = l.location_id(+)
+           and h.asset_id = efi.asset_id(+)
+           and efi.finance_class_id = fc.class_id(+)
+           AND h.entity_class_id = eac.class_id
+           and h.lock_flag <> 'Y'
+           and exists (select 1
+                  from eam_asset_cost_sources cs
+                 where cs.cost_value_type = 'IMPUTED'
+                   and cs.asset_id = h.asset_id
+                   and cs.confirm_status = 'SUBMIT')
+           and h.status <> 'INVALID'
+           and exists
+         (SELECT 1
+                  FROM eam_requisition_types        t,
+                       eam_req_type_ref_asset_types rt
+                 WHERE rt.ast_requisition_type_id = t.ast_requisition_type_id
+                   AND t.ast_requisition_type_id = ${@ast_requisition_type_id}
+                   AND rt.entity_class_id = h.entity_class_id)
+           and (exists
+                (select p.unit_id
+                   from exp_org_position p, exp_employee_assigns a, sys_user s
+                  where p.position_id = a.position_id
+                    and p.company_id = a.company_id
+                    and p.enabled_flag = 'Y'
+                    and a.employee_id = s.employee_id
+                    and a.enabled_flag = 'Y'
+                    and s.user_id = ${/session/@user_id}
+                    and a.company_id = ${/session/@company_id}
+                    and p.unit_id = l.entity_man_unit_id) or exists
+                (select u.unit_id
+                   from eam_ast_cate_refer_units u, exp_org_unit eu
+                  where u.category_id = e.category_id
+                    and u.unit_id = eu.unit_id
+                    and u.asset_book_id = e.asset_book_id
+                    and exists
+                  (select p.unit_id
+                           from exp_org_position     p,
+                                exp_employee_assigns a,
+                                sys_user             s,
+                                exp_org_unit         eou
+                          where p.position_id = a.position_id
+                            and p.company_id = a.company_id
+                            and p.enabled_flag = 'Y'
+                            and a.employee_id = s.employee_id
+                            and a.enabled_flag = 'Y'
+                            and s.user_id = ${/session/@user_id}
+                            and p.unit_id = eou.unit_id
+                            and ((eou.unit_code = eu.unit_code and
+                                (p.position_id =
+                                eou.unit_asset_manager_position_id or
+                                p.position_id = eou.chief_position_id or
+                                a.employee_id = eou.unit_leader_id)) or exists
+                                 (select 1
+                                    from wbc_work_teams t
+                                   where t.employee_id = a.employee_id
+                                     and t.enabled_flag = 'Y') or exists
+                                 (select 1
+                                    from wbc_work_team_detail d, wbc_work_teams t
+                                   where d.employee_id = a.employee_id
+                                     and d.enabled_flag = 'Y'
+                                     and t.work_team_id = d.work_team_id
+                                     and t.enabled_flag = 'Y'))
+                            and l.entity_man_company_id in
+                                (select f.company_id
+                                   from fnd_companies_vl f
+                                  start with f.company_id = ${/session/@company_id}
+                                 connect by prior
+                                             f.company_id = f.parent_company_id))))) v
+			               #WHERE_CLAUSE#
+               
+               ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="asset_id"/>
+        <bm:field name="brand"/>
+        <bm:field name="model_number"/>
+        <bm:field name="asset_code" forDisplay="true" forQuery="true" prompt="AST_ASSET_HEADERS.ASSET_NUMBER"/>
+        <bm:field name="asset_name" forDisplay="true" forQuery="true" prompt="EAM_ASSET_HEADERS.DESCRIPTION"/>
+        <bm:field name="asset_source_type"/>
+        <bm:field name="category_id"/>
+        <bm:field name="category_desc" prompt="EAM_ASSET_HEADERS.CATEGORY_ID"/>
+        <bm:field name="entity_class_id"/>
+        <bm:field name="entity_class_desc" prompt="EAM_ASSET_HEADERS.ENTITY_CLASS_ID"/>
+        <bm:field name="finance_class_id"/>
+        <bm:field name="finance_class_name" prompt="EAM_ASSET_FINANCE_INFO.FINANCE_CLASS_DESC"/>
+        <bm:field name="current_location_id"/>
+        <bm:field name="current_location_desc" prompt="EAM_ASSET_LOCATION_HISTORIES.CURRENT_LOCATION_DESC"/>
+        <bm:field name="status"/>
+        <bm:field name="status_desc" prompt="EAM_ASSET_HEADERS.STATUS"/>
+        <bm:field name="start_use_date" prompt="EAM_ASSET_HEADERS.START_USE_DATE"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="asset_code" datatype="java.lang.String" queryexpression="upper(v.asset_code) like &apos;%&apos;||upper(${@asset_code})||&apos;%&apos;"/>
+        <bm:query-field name="asset_name" datatype="java.lang.String" queryexpression="upper(v.asset_name) like &apos;%&apos;||upper(${@asset_name})||&apos;%&apos;"/>
+        <bm:query-field name="category_id" queryexpression="v.category_id = ${/parameter/@category_id}"/>
+        <bm:query-field name="entity_class_id" queryexpression="v.entity_class_id = ${/parameter/@entity_class_id}"/>
+        <bm:query-field name="finance_class_id" queryexpression="v.finance_class_id = ${/parameter/@finance_class_id}"/>
+        <bm:query-field name="start_use_date" queryexpression="v.start_use_date = ${/parameter/@start_use_date}"/>
+        <bm:query-field name="current_location_id" queryexpression="v.current_location_id = ${/parameter/@current_location_id}"/>
+        <bm:query-field name="status" queryexpression="v.status = ${/parameter/@status}"/>
+        <bm:query-field name="start_use_date" queryexpression="v.start_use_date = ${/parameter/@start_use_date}"/>
+    </bm:query-fields>
+</bm:model>

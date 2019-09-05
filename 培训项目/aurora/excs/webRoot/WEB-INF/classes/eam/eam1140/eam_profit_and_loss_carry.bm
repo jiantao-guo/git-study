@@ -1,0 +1,385 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: MJJ  
+    $Date: 2014-1-22 上午09:51:42  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select *
+  from (select tt.asset_id,
+               tt.location_id,
+               tt.location_name,
+               tt.lct_res_company_id,
+               tt.lct_res_company_name,
+               tt.asset_code,
+               tt.asset_name,
+               tt.asset_book_id,
+               tt.clean_amount,
+               tt.confirm_date,
+               tt.account_amount,
+               tt.receipt_amount,
+               tt.report_amount,
+               tt.carry_amount,
+               tt.account_code,
+               tt.un_carry_amount,
+               nvl2(tt.account_amount, decode(tt.un_carry_amount, 0, '完全结转', '未完全结转'), '未完全结转') carry_status
+          from (select t.asset_id,
+                       t.location_id,
+                       t.location_name,
+                       t.lct_res_company_id,
+                       t.lct_res_company_name,
+                       t.asset_code,
+                       t.asset_name,
+                       t.asset_book_id,
+                       t.clean_amount,
+                       t.confirm_date,
+                       t.account_amount,
+                       t.receipt_amount,
+                       t.report_amount,
+                       t.carry_amount,
+                       t.document_amount,
+                       t.account_code,
+                       (t.account_amount + nvl(t.report_amount, 0) -
+                       nvl(t.receipt_amount, 0) - nvl(t.carry_amount, 0)) un_carry_amount
+                  from (select h.asset_id,
+                               h.LOCATION_ID,
+                               (select ell.description
+                                  from eam_locations_vl ell
+                                 where ell.location_id = h.location_id) location_name,
+                               (select el.responsibility_company_id
+                                  from eam_locations el
+                                 where h.LOCATION_ID = el.location_id) lct_res_company_id,
+                               (select fcv.COMPANY_SHORT_NAME
+                                  from fnd_companies_vl fcv, eam_locations el
+                                 where el.location_id = h.location_id
+                                   and el.responsibility_company_id =
+                                       fcv.company_id) lct_res_company_name,
+                               h.asset_code,
+                               h.asset_name,
+                               h.asset_book_id,
+                               (select sum(erl.pl_amount)
+                                  from eam_requisition_headers erh,
+                                       eam_requisition_lines   erl,
+                                       eam_requisition_types   ert
+                                 where erh.requisition_header_id =
+                                       erl.requisition_header_id
+                                   and erh.ast_requisition_type_id =
+                                       ert.ast_requisition_type_id
+                                   and ert.base_trx_category = 'REC'
+                                   and erh.requisition_status = 'CONFIRMED'
+                                   and erl.asset_id = h.asset_id) clean_amount,
+                               (select to_char(min(erh.confirm_date),
+                                               'YYYY-MM-DD')
+                                  from eam_requisition_headers erh,
+                                       eam_requisition_lines   erl,
+                                       eam_requisition_types   ert
+                                 where erh.requisition_header_id =
+                                       erl.requisition_header_id
+                                   and erh.ast_requisition_type_id =
+                                       ert.ast_requisition_type_id
+                                   and ert.base_trx_category = 'REC'
+                                   and erh.requisition_status = 'CONFIRMED'
+                                   and erl.asset_id = h.asset_id) confirm_date,
+                               (select sum(rl.report_amount)
+                                  from exp_report_headers            rh,
+                                       exp_report_lines              rl,
+                                       eam_asset_document_references r
+                                 where r.asset_id = h.asset_id
+                                   and r.document_type = 'EXP_REPORT'
+                                   and r.document_id = rh.exp_report_header_id
+                                   and r.document_line_id =
+                                       rl.exp_report_line_id
+                                   and rh.audit_flag = 'Y') report_amount,
+                               (select sum(ctd.amount)
+                                  from csh_transaction_headers cth,
+                                       csh_transaction_dists   ctd
+                                 where cth.transaction_header_id =
+                                       ctd.transaction_header_id
+                                   and cth.posted_flag = 'Y'
+                                   and ctd.asset_id = h.asset_id) receipt_amount,
+                               (select v.cost_ret
+                                  from apps.cux_ret_acc_amt_v v
+                                 where v.ASSET_NUMBER = h.asset_code) document_amount,
+                               (select v.acc_code
+                                  from apps.cux_ret_acc_amt_v v
+                                 where v.ASSET_NUMBER = h.asset_code) account_code,
+                               (select v.acc_amt
+                                  from apps.cux_ret_acc_amt_v v
+                                 where v.ASSET_NUMBER = h.asset_code) account_amount,
+                               (select sum(nvl2(tgl.amount_dr,
+                                                tgl.amount_dr,
+                                                -tgl.amount_cr))
+                                  from tra_general_lines tgl
+                                 where tgl.e_asset_number = h.asset_code
+                                   and exists
+                                 (select 1
+                                          from gld_accounts ga
+                                         where ga.account_id = tgl.account_id
+                                           and ga.account_code = '16060101')
+                                   and exists
+                                 (select 1
+                                          from tra_general_headers tgh
+                                         where tgh.tra_general_header_id =
+                                               tgl.tra_general_header_id
+                                           and tgh.job_status = 'APPROVA')) carry_amount
+                          from eam_asset_headers_vl h
+                         where exists (select 1
+                                  from eam_asset_categories c
+                                 where c.category_id = h.CATEGORY_ID
+                                   and h.ASSET_BOOK_ID = c.asset_book_id
+                                   and c.category_code = '10')
+                           and exists
+                         (select 1
+                                  from eam_requisition_headers erh,
+                                       eam_requisition_lines   erl,
+                                       eam_requisition_types   ert
+                                 where erh.requisition_header_id =
+                                       erl.requisition_header_id
+                                   and erh.ast_requisition_type_id =
+                                       ert.ast_requisition_type_id
+                                   and ert.base_trx_category = 'REC'
+                                   and erh.requisition_status = 'CONFIRMED'
+                                   and erl.asset_id = h.asset_id)
+                        union
+                        select h.asset_id,
+                               h.LOCATION_ID,
+                               (select ell.description
+                                  from eam_locations_vl ell
+                                 where ell.location_id = h.location_id) location_name,
+                               (select el.responsibility_company_id
+                                  from eam_locations el
+                                 where h.LOCATION_ID = el.location_id) lct_res_company_id,
+                               (select fcv.COMPANY_SHORT_NAME
+                                  from fnd_companies_vl fcv, eam_locations el
+                                 where el.location_id = h.location_id
+                                   and el.responsibility_company_id =
+                                       fcv.company_id) lct_res_company_name,
+                               h.asset_code,
+                               h.asset_name,
+                               h.asset_book_id,
+                               (select sum(erl.pl_amount)
+                                  from eam_requisition_headers erh,
+                                       eam_requisition_lines   erl,
+                                       eam_requisition_types   ert
+                                 where erh.requisition_header_id =
+                                       erl.requisition_header_id
+                                   and erh.ast_requisition_type_id =
+                                       ert.ast_requisition_type_id
+                                   and ert.base_trx_category = 'RET'
+                                   and erh.requisition_status = 'CONFIRMED'
+                                   and erl.asset_id = h.asset_id) clean_amount,
+                               (select to_char(min(erh.confirm_date),
+                                               'YYYY-MM-DD')
+                                  from eam_requisition_headers erh,
+                                       eam_requisition_lines   erl,
+                                       eam_requisition_types   ert
+                                 where erh.requisition_header_id =
+                                       erl.requisition_header_id
+                                   and erh.ast_requisition_type_id =
+                                       ert.ast_requisition_type_id
+                                   and ert.base_trx_category = 'RET'
+                                   and erh.requisition_status = 'CONFIRMED'
+                                   and erl.asset_id = h.asset_id) confirm_date,
+                               (select sum(rl.report_amount)
+                                  from exp_report_headers            rh,
+                                       exp_report_lines              rl,
+                                       eam_asset_document_references r
+                                 where r.asset_id = h.asset_id
+                                   and r.document_type = 'EXP_REPORT'
+                                   and r.document_id = rh.exp_report_header_id
+                                   and r.document_line_id =
+                                       rl.exp_report_line_id
+                                   and rh.audit_flag = 'Y') report_amount,
+                               (select sum(ctd.amount)
+                                  from csh_transaction_headers cth,
+                                       csh_transaction_dists   ctd
+                                 where cth.transaction_header_id =
+                                       ctd.transaction_header_id
+                                   and cth.posted_flag = 'Y'
+                                   and ctd.asset_id = h.asset_id) receipt_amount,
+                               (select v.cost_ret
+                                  from apps.cux_ret_acc_amt_v v
+                                 where v.ASSET_NUMBER = h.asset_code) document_amount,
+                               (select v.acc_code
+                                  from apps.cux_ret_acc_amt_v v
+                                 where v.ASSET_NUMBER = h.asset_code) account_code,
+                               (select v.acc_amt
+                                  from apps.cux_ret_acc_amt_v v
+                                 where v.ASSET_NUMBER = h.asset_code) account_amount,
+                               (select sum(nvl2(tgl.amount_dr,
+                                                tgl.amount_dr,
+                                                -tgl.amount_cr))
+                                  from tra_general_lines tgl
+                                 where tgl.e_asset_number = h.asset_code
+                                   and exists
+                                 (select 1
+                                          from gld_accounts ga
+                                         where ga.account_id = tgl.account_id
+                                           and ga.account_code = '16060101')
+                                   and exists
+                                 (select 1
+                                          from tra_general_headers tgh
+                                         where tgh.tra_general_header_id =
+                                               tgl.tra_general_header_id
+                                           and tgh.job_status = 'APPROVA')) carry_amount
+                          from eam_asset_headers_vl h
+                         where exists (select 1
+                                  from eam_asset_categories c
+                                 where c.category_id = h.CATEGORY_ID
+                                   and h.ASSET_BOOK_ID = c.asset_book_id
+                                   and c.category_code = '10')
+                           and exists
+                         (select 1
+                                  from eam_requisition_headers erh,
+                                       eam_requisition_lines   erl,
+                                       eam_requisition_types   ert
+                                 where erh.requisition_header_id =
+                                       erl.requisition_header_id
+                                   and erh.ast_requisition_type_id =
+                                       ert.ast_requisition_type_id
+                                   and ert.base_trx_category = 'RET'
+                                   and erh.requisition_status = 'CONFIRMED'
+                                   and erl.asset_id = h.asset_id)
+                        
+                        union
+                        select h.asset_id,
+                               h.LOCATION_ID,
+                               (select ell.description
+                                  from eam_locations_vl ell
+                                 where ell.location_id = h.location_id) location_name,
+                               (select el.responsibility_company_id
+                                  from eam_locations el
+                                 where h.LOCATION_ID = el.location_id) lct_res_company_id,
+                               (select fcv.COMPANY_SHORT_NAME
+                                  from fnd_companies_vl fcv, eam_locations el
+                                 where el.location_id = h.location_id
+                                   and el.responsibility_company_id =
+                                       fcv.company_id) lct_res_company_name,
+                               h.asset_code,
+                               h.asset_name,
+                               h.asset_book_id,
+                               (select sum(erl.pl_amount)
+                                  from eam_requisition_headers erh,
+                                       eam_requisition_lines   erl,
+                                       eam_requisition_types   ert
+                                 where erh.requisition_header_id =
+                                       erl.requisition_header_id
+                                   and erh.ast_requisition_type_id =
+                                       ert.ast_requisition_type_id
+                                   and ert.base_trx_category = 'DPL'
+                                   and erh.requisition_status = 'CONFIRMED'
+                                   and erl.asset_id = h.asset_id) clean_amount,
+                               (select to_char(min(erh.confirm_date),
+                                               'YYYY-MM-DD')
+                                  from eam_requisition_headers erh,
+                                       eam_requisition_lines   erl,
+                                       eam_requisition_types   ert
+                                 where erh.requisition_header_id =
+                                       erl.requisition_header_id
+                                   and erh.ast_requisition_type_id =
+                                       ert.ast_requisition_type_id
+                                   and ert.base_trx_category = 'DPL'
+                                   and erh.requisition_status = 'CONFIRMED'
+                                   and erl.asset_id = h.asset_id) confirm_date,
+                               (select sum(rl.report_amount)
+                                  from exp_report_headers            rh,
+                                       exp_report_lines              rl,
+                                       eam_asset_document_references r
+                                 where r.asset_id = h.asset_id
+                                   and r.document_type = 'EXP_REPORT'
+                                   and r.document_id = rh.exp_report_header_id
+                                   and r.document_line_id =
+                                       rl.exp_report_line_id
+                                   and rh.audit_flag = 'Y') report_amount,
+                               (select sum(ctd.amount)
+                                  from csh_transaction_headers cth,
+                                       csh_transaction_dists   ctd
+                                 where cth.transaction_header_id =
+                                       ctd.transaction_header_id
+                                   and cth.posted_flag = 'Y'
+                                   and ctd.asset_id = h.asset_id) receipt_amount,
+                               (select v.cost_ret
+                                  from apps.cux_ret_acc_amt_v v
+                                 where v.ASSET_NUMBER = h.asset_code) document_amount,
+                               (select v.acc_code
+                                  from apps.cux_ret_acc_amt_v v
+                                 where v.ASSET_NUMBER = h.asset_code) account_code,
+                               (select v.acc_amt
+                                  from apps.cux_ret_acc_amt_v v
+                                 where v.ASSET_NUMBER = h.asset_code) account_amount,
+                               (select sum(nvl2(tgl.amount_dr,
+                                                tgl.amount_dr,
+                                                -tgl.amount_cr))
+                                  from tra_general_lines tgl
+                                 where tgl.e_asset_number = h.asset_code
+                                   and exists
+                                 (select 1
+                                          from gld_accounts ga
+                                         where ga.account_id = tgl.account_id
+                                           and ga.account_code = '16060101')
+                                   and exists
+                                 (select 1
+                                          from tra_general_headers tgh
+                                         where tgh.tra_general_header_id =
+                                               tgl.tra_general_header_id
+                                           and tgh.job_status = 'APPROVA')) carry_amount
+                          from eam_asset_headers_vl h
+                         where exists (select 1
+                                  from eam_asset_categories c
+                                 where c.category_id = h.CATEGORY_ID
+                                   and h.ASSET_BOOK_ID = c.asset_book_id
+                                   and c.category_code = '10')
+                           and exists
+                         (select 1
+                                  from eam_requisition_headers erh,
+                                       eam_requisition_lines   erl,
+                                       eam_requisition_types   ert
+                                 where erh.requisition_header_id =
+                                       erl.requisition_header_id
+                                   and erh.ast_requisition_type_id =
+                                       ert.ast_requisition_type_id
+                                   and ert.base_trx_category = 'DPL'
+                                   and erh.requisition_status = 'CONFIRMED'
+                                   and erl.asset_id = h.asset_id)) t
+                 order by t.asset_code) tt) t1 #WHERE_CLAUSE#
+]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="exists (select 1        
+                  from fnd_companies fc, eam_asset_books b        
+                 where fc.company_id = ${/session/@company_id}        
+                   and fc.set_of_books_id = b.set_of_book_id        
+                   and b.asset_book_id = t1.asset_book_id)"/>
+    </bm:data-filters>
+    <bm:fields>
+        <bm:field name="asset_id"/>
+        <bm:field name="location_id"/>
+        <bm:field name="location_name"/>
+        <bm:field name="lct_res_company_id"/>
+        <bm:field name="lct_res_company_name"/>
+        <bm:field name="asset_book_id"/>
+        <bm:field name="asset_code"/>
+        <bm:field name="asset_name"/>
+        <bm:field name="confirm_date"/>
+        <bm:field name="carry_status"/>
+        <bm:field name="clean_amount"/>
+        <bm:field name="account_amount"/>
+        <bm:field name="receipt_amount"/>
+        <bm:field name="report_amount"/>
+        <bm:field name="carry_amount"/>
+        <bm:field name="un_carry_amount"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field field="location_id" queryOperator="="/>
+        <bm:query-field field="lct_res_company_id" queryOperator="="/>
+        <bm:query-field field="asset_code" queryOperator="like"/>
+        <bm:query-field field="asset_name" queryOperator="like"/>
+        <bm:query-field name="confirm_date_from" queryExpression="t1.confirm_date &gt;= nvl(${@confirm_date_from}, t1.confirm_date)"/>
+        <bm:query-field name="confirm_date_to" queryExpression="t1.confirm_date &lt;= nvl(${@confirm_date_to}, t1.confirm_date)"/>
+        <bm:query-field field="carry_status" queryOperator="="/>
+    </bm:query-fields>
+</bm:model>

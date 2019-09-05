@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: majianjian  
+    $Date: 2014-11-18 下午2:39:12  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query autoCount="false" fetchAll="true" model="csh.CSH7030.csh_repayment_need_accounting_flag" rootPath="flag"/>
+        <a:model-query autoCount="false" fetchAll="true" model="csh.CSH7030.csh_repayment_attachment_number" rootPath="attachment"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="repayment_dist_maintain_link" url="${/request/@context_path}/modules/csh/CSH7030/csh_repayment_register_dists_maintain.screen"/>
+        <a:link id="repayment_confirm_link" model="csh.CSH7030.csh_repayment_register_hds_for_cashier" modelaction="update"/>
+        <a:link id="repayment_reject_link" model="csh.CSH7030.csh_repayment_register_hds_for_cashier" modelaction="execute"/>
+        <a:link id="CSH7010_view_history_link" url="${/request/@context_path}/modules/csh/CSH7010/csh_repayment_registers_history.screen"/>
+        <a:link id="uploadFile_link" url="${/request/@context_path}/check_uploadFile.screen"/>
+        <script><![CDATA[
+            function CSH7030_assignDistributes(value, record, name) {
+                return '<a href="javascript:CSH7030_openDistMaintainWindow(' + record.get('register_line_id') + ')">${l:CSH7030_DISTRIBUTE}</a>';
+            }
+            
+            function CSH7030_openDistMaintainWindow(register_line_id) {
+                new Aurora.Window({
+                    url: $('repayment_dist_maintain_link').getUrl() + '?register_line_id=' + register_line_id,
+                    title: '',
+                    fullScreen: true,
+                    id: 'repayment_dist_maintain_window'
+                });
+            }
+            
+            function CSH7030_save() {
+                $('cashier_csh_repayment_register_hds_ds').submit();
+            }
+            
+            // 点击“确认”按钮。
+            
+            function CSH7030_confirm() {
+                if (!$('cashier_csh_repayment_register_hds_ds').validate()) {
+                    return;
+                }
+            
+                if ($('cashier_csh_repayment_register_hds_ds').isModified()) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:SAVE_FIRST}');
+                    return;
+                }
+            
+                var data = {};
+                data.register_header_id = ${/parameter/@register_header_id};
+            
+                Aurora.request({
+                    url: $('repayment_confirm_link').getUrl(),
+                    para: data,
+                    success: function() {
+                        CSH7010_queryFun();
+                        $('repayment_register_cashier_window').close();
+                    },
+                    failure: function() {
+                        CSH7010_queryFun();
+                        $('repayment_register_cashier_window').close();
+                    },
+                    scope: this
+                });
+            }
+            
+            // 点击“拒绝”按钮
+            
+            function CSH7030_reject() {
+                var data = {};
+                data.register_header_id = ${/parameter/@register_header_id};
+                //add by Qu yuanyuan 增加拒绝原因
+                // Ext.get('reject_reason_box').show();
+                var record = $('cashier_csh_repayment_register_hds_ds').getAt(0);
+                record.getMeta().getField('reject_reason').setRequired(true);
+                var reject_reason = record.get('reject_reason');
+                data.reject_reason = reject_reason;
+                //end by Qu yuanyuan
+                 
+                if(reject_reason){
+	                Aurora.request({
+	                    url: $('repayment_reject_link').getUrl(),
+	                    para: data,
+	                    success: function() {
+	                        CSH7010_queryFun();
+	                        $('repayment_register_cashier_window').close();
+	                    },
+	                    failure: function() {
+	                        CSH7010_queryFun();
+	                        $('repayment_register_cashier_window').close();
+	                    },
+	                    scope: this
+	                });
+                }
+                else{
+                    Aurora.showInfoMessage('${l:PROMPT}', '请填写拒绝原因!');
+                    return; 
+                }
+            }
+            
+            //[EVENT] 行加载数据后执行
+            
+            
+            function CSH7030_afterLineLoad(ds) {
+                // 当CSH_REPAYMENT_ACCOUNTING_FLAG系统参数为N时，即不需要财务复核，则，财务确认节点必须填写现金流量项，
+                if ('${/model/flag/record/@need_accounting_flag}' == 'N') {
+                    var records = ds.getAll();
+                    for (var i = 0;i < records.length;i++) {
+                        records[i].getMeta().getField('cash_flow_item_desc').setRequired(true);
+                    }
+                }
+            }
+            
+            // 点击“查看日志”按钮，查看日志
+            
+            function CSH7010_view_history() {
+                new Aurora.Window({
+                    id: 'csh_repayment_history_window',
+                    url: $('CSH7010_view_history_link').getUrl() + '?register_header_id=${/parameter/@register_header_id}',
+                    fullScreen: true,
+                    title: '${l:REC_REQUISITION_HISTORY}'
+                });
+            }
+            
+            // 附件查看
+            
+            function CSH7010_uploadFile() {
+            
+                var url = $('uploadFile_link').getUrl() + '?table_name=CSH_REPAYMENT_REGISTER_HDS&header_id=${/parameter/@register_header_id}';
+            
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'check_upload_file_screen',
+                    width: 600,
+                    height: 400
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="cashier_csh_repayment_register_hds_ds" autoQuery="true" fetchAll="true" model="csh.CSH7010.csh_repayment_register_hds_maintain" queryUrl="${/request/@context_path}/autocrud/csh.CSH7010.csh_repayment_register_hds_maintain/query?register_header_id=${/parameter/@register_header_id}" submitUrl="${/request/@context_path}/modules/csh/CSH7010/csh_repayment_register_save.svc">
+                <a:fields>
+                    <a:field name="register_number" readOnly="true"/>
+                    <a:field name="employee_name" readOnly="true"/>
+                    <a:field name="company_name" readOnly="true"/>
+                    <a:field name="company_account_number" readOnly="true"/>
+                    <a:field name="repayment_method_desc" readOnly="true"/>
+                    <a:field name="repayment_date" readOnly="true"/>
+                    <a:field name="repayment_status_desc" readOnly="true"/>
+                    <a:field name="total_amount" readOnly="true"/>
+                    <a:field name="repayment_bank_note" readOnly="true"/>
+                    <a:field name="description" readOnly="true"/>
+                    <a:field name="reject_reason"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="cashier_csh_repayment_register_lns_ds" bindName="line" bindTarget="cashier_csh_repayment_register_hds_ds" fetchAll="true" model="csh.CSH7010.csh_repayment_register_lns_maintain" queryUrl="${/request/@context_path}/autocrud/csh.CSH7010.csh_repayment_register_lns_maintain/query?register_header_id=${/parameter/@register_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="maintain_dists"/>
+                    <a:field name="cash_flow_item_desc" lovGridHeight="320" lovHeight="450" lovService="exp.exp_report_payment_cash_flow_items_lov" lovWidth="500" title="CSH_REPAYMENT_REGISTER_LNS.CASH_FLOW_ITEM_ID">
+                        <a:mapping>
+                            <a:map from="description" to="cash_flow_item_desc"/>
+                            <a:map from="cash_flow_item_id" to="cash_flow_item_id"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="CSH7030_afterLineLoad"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="CSH7030_save" text="HAP_SAVE" width="80"/>
+                <a:toolbarButton click="CSH7030_confirm" text="CONFIRM" width="80"/>
+                <a:toolbarButton click="CSH7030_reject" text="PROMPT.REJECT" width="80"/>
+                <a:toolbarButton click="CSH7010_view_history" text="PROMPT.HISTORY" width="80"/>
+                <a:toolbarButton id="upload_file_btn" click="CSH7010_uploadFile" text="PROMPT.VIEW_ATTACHMENT" width="80"/>
+                <a:box id="reject_reason_box" labelWidth="90" style="margin-left:12px;">
+                    <a:textField name="reject_reason" id="reject_reason_tf" bindTarget="cashier_csh_repayment_register_hds_ds" prompt="拒绝原因" width="240"/>
+                </a:box>
+            </a:screenTopToolbar>
+            <!-- 头 -->
+            <a:form id="cashier_csh_repayment_register_hds_form" column="4" labelWidth="100" title="CSH7020.REPAYMENT_REGISTER_READONLY">
+                <a:textField name="register_number" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+                <a:comboBox name="employee_name" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+                <a:lov name="company_name" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+                <a:lov name="company_account_number" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+                <a:comboBox name="repayment_method_desc" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+                <a:datePicker name="repayment_date" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+                <a:comboBox name="repayment_status_desc" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+                <a:numberField name="total_amount" allowDecimals="true" allowFormat="true" allowNegative="false" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+                <a:textField name="repayment_bank_note" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+                <a:textField name="description" bindTarget="cashier_csh_repayment_register_hds_ds"/>
+            </a:form>
+            <!-- 行 -->
+            <a:grid id="cashier_csh_repayment_register_lns_grid" bindTarget="cashier_csh_repayment_register_lns_ds" marginHeight="226" marginWidth="42">
+                <a:columns>
+                    <a:column name="line_number" align="center" width="50"/>
+                    <a:column name="description" width="150"/>
+                    <a:column name="requisition_number" width="120"/>
+                    <a:column name="account_name"/>
+                    <a:column name="account_number" width="120"/>
+                    <a:column name="amount" align="right" renderer="Aurora.formatMoney"/>
+                    <a:column name="cash_flow_item_desc" editor="cashier_lov"/>
+                    <a:column name="maintain_dists" align="center" prompt="CSH7030_DISTRIBUTE" renderer="CSH7030_assignDistributes" width="80"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="cashier_lov"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+            
+            function CSH7010_cashierAutoSize() {
+                //描述宽度
+                var labelWidth = 75;
+                //标签宽度,5 = 3padding + 2border-spacing
+                var tagWidth = 150 + 5;
+                //页面宽度、高度
+                var vw = $A.getViewportWidth();
+                //留白宽度
+                var marginWidth = 42;
+                //自适应宽度
+                var autoWidth = vw - marginWidth;
+                //Form内部宽度，-2border
+                var formInnerWidth = autoWidth - 2;
+                //所占列数
+                var colSpan = 4;
+                //设置组件的自适应宽度
+                Ext.get('cashier_csh_repayment_register_hds_form').setWidth(autoWidth + 4);
+                $('cashier_csh_repayment_register_lns_grid').setWidth(autoWidth);
+            }
+            function initStyle(){
+                var attach = '${/model/attachment/record/@atm_count}';
+                 if (attach_number > 0) {
+            		Ext.get('upload_file_btn').setStyle('color', 'red');
+                }
+            }
+            initStyle();
+            CSH7010_cashierAutoSize();
+        ]]></script>
+    </a:view>
+</a:screen>

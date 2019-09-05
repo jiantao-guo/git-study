@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+$Author: Zealot 
+$Date: 2014-10-28 上午10:45:29 
+$Revision: 1.0 
+$Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="bgt.BGT3010.bgt_budget_balance_query_record" rootPath="record"/>
+        <a:model-query model="bgt.BGT3010.bgt_budget_balance_query_version" rootPath="version"/>
+        <a:model-query fetchAll="true" model="bgt.bgt_budget_balance_period_combo" rootPath="period_name_path"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="bgt_budget_execution_rate_link1" url="${/request/@context_path}/modules/bgt/BGT3030/bgt_budget_execution_rate_company.screen"/>
+        <a:link id="bgt_budget_execution_rate_link2" url="${/request/@context_path}/modules/bgt/BGT3030/bgt_budget_execution_rate_resp_summary.screen"/>
+        <a:link id="bgt_budget_execution_rate_link3" url="${/request/@context_path}/modules/bgt/BGT3030/bgt_budget_execution_rate_resp.screen"/>
+        <a:link id="bgt_budget_execution_rate_link4" url="${/request/@context_path}/modules/bgt/BGT3030/bgt_budget_execution_rate_asset.screen"/>
+        <a:link id="bgt_budget_execution_rate_link5" url="${/request/@context_path}/modules/bgt/BGT3030/bgt_budget_execution_rate_project.screen"/>
+        <a:link id="keep_alive_link" model="bgt.BGT3030.keep_alive" modelaction="query"/>
+        <a:link id="get_init_status_link" model="db.bgt_execution_utl_pkg.get_init_status" modelaction="execute"/>
+        <a:link id="job_init_link" model="db.bgt_execution_utl_pkg.job_init" modelaction="execute"/>
+        <script><![CDATA[
+            //初始化赋值
+            
+            function loadComplete() {
+                var headerRecord = $('header_ds').getAt(0);
+                var companyCombo = $('company_combo_ds').getAll();
+                var versionCombo = $('version_combo_ds').getAll();
+                var quantityAmountCombo = $('quantity_amount_combo_ds').getAll();
+                var versionCode = '${/model/version/record/@version_code}';
+                var quantityAmount = 'AMOUNT';
+                //公司
+                headerRecord.set('company_id', '${/session/@company_id}');
+                for (var i = 0;i < companyCombo.length;i++) {
+                    if (companyCombo[i].get('company_id') == '${/session/@company_id}') {
+                        headerRecord.set('company_name', companyCombo[i].get('company_short_name'));
+                    }
+                }
+                //版本
+                headerRecord.set('version_code', versionCode);
+                for (var i = 0;i < versionCombo.length;i++) {
+                    if (versionCombo[i].get('version_code') == versionCode) {
+                        headerRecord.set('version', versionCombo[i].get('description'));
+                    }
+                }
+                //金额/数量
+                headerRecord.set('quantity_amount_code', quantityAmount);
+                for (var i = 0;i < quantityAmountCombo.length;i++) {
+                    if (quantityAmountCombo[i].get('code_value') == quantityAmount) {
+                        headerRecord.set('quantity_amount_desc', quantityAmountCombo[i].get('code_value_name'));
+                    }
+                }
+            
+                if ('${/model/record/record/@company_level_code}' == 'C') {
+                    headerRecord.set('sub_com_summary_flag', 'N');
+                    headerRecord.set('sub_company_flag', 'N');
+                    headerRecord.getField('sub_com_summary_flag').setReadOnly(true);
+                    headerRecord.getField('sub_company_flag').setReadOnly(true);
+                }
+            
+                headerRecord.getMeta().getField('responsibility_center_name').setLovPara('company_id', '${/session/@company_id}');
+                headerRecord.set('company_level_code', '${/model/record/record/@company_level_code}');
+                
+                headerRecord.set('version',$('version_combo_ds').getAt(0).get('description'));
+                headerRecord.set('version_code',$('version_combo_ds').getAt(0).get('version_code'));
+                headerRecord.set('budget_structure',$('budget_strc_combo_ds').getAt(0).get('description'));
+                headerRecord.set('budget_strc_code',$('budget_strc_combo_ds').getAt(0).get('budget_strc_code'));
+                headerRecord.set('scenario',$('scenario_combo_ds').getAt(0).get('description'));
+                headerRecord.set('scenario_code',$('scenario_combo_ds').getAt(0).get('scenario_code'));
+                headerRecord.getMeta().getField('period_from_desc').setLovPara('period_set_code', $('budget_strc_combo_ds').getAt(0).get('period_set_code'));
+                headerRecord.getMeta().getField('period_to_desc').setLovPara('period_set_code', $('budget_strc_combo_ds').getAt(0).get('period_set_code'));
+            }
+            
+            //预算表选中事件
+            function budget_structure_select(combo, value, display, record) {
+                var periodStrategy = record.get('period_strategy');
+                var headerRecord = $('header_ds').getAt(0);
+                headerRecord.getMeta().getField('period_from_desc').setLovPara('period_set_code', record.get('period_set_code'));
+                headerRecord.getMeta().getField('period_to_desc').setLovPara('period_set_code', record.get('period_set_code'));
+                // $('bgt_budget_balance_period_combo_ds').setQueryParameter('period_set_code', record.get('period_set_code'));
+                //headerControl(periodStrategy);
+            }
+            
+            
+            //设置Ajax超时时间为不超时
+            Ext.Ajax.timeout = 99999999999;
+            
+            var startTime;
+            window.runInitClock = {
+                run: function() {
+                    var currentTime = new Date();
+                    var costTime = currentTime - startTime;
+                    var hour = parseInt((costTime / 3600000));
+                    var min = parseInt((costTime - hour * 3600000) / 60000);
+                    var sec = parseInt((costTime - hour * 3600000 - min * 60000) / 1000);
+                    Ext.fly('init_masker_p').dom.innerHTML = '正在初始化中，请稍候!已执行' + hour + '小时' + min + '分' + sec + '秒';
+                },
+                interval: 1000
+            }
+            
+            function startClock() {
+                startTime = new Date();
+                Aurora.Masker.mask(Ext.getBody(), '<p id="init_masker_p" style="margin-top:0px;">正在初始化中，请稍候!已执行0小时0分0秒</p>');
+                Ext.TaskMgr.start(window.runInitClock);
+            
+            }
+            
+            function stopClock() {
+                Aurora.Masker.unmask(Ext.getBody());
+                Ext.TaskMgr.stop(window.runInitClock);
+            }
+            
+            window.keepAlive = {
+                run: function() {
+                    Aurora.request({
+                        url: $('keep_alive_link').getUrl()
+                    });
+                },
+                interval: 60000
+            }
+            
+            Ext.TaskMgr.start(window.keepAlive);
+            
+            function reset() {
+                var ds = $('header_ds').getAt(0);
+                ds.set('version', '');
+                ds.set('budget_structure', '');
+                ds.set('scenario', '');
+                ds.set('year', '');
+                ds.set('period_from_desc', '');
+                ds.set('period_to_desc', '');
+            }
+            
+            function company_report_query() {
+                var record = $('header_ds').getAt(0);
+                new Aurora.Window({
+                    id: 'bgt_budget_execution_rate_window1',
+                    url: $('bgt_budget_execution_rate_link1').getUrl() + '?period_from=' + record.get('period_from') + '&period_to=' + record.get('period_to'),
+                    title: '制式化查询报表',
+                    fullScreen: true
+                });
+            }
+            
+            function resp_summary_report_query() {
+                var record = $('header_ds').getAt(0);
+                new Aurora.Window({
+                    id: 'bgt_budget_execution_rate_window2',
+                    url: $('bgt_budget_execution_rate_link2').getUrl() + '?period_from=' + record.get('period_from') + '&period_to=' + record.get('period_to'),
+                    title: '分条线预算执行报表',
+                    fullScreen: true
+                });
+            }
+            
+            function resp_report_query() {
+                var record = $('header_ds').getAt(0);
+                new Aurora.Window({
+                    id: 'bgt_budget_execution_rate_window3',
+                    url: $('bgt_budget_execution_rate_link3').getUrl() + '?period_from=' + record.get('period_from') + '&period_to=' + record.get('period_to'),
+                    title: '分部门预算执行报表',
+                    fullScreen: true
+                });
+            }
+            
+            function asset_report_query() {
+                var record = $('header_ds').getAt(0);
+                new Aurora.Window({
+                    id: 'bgt_budget_execution_rate_window4',
+                    url: $('bgt_budget_execution_rate_link4').getUrl() + '?period_from=' + record.get('period_from') + '&period_to=' + record.get('period_to'),
+                    title: '资产预算执行报表',
+                    fullScreen: true
+                });
+            }
+            
+            function project_report_query() {
+                var record = $('header_ds').getAt(0);
+                new Aurora.Window({
+                    id: 'bgt_budget_execution_rate_window5',
+                    url: $('bgt_budget_execution_rate_link5').getUrl() + '?period_from=' + record.get('period_from') + '&period_to=' + record.get('period_to'),
+                    title: '项目预算执行报表',
+                    fullScreen: true
+                });
+            }
+            
+            function uptFunction(ds, record, name, value, oldvalue) {
+                if (name == 'year') {
+                    record.set('period_from_desc', value + '-01');
+                    record.set('period_to_desc', value + '-12');
+                    record.set('period_from', value + '-01');
+                    record.set('period_to', value + '-12');
+                    record.getMeta().getField('period_from_desc').setLovPara('period_year', value);
+                    record.getMeta().getField('period_to_desc').setLovPara('period_year', value);
+                } else if (name == 'company_id') {
+                    record.getMeta().getField('responsibility_center_name').setLovPara('company_id', value);
+                } else if (name == 'company_level_code') {
+                    if (value == 'C') {
+                        record.set('sub_com_summary_flag', 'N');
+                        record.set('sub_company_flag', 'N');
+                        record.getField('sub_com_summary_flag').setReadOnly(true);
+                        record.getField('sub_company_flag').setReadOnly(true);
+                    }
+                }
+            }
+            
+            function yearValidator(record, name, value) {
+                if (name == 'year') {
+                    var patrn = /^\d{4}$/;
+            
+                    if (!patrn.exec(value)) {
+                        return '必须输入四位数字年份';
+                    }
+            
+                    return true;
+                }
+            }
+            
+            window.monitorInit = {
+                run: function() {
+                    Aurora.request({
+                        url: $('get_init_status_link').getUrl(),
+                        success: function(resp) {
+                            if (resp && resp.result && resp.result.return_value) {
+                                if (resp.result.return_value == 'SUCCESS') {
+                                    Aurora.showInfoMessage('提示', '初始化成功！');
+                                    stopClock();
+                                    Ext.TaskMgr.stop(window.monitorInit);
+                                } else if (resp.result.return_value == 'FAILED') {
+                                    Aurora.showInfoMessage('提示', '初始化失败，请联系管理员!');
+                                    stopClock();
+                                    Ext.TaskMgr.stop(window.monitorInit);
+                                } else if (resp.result.return_value == 'NONE') {
+                                    Aurora.showInfoMessage('提示', '尚未进行过初始化，请联系管理员!！');
+                                    stopClock();
+                                    Ext.TaskMgr.stop(window.monitorInit);
+                                } else if (resp.result.return_value == 'PROCESSING') {
+                                    null;
+                                }
+                            }
+                        }
+                    });
+                },
+                interval: 60000
+            }
+            
+            function initStatusQuery() {
+                startClock();
+                Ext.TaskMgr.start(window.monitorInit);
+            }
+        ]]></script>
+        <style><![CDATA[
+        	
+        	
+        	html{
+        	    height:100%;
+        	}
+        	
+        	body{
+        	    height:100%;
+        	}
+        	
+        	
+        ]]></style>
+        <a:dataSets>
+            <!--方案选择comboBox-->
+            <!-- <a:dataSet id="query_conds_combo_ds" fetchAll="true" loadData="true" model="bgt.BGT3010.bgt_budget_balance_query_query_conds"/> -->
+            <!--公司comboBox-->
+            <a:dataSet id="company_combo_ds" fetchAll="true" loadData="true" model="bgt.BGT3010.bgt_budget_balance_query_company"/>
+            <!--版本comboBox-->
+            <a:dataSet id="version_combo_ds" fetchAll="true" loadData="true" model="bgt.bgt_budget_balance_query_bgt_versions"/>
+            <!--预算表comboBox-->
+            <a:dataSet id="budget_strc_combo_ds" fetchAll="true" loadData="true" model="bgt.bgt_budget_balance_query_budget_strc"/>
+            <!--场景comboBox-->
+            <a:dataSet id="scenario_combo_ds" fetchAll="true" loadData="true" model="bgt.bgt_budget_balance_query_scenario"/>
+            <!--数量/金额-->
+            <a:dataSet id="quantity_amount_combo_ds" lookupCode="BUDGET_QUANTITY_AMOUNT"/>
+            <!--季度comboBox-->
+            <a:dataSet id="period_quarter_combo_ds" fetchAll="true" loadData="true" model="bgt.bgt_budget_balance_query_period_quarter"/>
+            <!--年度comboBox-->
+            <!-- <a:dataSet id="period_year_combo_ds" fetchAll="true" loadData="true" model="bgt.bgt_budget_balance_query_period_year"/> -->
+            <!--取值返回comboBox-->
+            <a:dataSet id="control_rule_range_combo_ds" fetchAll="true" loadData="true" model="bgt.BGT3010.bgt_budget_balance_query_control_rule_range"/>
+            <!--bgt/org值从/到comboBox-->
+            <a:dataSet id="bgt_org_position_code_combo_ds" fetchAll="true" model="bgt.BGT3010.bgt_budget_balance_qurey_budget_combo"/>
+            <a:dataSet id="bgt_budget_balance_period_combo_ds" fetchAll="true" loadData="true" model="bgt.bgt_budget_balance_period_combo"/>
+            <!--头结构-->
+            <a:dataSet id="header_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="company_code" defaultValue="${/model/record/record/@company_code}"/>
+                    <a:field name="company_id"/>
+                    <a:field name="company_name" lovGridHeight="320" lovHeight="450" lovService="bgt.BGT3030.bgt_budget_exe_rate_com_lov" lovWidth="500" prompt="BGT_BUDGET_ITEM_MAPPING.COMPANY_ID" required="true" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_ID">
+                        <a:mapping>
+                            <a:map from="company_short_name" to="company_name"/>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_level_code" to="company_level_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="version" displayField="description" options="version_combo_ds" prompt="BGT_COMPANY_VERSIONS.VERSION_ID" required="true" returnField="version_code" valueField="version_code"/>
+                    <a:field name="version_code"/>
+                    <a:field name="budget_structure" displayField="description" options="budget_strc_combo_ds" prompt="BGT_BALANCE_RUNNING_PARAMETERS.BUDGET_STRUCTURE_ID" required="true" returnField="budget_strc_code" valueField="budget_strc_code"/>
+                    <a:field name="budget_strc_code"/>
+                    <a:field name="scenario" displayField="description" options="scenario_combo_ds" prompt="BGT_BALANCE_RUNNING_PARAMETERS.SCENARIO_ID" required="true" returnField="scenario_code" valueField="scenario_code"/>
+                    <a:field name="scenario_code"/>
+                    <a:field name="quantity_amount_desc" displayField="code_value_name" options="quantity_amount_combo_ds" prompt="QUANTITY_AMOUNT" required="true" returnField="quantity_amount_code" valueField="code_value"/>
+                    <a:field name="quantity_amount_code"/>
+                    <a:field name="period_from_desc" autoComplete="true" autoCompleteField="period_name" lovGridHeight="320" lovHeight="450" lovService="bgt.bgt_budget_balance_period_combo" lovWidth="250" prompt="GLD_EXCHANGE_RATE.PERIOD_FROM" required="true" title="GLD_EXCHANGE_RATE.PERIOD_FROM">
+                        <a:mapping>
+                            <a:map from="period_name" to="period_from_desc"/>
+                            <a:map from="period_name" to="period_from"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="period_from"/>
+                    <a:field name="period_to_desc" autoComplete="true" autoCompleteField="period_name" lovGridHeight="320" lovHeight="450" lovService="bgt.bgt_budget_balance_period_combo" lovWidth="250" prompt="PROMPT.PERIOD_NAME_TO" required="true" title="PROMPT.PERIOD_NAME_TO">
+                        <a:mapping>
+                            <a:map from="period_name" to="period_to_desc"/>
+                            <a:map from="period_name" to="period_to"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="period_to"/>
+                    <a:field name="sub_company_flag" checkedValue="Y" defaultValue="N" prompt="EXP_REPORT_QUERY.INCLUDING_AFFILIATES" uncheckedValue="N"/>
+                    <a:field name="backup_bgt_flag" checkedValue="Y" defaultValue="N" prompt="包含备用预算" uncheckedValue="N"/>
+                    <a:field name="year" prompt="BGT_BALANCE_RUNNING_PARAMETERS.PERIOD_YEAR" required="true" validator="yearValidator"/>
+                    <a:field name="sub_com_summary_flag" checkedValue="Y" defaultValue="N" prompt="分公司汇总显示" uncheckedValue="N"/>
+                    <a:field name="responsibility_center_name" defaultValue="汇总" lovGridHeight="320" lovHeight="450" lovService="bgt.BGT3030.bgt_resp_lov" lovWidth="500" prompt="成本中心" required="true">
+                        <a:mapping>
+                            <a:map from="responsibility_center_name" to="responsibility_center_name"/>
+                            <a:map from="responsibility_center_code" to="responsibility_center_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_code" defaultValue="_SUMMARY"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="uptFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form id="bgt_balance_query_head_form" column="1" title="预算执行率查询">
+                <a:box id="bgt_balance_query_normal_box" column="4" labelWidth="100" style="width:100%">
+                    <a:lov name="company_name" bindTarget="header_ds"/>
+                    <a:lov name="responsibility_center_name" bindTarget="header_ds"/>
+                    <a:comboBox name="version" bindTarget="header_ds"/>
+                    <a:comboBox name="budget_structure" bindTarget="header_ds">
+                        <a:events>
+                            <a:event name="select" handler="budget_structure_select"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:comboBox name="scenario" bindTarget="header_ds"/>
+                    <a:textField name="year" bindTarget="header_ds"/>
+                    <a:lov name="period_from_desc" bindTarget="header_ds"/>
+                    <a:lov name="period_to_desc" bindTarget="header_ds"/>
+                    <a:checkBox name="sub_company_flag" bindTarget="header_ds"/>
+                    <a:checkBox name="backup_bgt_flag" bindTarget="header_ds"/>
+                    <a:checkBox name="sub_com_summary_flag" bindTarget="header_ds"/>
+                </a:box>
+            </a:form>
+            <a:hBox>
+                <a:button id="company_report_button" click="company_report_query" disabled="false" text="制式化查询" width="120"/>
+                <a:button id="resp_summary_report_button" click="resp_summary_report_query" disabled="false" text="分条线预算执行" width="120"/>
+                <a:button id="resp_report_button" click="resp_report_query" disabled="false" text="分部门预算执行" width="120"/>
+                <a:button id="asset_report_button" click="asset_report_query" disabled="false" text="资产预算执行" width="120"/>
+                <!--<a:button id="project_report_button" click="project_report_query" disabled="false" text="项目预算执行" width="120"/>-->
+            </a:hBox>
+        </a:screenBody>
+        <script><![CDATA[
+
+            function bgtBalanceQueryInitSize() {
+                //描述宽度
+                　　
+                var labelWidth = 75;　　 //标签宽度,5 = 3padding + 2border-spacing
+                　　
+                var tagWidth = 150 + 5;　　 //页面宽度、高度
+                　　
+                var vw = $A.getViewportWidth();　　
+                var vh = $A.getViewportHeight();　　 //留白宽度
+                　　
+                var marginWidth = 35;　　 //自适应宽度
+                　　
+                var autoWidth = vw - marginWidth;　　 //Form内部宽度，-2border
+                　　
+                var formInnerWidth = autoWidth - 2;　　 //所占列数
+                　　
+                var colSpan = 4;　　 //设置组件的自适应宽度
+                　　Ext.get('bgt_balance_query_head_form').setWidth(autoWidth + 4);
+            }
+            //Ext.fly(window).on('resize', bgtBalanceQueryInitSize);
+            bgtBalanceQueryInitSize();
+            	
+            loadComplete();
+            initStatusQuery();
+        ]]></script>
+    </a:view>
+</a:screen>

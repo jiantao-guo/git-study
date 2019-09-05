@@ -1,0 +1,746 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-6-3 上午11:51:58  
+    $Revision: 1.0  
+    $Purpose: 资产验收审核批量维护财务信息
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc">
+    <a:init-procedure>
+        <a:model-query model="eam.common.eam_currency_query" rootPath="eam_currency"/>
+        <a:model-query model="eam.eam0311.eam0311_asset_headers_query" rootPath="asset_header"/>
+        <a:model-query model="eam.common.eam_default_currency_code" rootPath="eam_book_currency_code"/>
+        <a:model-query model="eam.eam0910.eam0910_asset_finance_class_query" rootPath="asset_finance"/>
+        <a:model-query model="eam.eam0310.eam0310_sysdate_query" rootPath="sys_date"/>
+        <a:model-query model="eam.eam0910.eam0910_asset_batch_update_finance_info_query" rootPath="batch_finance_info"/>
+        <a:model-query model="eam.common.eam_requisition_dimension_default_value" rootPath="dimension_default_val"/>
+        <a:model-query model="eam.cux_eam_audit_life_month_check" rootPath="life_month_chk"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="ema_asset_cost_source_bath" model="eam.eam0910.eam_asset_cost_source_bath_update" modelaction="batch_update"/>
+        <a:link id="get_exchange_rate" model="eam.eam0910.eam0910_get_exchange_rate" modelaction="query"/>
+        <script><![CDATA[
+            function init() {
+                var tabs = $("asset_management_tab");
+                if ('${/parameter/@accounting_flag}' != 'Y') {
+                    tabs.setDisabled(1);
+                }
+            
+                /* $('eam_asset_finance_info_result_ds').setQueryParameter('asset_id', '${/parameter/@asset_id}');
+                 $('eam_asset_finance_info_result_ds').query();
+                 $('eam0910_req_tra_acc_ds').setQueryParameter('requisition_header_id', '${/parameter/@requisition_header_id}');
+                 $('eam0910_req_tra_acc_ds').query(); */
+                var requisition_line_id = '${/parameter/@requisition_line_id}';
+                var record = $("eam_asset_finance_info_result_ds").getCurrentRecord();
+                if (record) {
+                    var depreciate_flag = record.get("depreciate_flag");
+                    var start_depreciatite_date = record.getField("start_depreciatite_date");
+                    var remaining_life_in_month = record.getField("remaining_life_in_month");
+                    if (depreciate_flag == 'Y') {
+                        start_depreciatite_date.setRequired(true);
+                        remaining_life_in_month.setRequired(true);
+                    } else {
+                        record.getField('accumulated_dep_amt').setReadOnly(true);
+                        record.getField("start_depreciatite_date").setRequired(false);
+                        record.getField("remaining_life_in_month").setRequired(false);
+                    }
+                    if ('${/parameter/@bgt_ctrl_flag}' == 'Y') {
+                        record.getMeta().getField('dimension1_id').setRequired(true);
+                        record.getMeta().getField('dimension1_name').setRequired(true);
+                    }
+            
+                }
+            
+                var date = new Date();
+                //  如果不存在财务信息
+                Aurora.request({
+                    url: $('get_exchange_rate').getUrl() + '?exchange_date=' + Aurora.formatDate(date) + '&from_currency=' + '${/model/asset_header/record/@currency_code}',
+                    success: function(args) {
+                        var exchange_rate = args.result.record.exchange_rate;
+                        var period_name = args.result.record.period_name;
+            
+                        var default_acc = $("tran_acc_default_val_ds").getCurrentRecord();
+                        default_acc.set('exchange_rate', exchange_rate);
+                        default_acc.set('period_name', period_name);
+                        default_acc.set('journal_date', date);
+                        default_acc.set('currency_code', '${/model/asset_header/record/@currency_code}');
+            
+                        if ('${/model/asset_header/record/@currency_code}' == '${/model/sys_date/record/@cpy_currency_code}') {
+                            default_acc.getField("exchange_rate").setReadOnly(true);
+                        } else {
+                            default_acc.getField("exchange_rate").setRequired(true);
+                        }
+                    }
+                });
+                autoPercentValue();
+            
+                //modify@mys 2015-08-05
+                life_month_chk(record);
+            }
+            
+            function life_month_chk(record) {
+                var record = $("eam_asset_finance_info_result_ds").getAt(0);
+            
+                if ('${/model/life_month_chk/record/@required_flag}' == 'N') {
+                    record.getMeta().getField('life_in_month').setReadOnly(true);
+                    record.getMeta().getField('life_in_month').setRequired(false);
+                } else {
+                    record.getMeta().getField('life_in_month').setReadOnly(false);
+                    record.getMeta().getField('life_in_month').setRequired(true);
+                }
+            
+            }
+            
+            function autoPercentValue() {
+                //月折旧率计算公式为：月折旧额/（原始成本）mount_dep_percent = month_dep_amount/original_cost
+                var ast_requisition_type_code = '${/parameter/@ast_requisition_type_code}';
+                var fin_records = $('eam_asset_finance_info_result_ds').getAt(0);
+                var mount_dep_percent = "";
+                var month_dep_amount = fin_records.get('month_dep_amount');
+                var salvage_value_rate = fin_records.get('salvage_value_rate');
+                var current_cost = fin_records.get('current_cost');
+                fin_records.set('original_cost', current_cost);
+                var original_cost = fin_records.get('original_cost');
+                var salvage_value = salvage_value_rate * current_cost;
+                if (ast_requisition_type_code == 'QD005') {
+                    salvage_value = '';
+                }
+                fin_records.set('salvage_value', salvage_value);
+                if ($A.isEmpty(month_dep_amount)) {
+                    fin_records.set('mount_dep_percent', '');
+                }
+                if (!$A.isEmpty(month_dep_amount) && !$A.isEmpty(salvage_value) && !$A.isEmpty(original_cost) && ast_requisition_type_code != 'QD005') {
+                    mount_dep_percent = month_dep_amount / (original_cost - salvage_value);
+                    fin_records.set('mount_dep_percent', mount_dep_percent);
+                }
+            
+            }
+            
+            function backFun() {
+                // if(!$('eam_asset_finance_info_result_ds').validate()) {
+                // return false;
+                // }
+                // if(!$('eam0910_req_tra_acc_ds').validate()) {
+                // return false;
+                // }
+                // $('eam0910_req_tra_acc_ds').submit();
+                $('eam_batch_update_asset_finance_info_screen').close();
+            }
+            
+            function saveFun() {
+            
+                if (!$('eam_asset_finance_info_result_ds').validate()) {
+                    return false;
+                }
+                if (!$('eam0910_req_tra_acc_ds').validate()) {
+                    return false;
+                }
+                //var finance_record = $('eam_asset_finance_info_result_ds').getCurrentRecord();
+            
+                var finance_record = $('eam_asset_finance_info_result_ds').getAt(0);
+                if (Ext.isEmpty(finance_record)) {
+                    $('eam_asset_finance_info_result_ds').create();
+                    finance_record = $('eam_asset_finance_info_result_ds').getAt(0);
+            
+                    //modify@mys 2015-08-05
+                    life_month_chk(finance_record);
+                }
+                finance_record.set('original_cost', finance_record.get('current_cost'));
+            
+                //批量维护财务信息时，需要同步更新每个资产的成本来源
+                var ast_requisition_type_code = '${/parameter/@ast_requisition_type_code}';
+                if (ast_requisition_type_code != 'QD003') {
+                    var datas = [];
+                    var records = $('eam0310_req_lines_ds').getSelected();
+                    for (var i = 0;i < records.length;i++) {
+                        var data = {
+                            document_id: records[i].get('requisition_header_id'),
+                            document_line_id: records[i].get('requisition_line_id'),
+                            asset_id: records[i].get('asset_id'),
+                            cost: finance_record.get('current_cost'),
+                            _status: 'update'
+                        };
+                        datas.push(data);
+                    }
+                    // Aurora.request({
+                        // url: $('ema_asset_cost_source_bath').getUrl(),
+                        // para: datas,
+                        // success: function(res) {
+                            $('eam_asset_finance_info_result_ds').submit();
+                        // },
+                        // scope: this
+                    // });
+                }
+            
+            }
+            
+            function gridCellClick(grid, row, name, record) {
+                if (name == 'company_desc') {
+                    var asset_book_id = '${/model/asset_header/record/@asset_book_id}';
+                    if (asset_book_id != undefined && asset_book_id != '' && asset_book_id != null) {
+                        record.getField("company_desc").setLovPara('asset_book_id', asset_book_id);
+                    }
+                }
+                if (name == 'responsibility_center_desc') {
+                    if (record.get('company_id') != undefined && record.get('company_id') != '' && record.get('company_id') != null) {
+                        record.getMeta().getField('responsibility_center_desc').setReadOnly(false);
+                        record.getField("responsibility_center_desc").setLovPara('company_id', record.get('company_id'));
+                    }
+                }
+            
+            }
+            
+            function onRendererFun(value, record, name) {
+                var record_dv = $('tran_acc_default_val_ds').getAt(0);
+                var entered_amount_dr = record.get('entered_amount_dr');
+                var entered_amount_cr = record.get('entered_amount_cr');
+                if (entered_amount_dr == '0') {
+                    if (name == 'functional_amount_dr') {
+                        record.set('functional_amount_dr', '0');
+                        return Aurora.formatMoney(record.get('entered_amount_dr'));
+                    }
+                }
+                if (record.get('entered_amount_dr')) {
+                    if (name == 'functional_amount_dr') {
+                        record.set('functional_amount_dr', record.get('entered_amount_dr'));
+                        return Aurora.formatMoney(record.get('entered_amount_dr'));
+                    }
+                }
+                if (entered_amount_cr == '0') {
+                    if (name == 'functional_amount_cr') {
+                        record.set('functional_amount_cr', '0');
+                        return Aurora.formatMoney(record.get('entered_amount_cr'));
+                    }
+                }
+                if (record.get('entered_amount_cr')) {
+                    if (name == 'functional_amount_cr') {
+                        record.set('functional_amount_cr', record.get('entered_amount_cr'));
+                        return Aurora.formatMoney(record.get('entered_amount_cr'));
+                    }
+                }
+            }
+            
+            function onFiLoad(ds) {
+                var ast_requisition_type_code = '${/parameter/@ast_requisition_type_code}';
+                var fi_record = ds.getCurrentRecord();
+                if (ast_requisition_type_code == 'QD005') {
+                    fi_record.set('salvage_value', '');
+                    fi_record.set('accumulated_dep_amt', '');
+                    fi_record.set('impairment_loss_amt', '');
+                    fi_record.getMeta().getField('life_in_month').setReadOnly(true);
+                    fi_record.set('life_in_month', '');
+                    fi_record.set('remaining_life_in_month', '');
+                }
+            
+                var record = $('eam_asset_finance_info_result_ds').getAt(0);
+                life_month_chk(record);
+            
+            }
+            
+            function onSubSuccessHandler() {
+                $('eam_asset_finance_info_result_ds').query();
+            
+                //modify@mys 2015-08-05
+                var record = $("eam_asset_finance_info_result_ds").getCurrentRecord();
+                life_month_chk(record);
+            
+                Aurora.showMessage('${l:PROMPT}', '${l:EBS_SAVE_SUCCESS}');
+            }
+            
+            function onFiUpdateHandler(dataSet, record, name, value) {
+            
+                // if(name == 'current_cost' || name == 'salvage_value_rate') {
+                // var current_cost = record.get('current_cost');
+                // var rate = record.get('salvage_value_rate');
+                // if(rate > 0 && current_cost > 0) {
+                // record.set('salvage_value', current_cost * rate / 100);
+                // } else {
+                // record.set('salvage_value', null);
+                // }
+                // }
+                var ast_requisition_type_code = '${/parameter/@ast_requisition_type_code}';
+                if (name == "current_cost") {
+                    record.set("original_cost", record.get("current_cost"));
+                }
+            
+                if (name == 'current_cost' || name == 'salvage_value_rate') {
+                    var current_cost = record.get('current_cost');
+                    var rate = record.get('salvage_value_rate');
+                    if (rate > 0 && current_cost > 0 && ast_requisition_type_code != 'QD005') {
+                        record.set('salvage_value', current_cost * rate);
+                    } else {
+                        record.set('salvage_value', '');
+                    }
+                }
+                if (name == 'depreciation_months') {
+                    var ast_requisition_type_code = '${/parameter/@ast_requisition_type_code}';
+                    if (ast_requisition_type_code == 'QD005') {
+                        record.set('depreciate_flag', 'N');
+                    }
+                }
+                // if(name == 'depreciate_flag') {
+                // if(value == 'N') {
+                // record.getField('accumulated_dep_amt').setReadOnly(true);
+                // record.getField("start_depreciatite_date").setRequired(false);
+                // record.getField("remaining_life_in_month").setRequired(false);
+                // } else {
+                // //record.getField('accumulated_dep_amt').setReadOnly(false);
+                // record.getField("start_depreciatite_date").setRequired(true);
+                // record.getField("remaining_life_in_month").setRequired(true);
+                // var prorate_convention_code = record.get("prorate_convention_code");
+                // /* // (当月折旧)始折日期默认为启用日期当月的最后一天
+                // if(prorate_convention_code == 'CMP') {
+            
+                // } else if (prorate_convention_code == 'NMP') {
+                // // (下月折旧)那么始折日期默认为启用日期下月的最后一天
+            
+                // } */
+                // }
+                // }
+            }
+            
+            function onAddFun(dataSet, record, index) {
+            
+                var form_record = $('tran_acc_default_val_ds').getCurrentRecord();
+                var journal_date = form_record.get('journal_date');
+                if (!journal_date) {
+                    alert("${l:EXP_REPORT_ACCOUNTS.CHECK2}");
+                    return false;
+                }
+            
+                var period_name = form_record.get('period_name');
+            
+                if (!period_name) {
+                    alert('凭证所选期间未打开，请重新选择！');
+                    return false;
+                }
+                //record.set('requisition_line_id', '${/parameter/@requisition_line_id}');
+                record.set('source_code', 'MANUNAL');
+                record.set('journal_date', journal_date);
+                record.set('period_name', period_name);
+                record.set('currency_code', form_record.get('currency_code'));
+                record.set('responsibility_center_desc', '${/model/asset_header/record/@location_resp_center_name}');
+                record.set('company_desc', '${/model/asset_header/record/@location_company_name}');
+                record.set('responsibility_center_id', '${/model/asset_header/record/@location_resp_center_id}');
+                record.set('company_id', '${/model/asset_header/record/@location_company_id}');
+            
+            }
+            
+            //创建凭证
+            var acc_flag = false;
+            
+            function create_account() {
+                if (!$('tran_acc_default_val_ds').validate()) {
+                    return false;
+                }
+            
+                var record = $('tran_acc_default_val_ds').getCurrentRecord();
+                var period_name = record.get("period_name");
+                if (!period_name) {
+                    alert("${l:PERIOD_NOT_OPEN_ERR}");
+                    record.set('period_name', null);
+                    return false;
+                }
+            
+                var finance_record = $('eam_asset_finance_info_result_ds').getCurrentRecord();
+                if (Ext.isEmpty(finance_record)) {
+                    Aurora.showMessage('${l:PROMPT}', '请先保存财务信息！');
+                    return;
+                }
+                var data = {};
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+                //var requisition_line_id = '${/parameter/@requisition_line_id}';
+                var journal_date = record.get('journal_date');
+                var exchange_rate = record.get("exchange_rate");
+            
+                data.requisition_header_id = requisition_header_id;
+                data.journal_date = journal_date;
+                //data.requisition_line_id = requisition_line_id;
+                data.exchange_rate = exchange_rate;
+                data.currency_code = finance_record.get('currency_code') || '${/model/asset_header/record/@currency_code}';
+            
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/eam.eam0910.eam0910_batch_trans_accounts_edit/execute',
+                    para: data,
+                    success: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        //Aurora.showMessage('${l:PROMPT}', '${l:EBS_SAVE_SUCCESS}');
+                        $('eam0910_req_tra_acc_ds').setQueryParameter('requisition_header_id', requisition_header_id);
+                        $('eam0910_req_tra_acc_ds').query();
+                        acc_flag = true;
+                    },
+                    failure: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    }
+                });
+            }
+            
+            function onLoadFun() {
+                var ast_requisition_type_code = '${/parameter/@ast_requisition_type_code}';
+                //盘盈验收申请:QD007\暂估资产决算申请:JZ005需要人工选择科目
+                if (acc_flag && (ast_requisition_type_code == 'QD007' || ast_requisition_type_code == 'JZ005')) {
+                    var acc_ds = $('eam0910_req_tra_acc_ds').getAll();
+                    for (var i = 0;i < acc_ds.length;i++) {
+                        acc_ds[i].set('account_code', '');
+                        acc_ds[i].set('account_desc', '');
+                    }
+                    acc_flag = false;
+                }
+            
+            }
+            //删除
+            
+            function onDeleteFun() {
+                var requisition_header_id = '${/parameter/@requisition_header_id}';
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/eam.eam0910.eam0910_batch_trans_accounts_edit/delete',
+                    para: {
+                        requisition_header_id: '${/parameter/@requisition_header_id}'
+                    },
+                    success: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('eam0910_req_tra_acc_ds').setQueryParameter('requisition_header_id', requisition_header_id);
+                        $('eam0910_req_tra_acc_ds').query();
+                    },
+                    failure: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function(args) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    }
+                });
+            }
+            
+            function getPeriod(datePicker, date) {
+                var p_date = date || new Date();
+                var p_date_str = Aurora.formatDate(p_date);
+                Aurora.request({
+                    url: $('get_exchange_rate').getUrl(),
+                    para: {
+                        p_date: p_date_str
+                    },
+                    success: periodName,
+                    scope: this
+                });
+            }
+            
+            function onChangeHandler(dataSet, record, name, value, oldvalue) {
+            
+                if (name == "journal_date") {
+                    var from_currency = record.get("currency_code");
+                    journal_date = Aurora.formatDate(value);
+            
+                    if (from_currency == undefined) {
+                        from_currency = '${/model/asset_header/record/@currency_code}';
+                    }
+                    Aurora.request({
+                        url: $('get_exchange_rate').getUrl() + '?exchange_date=' + journal_date + '&from_currency=' + from_currency,
+                        success: function(args) {
+                            var exchange_rate = args.result.record.exchange_rate;
+                            var period_name = args.result.record.period_name;
+                            if (!period_name) {
+                                alert("${l:PERIOD_NOT_OPEN_ERR}");
+                                record.set('period_name', null);
+                                return false;
+                            }
+                            record.set('exchange_rate', exchange_rate);
+                            record.set('period_name', period_name);
+                        }
+                    });
+                }
+            }
+            
+            function onLinesUpdateHandler(dataset, record, name, value) {
+                switch (name) {
+                case 'account_code':
+                    // if (value.substring(0, 1) != '6') {
+                        // var center_name_code_display = '';
+                        // var responsibility_center_id = '';
+                        // Aurora.request({
+                            // url: '${/request/@context_path}/autocrud/expm.get_responsibility_center_info/query',
+                            // success: function(args) {
+                                // responsibility_center_desc = args.result.record.responsibility_center_desc;
+                                // responsibility_center_id = args.result.record.responsibility_center_id;
+                                // record.set('responsibility_center_desc', responsibility_center_desc);
+                                // record.set('responsibility_center_id', responsibility_center_id);
+                            // }
+                        // });
+                    // } else {
+                        record.set('responsibility_center_desc', '${/model/asset_header/record/@responsibility_center_desc}');
+                        record.set('responsibility_center_id', '${/model/asset_header/record/@responsibility_center_id}');
+                    // }
+                    break;
+                }
+            }
+            var anct_count = 0;
+            
+            function eam0910accountdesc(record, name) {
+                anct_count++;
+                var ast_requisition_type_code = '${/parameter/@ast_requisition_type_code}';
+                var mod = anct_count % 2;
+                // if (name == 'account_desc') {
+                // if (record.isNew || (mod == 0 && ast_requisition_type_code=='QD007') ) {
+                // return 'eam0910_account_lv';
+                // } else {
+                // return '';
+                // }
+                // }
+                var dr_manual_flag = '${/parameter/@dr_manual_flag}';
+                var cr_manual_flag = '${/parameter/@cr_manual_flag}';
+                if (name == 'account_desc') {
+                    if ((dr_manual_flag == 'Y' && !Ext.isEmpty(record.get('entered_amount_dr'))) || (cr_manual_flag == 'Y' && !Ext.isEmpty(record.get('entered_amount_cr')))) {
+                        return 'eam0910_account_lv';
+                    }
+                }
+            
+                var account_manual_flag = '${/parameter/@account_manual_flag}';
+                if (account_manual_flag != 'Y') {
+                    return '';
+                } else {
+                    if (name == 'account_desc') {
+                        return 'eam0910_account_lv';
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="eam_currency_ds">
+                <a:datas dataSource="/model/eam_currency"/>
+            </a:dataSet>
+            <a:dataSet id="asset_finance_ds">
+                <a:datas dataSource="/model/asset_finance"/>
+            </a:dataSet>
+            <a:dataSet id="eam_asset_finance_info_result_ds" autoCreate="true" autoQuery="true" model="eam.eam0810.eam0810_asset_finance_info_query" queryUrl="${/request/@context_path}/autocrud/eam.eam0810.eam0810_asset_finance_info_query/query?asset_id=${/parameter/@asset_id}" submitUrl="${/request/@context_path}/modules/eam/EAM0910/eam_batch_asset_finance_info_save.svc">
+                <a:fields>
+                    <a:field name="asset_finance_info_id"/>
+                    <a:field name="asset_id" defaultValue="${/parameter/@asset_id}"/>
+                    <a:field name="finance_class_id" defaultValue="${/model/asset_header/record/@fin_class_id}"/>
+                    <a:field name="asset_card_num"/>
+                    <a:field name="currency_code" defaultValue="${/model/asset_header/record/@currency_code}"/>
+                    <a:field name="currency_desc" defaultValue="${/model/asset_header/record/@currency_desc}" displayField="currency_name" options="eam_currency_ds" prompt="EAM_ASSET_FINANCE_INFO.CURRENCY_NAME" required="true" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="original_cost" defaultValue="${/parameter/@amount}" readOnly="true"/>
+                    <a:field name="current_cost" defaultValue="${/parameter/@amount}" readOnly="true"/>
+                    <!-- required="true" -->
+                    <a:field name="accumulated_dep_amt" readOnly="true"/>
+                    <a:field name="impairment_loss_amt" readOnly="true"/>
+                    <a:field name="salvage_value" readOnly="true"/>
+                    <a:field name="start_depreciatite_date" readOnly="true"/>
+                    <a:field name="last_depr_period_name" readOnly="true"/>
+                    <a:field name="last_depr_date" readOnly="true"/>
+                    <a:field name="life_in_month" defaultValue="${/model/asset_finance/record/@depreciation_months}"/>
+                    <a:field name="scrap_amount" prompt="EAM_REQUISITION_LINES.DISCARD_AMOUNT" readOnly="true"/>
+                    <a:field name="remaining_life_in_month" defaultValue="${/model/asset_finance/record/@depreciation_months}" readOnly="true"/>
+                    <a:field name="scrap_cost"/>
+                    <a:field name="finance_class_desc" displayField="class_name" options="asset_finance_ds" prompt="EAM_ASSET_FINANCE_INFO.FINANCE_CLASS_DESC" returnField="finance_class_id" valueField="class_id">
+                        <a:mapping>
+                            <a:map from="salvage_value_rate" to="salvage_value_rate"/>
+                            <a:map from="depreciate_flag" to="depreciate_flag"/>
+                            <!-- <a:map from="start_depreciatite_date" to="start_depreciatite_date"/> -->
+                            <a:map from="prorate_convention_code" to="prorate_convention_code"/>
+                            <a:map from="depreciation_months" to="depreciation_months"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="depreciation_months" prompt="EAM_ASSET_FINANCE_INFO.FINANCE_CLASS_IN_MONTH"/>
+                    <a:field name="prorate_convention_code"/>
+                    <a:field name="depreciate_flag" checkedValue="Y" defaultValue="${/model/asset_finance/record/@depreciate_flag}" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="salvage_value_rate" defaultValue="${/model/asset_finance/record/@salvage_value_rate}" prompt="EAM_ASSET_FIN_CLASSES.SALVAGE_VALUE_RATE"/>
+                    <a:field name="dimension1_id" defaultValue="${/model/dimension_default_val/record/@dimension_value_id}"/>
+                    <a:field name="dimension1_name" defaultValue="${/model/dimension_default_val/record/@description}" lovGridHeight="300" lovHeight="480" lovService="eam.common.eam_requisition_dimension_lov?employee_id=${/model/eam0310_req_header/record/@employee_id}" lovWidth="550" prompt="项目">
+                        <a:mapping>
+                            <a:map from="dimension_value_id" to="dimension1_id"/>
+                            <a:map from="description" to="dimension1_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="mount_dep_percent" readOnly="true"/>
+                    <a:field name="month_dep_amount" readOnly="true"/>
+                    <a:field name="entity_class_old_desc" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="onFiLoad"/>
+                    <a:event name="submitsuccess" handler="onSubSuccessHandler"/>
+                    <a:event name="update" handler="onFiUpdateHandler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="tran_acc_default_val_ds" autoCreate="true" model="eam.eam0910.eam0910_tran_acc_default_val">
+                <a:fields>
+                    <a:field name="currency_code" prompt="EAM_TRANSACTION_ACCOUNTS.CURRENCY_CODE" readOnly="true"/>
+                    <a:field name="functional_currency_code"/>
+                    <a:field name="period_name"/>
+                    <a:field name="journal_date" prompt="EAM_TRANSACTION_ACCOUNTS.JOURNAL_DATE" readOnly="true"/>
+                    <a:field name="exchange_rate" prompt="EAM_TRANSACTION_ACCOUNTS.EXCHANGE_RATE"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="onChangeHandler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="eam0910_req_tra_acc_ds" autoQuery="true" model="eam.eam0910.eam0910_batch_transaction_accounts_query" queryUrl="${/request/@context_path}/autocrud/eam.eam0910.eam0910_batch_transaction_accounts_query/query?requisition_header_id=${/parameter/@requisition_header_id}" selectable="true" submitUrl="${/request/@context_path}/modules/eam/EAM0910/eam_batch_transaction.svc">
+                <a:fields>
+                    <a:field name="requisition_header_id"/>
+                    <a:field name="transaction_je_line_id"/>
+                    <a:field name="transaction_line_id"/>
+                    <a:field name="source_code"/>
+                    <a:field name="description" readOnly="true" required="true"/>
+                    <a:field name="period_name" readOnly="true"/>
+                    <a:field name="company_id"/>
+                    <a:field name="company_desc" lovGridHeight="300" lovHeight="450" lovService="eam.eam0030.eam0030_companies_vl_set_of_books_lov" lovWidth="550" prompt="EAM_TRANSACTION_ACCOUNTS.COMPANY_ID" readOnly="true" title="BGT_BUDGET_ITEM_MAPPING.COMPANY_SEARCH">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_short_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="responsibility_center_desc" lovGridHeight="300" lovHeight="450" lovService="expm.exp_responsibility_center_lov" lovWidth="550" prompt="EAM_TRANSACTION_ACCOUNTS.RESPONSIBILITY_CENTER_ID" readOnly="true" title="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_ID">
+                        <a:mapping>
+                            <a:map from="responsibility_center_id" to="responsibility_center_id"/>
+                            <a:map from="responsibility_center_name" to="responsibility_center_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_id"/>
+                    <a:field name="account_code" prompt="EAM_TRANSACTION_ACCOUNTS.ACCOUNT_CODE" readOnly="true"/>
+                    <a:field name="account_desc" lovGridHeight="300" lovHeight="450" lovService="gld.CSH1015.gld_accounts_lov_query" lovWidth="550" prompt="EAM_TRANSACTION_ACCOUNTS.ACCOUNT_ID" required="true" title="GLD_COMPANY_ACCOUNTS.ACCOUNT_ID">
+                        <a:mapping>
+                            <a:map from="account_id" to="account_id"/>
+                            <a:map from="account_code" to="account_code"/>
+                            <a:map from="description" to="account_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="entered_amount_dr" prompt="EAM_TRANSACTION_ACCOUNTS.AMOUNT_DR" readOnly="true"/>
+                    <a:field name="entered_amount_cr" prompt="EAM_TRANSACTION_ACCOUNTS.AMOUNT_CR" readOnly="true"/>
+                    <a:field name="functional_amount_dr" prompt="EAM_TRANSACTION_ACCOUNTS.AMOUNT_DR" readOnly="true"/>
+                    <a:field name="functional_amount_cr" prompt="EAM_TRANSACTION_ACCOUNTS.AMOUNT_CR" readOnly="true"/>
+                    <a:field name="exchange_rate"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="journal_date" readOnly="true"/>
+                    <a:field name="gld_interface_flag"/>
+                    <a:field name="usage_code"/>
+                    <a:field name="je_category_code"/>
+                    <a:field name="company_segment"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="onAddFun"/>
+                    <!-- <a:event name="load" handler="onLoadFun"/> -->
+                    <a:event name="update" handler="onLinesUpdateHandler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <!-- 按钮 -->
+            <a:hBox>
+                <a:button click="saveFun" text="HAP_SAVE"/>
+                <a:button click="backFun" text="HAP_BACK"/>
+            </a:hBox>
+            <a:tabPanel id="asset_management_tab" height="320" width="1020">
+                <a:tabs>
+                    <a:tab height="100" prompt="EAM_ASSET_HEADERS.FINANCIAL_INFORMATION" width="80">
+                        <a:form column="1" height="179" labelWidth="100" width="880">
+                            <a:box column="3" labelWidth="130">
+                                <a:comboBox name="finance_class_desc" bindTarget="eam_asset_finance_info_result_ds"/>
+                                <a:comboBox name="currency_desc" bindTarget="eam_asset_finance_info_result_ds"/>
+                                <a:numberField name="original_cost" bindTarget="eam_asset_finance_info_result_ds" prompt="原始成本" renderer="Aurora.formatMoney"><![CDATA[
+                                ]]></a:numberField>
+                            </a:box>
+                            <a:box column="3" labelWidth="130">
+                                <a:numberField name="current_cost" allowNegative="false" bindTarget="eam_asset_finance_info_result_ds" renderer="Aurora.formatMoney">
+                                    <a:events>
+                                        <a:event name="change" handler="autoPercentValue"/>
+                                    </a:events>
+                                </a:numberField>
+                                <a:numberField name="accumulated_dep_amt" bindTarget="eam_asset_finance_info_result_ds" renderer="Aurora.formatMoney"/>
+                                <a:numberField name="mount_dep_percent" bindTarget="eam_asset_finance_info_result_ds" prompt="月折旧率" renderer="Aurora.formatMoney"><![CDATA[
+                                ]]></a:numberField>
+                            </a:box>
+                            <a:box column="3" labelWidth="130">
+                                <a:numberField name="month_dep_amount" bindTarget="eam_asset_finance_info_result_ds" prompt="月折旧额" renderer="Aurora.formatMoney"><![CDATA[
+                                ]]></a:numberField>
+                                <a:numberField name="impairment_loss_amt" bindTarget="eam_asset_finance_info_result_ds" renderer="Aurora.formatMoney"/>
+                                <a:numberField name="salvage_value" bindTarget="eam_asset_finance_info_result_ds" renderer="Aurora.formatMoney">
+                                    <a:events>
+                                        <a:event name="change" handler="autoPercentValue"/>
+                                    </a:events>
+                                </a:numberField>
+                            </a:box>
+                            <a:box column="3" labelWidth="130">
+                                <a:datePicker name="start_depreciatite_date" bindTarget="eam_asset_finance_info_result_ds" renderer="Aurora.formatDate"/>
+                                <a:numberField name="life_in_month" allowDecimals="false" bindTarget="eam_asset_finance_info_result_ds"/>
+                                <a:numberField name="remaining_life_in_month" allowDecimals="false" bindTarget="eam_asset_finance_info_result_ds"/>
+                            </a:box>
+                            <a:box column="3" labelWidth="130">
+                                <a:numberField name="scrap_amount" bindTarget="eam_asset_finance_info_result_ds" renderer="Aurora.formatMoney"/>
+                                <a:textField name="last_depr_period_name" bindTarget="eam_asset_finance_info_result_ds"/>
+                                <a:datePicker name="last_depr_date" bindTarget="eam_asset_finance_info_result_ds" renderer="Aurora.formatDate"/>
+                            </a:box>
+                            <a:box column="3" labelWidth="130">
+                                <a:textField name="entity_class_old_desc" bindTarget="eam_asset_finance_info_result_ds" prompt="原财务分类"/>
+                                <a:checkBox name="depreciate_flag" bindTarget="eam_asset_finance_info_result_ds" checkedValue="Y" uncheckedValue="N" width="152"/>
+                            </a:box>
+                        </a:form>
+                    </a:tab>
+                    <a:tab height="100" prompt="EAM_REQUISITION_ACCOUNTING_VOCHERS" width="80">
+                        <a:form column="1" height="20" labelWidth="100" width="890">
+                            <a:box column="4">
+                                <a:datePicker name="journal_date" bindTarget="tran_acc_default_val_ds" renderer="Aurora.formatDate"/>
+                                <!--<a:textField name="currency_code" bindTarget="tran_acc_default_val_ds"/>
+                                <a:textField name="exchange_rate" bindTarget="tran_acc_default_val_ds"/>-->
+                                <a:button click="create_account" text="PROMPT.CREATE_JE"/>
+                            </a:box>
+                        </a:form>
+                        <a:grid bindTarget="eam0910_req_tra_acc_ds" height="220" navBar="true" width="1015">
+                            <a:toolBar>
+                                <!-- <a:button type="add"/> -->
+                                <a:button type="save"/>
+                                <a:button click="onDeleteFun" icon="${/request/@context_path}/images/remove.gif" text="HAP_DELETE"/>
+                                <!-- <a:button type="delete"/> -->
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="description" align="left" width="158"/>
+                                <a:column name="journal_date" align="center" renderer="Aurora.formatDate" width="80"/>
+                                <a:column name="period_name" align="center" width="80"/>
+                                <a:column name="company_desc" align="left" width="120"/>
+                                <a:column name="responsibility_center_desc" align="left" width="150"/>
+                                <a:column name="account_code" align="center" width="100"/>
+                                <a:column name="account_desc" align="left" editorFunction="eam0910accountdesc" width="100"/>
+                                <a:column name="entered_amount_dr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                                <a:column name="entered_amount_cr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                                <!--<a:column prompt="EAM_TRANSACTION_ACCOUNTS.ENTERED_AMOUNT">
+                                    <a:column name="entered_amount_dr" editor="eam0910_amount_nf" renderer="Aurora.formatMoney" width="75"/>
+                                    <a:column name="entered_amount_cr" editor="eam0910_amount_nf" renderer="Aurora.formatMoney" width="75"/>
+                                </a:column>
+                                <a:column prompt="EAM_TRANSACTION_ACCOUNTS.FUNCTIONAL_AMOUNT">
+                                    <a:column name="functional_amount_dr" renderer="onRendererFun" width="75"/>
+                                    <a:column name="functional_amount_cr" renderer="onRendererFun" width="75"/>
+                                </a:column>-->
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="eam0910_desc_tf"/>
+                                <a:lov id="eam0910_account_lv"/>
+                                <a:lov id="eam0910_company_lv"/>
+                                <a:lov id="eam0910_resp_lv"/>
+                                <a:numberField id="eam0910_amount_nf" allowDecimals="true" allowFormat="true" allowNegative="true" decimalPrecision="3"/>
+                            </a:editors>
+                            <a:events>
+                                <a:event name="cellclick" handler="gridCellClick"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        		init();
+        ]]></script>
+    </a:view>
+    <a:view-config>
+        <c:create-config targetId="dimension1">
+            <p:switch test="/parameter/@bgt_ctrl_flag">
+                <p:case value="Y">
+                    <c:process-config>
+                        <a:lov name="dimension1_name" align="center" bindTarget="eam_asset_finance_info_result_ds" prompt="项目"/>
+                    </c:process-config>
+                </p:case>
+            </p:switch>
+        </c:create-config>
+    </a:view-config>
+</a:screen>

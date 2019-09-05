@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="transaction_header_id" datatype="java.lang.Long"/>
+        <bm:field name="transaction_num" datatype="java.lang.String" prompt="CSH_PREPAYMENT_WRITE_OFF.TRANSACTION_NUM"/>
+        <bm:field name="transaction_line_id" datatype="java.lang.Long"/>
+        <bm:field name="transaction_amount" datatype="java.lang.Double" prompt="CSH_TRANSACTION_LINES.TRANSACTION_AMOUNT"/>
+        <bm:field name="currency_code" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.CURRENCY_CODE"/>
+        <bm:field name="deaf_date" datatype="java.lang.String" prompt="CSH_TRANSACTION_HEADERS.TRANSACTION_DATE"/>
+        <bm:field name="exchange_rate_type" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_TYPE"/>
+        <bm:field name="exchange_rate" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE"/>
+        <bm:field name="partner_category" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.PARTNER_CATEGORY"/>
+        <bm:field name="partner" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.PARTNER_ID"/>
+        <bm:field name="exchange_rate_quotation" datatype="java.lang.String" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_QUOTATION"/>
+        <bm:field name="write_off_date" datatype="java.lang.String" prompt="CSH_TRANSACTION_HEADERS.TRANSACTION_DATE" required="true"/>
+        <bm:field name="unwrite_off_amount" datatype="java.lang.Double" prompt="CSH_PREPAYMENT_WRITE_OFF.UNWRITE_OFF_AMOUNT"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	select v.transaction_header_id,
+				       v.transaction_line_id,
+				       v.transaction_num,
+				       v.transaction_amount,
+				       v.currency_code,
+				       v.deaf_date,
+				       v.exchange_rate_type,
+				       v.exchange_rate,
+				       v.partner_category,
+				       v.partner,
+				       v.exchange_rate_quotation,
+				       v.write_off_date,
+				       v.unwrite_off_amount
+				  from (select cth.transaction_header_id,
+				               ctl.transaction_line_id,
+				               cth.transaction_num,
+				               ctl.transaction_amount,
+				               ctl.currency_code,
+				               to_char(sysdate, 'yyyy-mm-dd') deaf_date,
+				               (select etv.type_name
+				                  from gld_exchangerate_types_vl etv
+				                 where etv.enabled_flag = 'Y'
+				                   and etv.type_code = ctl.exchange_rate_type) exchange_rate_type,
+				               ctl.exchange_rate,
+				               (select b.code_value_name
+				                  from sys_codes_vl a, sys_code_values_vl b
+				                 where a.code_id = b.code_id
+				                   and a.code = 'PAYMENT_OBJECT'
+				                   and b.code_value = ctl.partner_category) partner_category,
+				               (decode(ctl.partner_category,
+				                       'EMPLOYEE',
+				                       (select ee.employee_code || '-' || ee.name
+				                          from exp_employees ee
+				                         where ee.employee_id = ctl.partner_id),
+				                       'VENDER',
+				                       (select svv.vender_code || '-' || svv.description
+				                          from pur_system_venders_vl svv
+				                         where svv.vender_id = ctl.partner_id),
+				                       'CUSTOMER',
+				                       (select scv.customer_code || '-' || scv.description
+				                          from ord_system_customers_vl scv
+				                         where scv.customer_id = ctl.partner_id))) partner,
+				               (select b.code_value_name
+				                  from sys_codes a, sys_code_values_vl b
+				                 where a.code_id = b.code_id
+				                   and a.code = 'EXCHANGE_RATE_QUOTATION'
+				                   and b.code_value = ctl.exchange_rate_quotation) exchange_rate_quotation,
+				               to_char(sysdate, 'yyyy-mm-dd') write_off_date,
+				               ctl.transaction_amount -
+				               (select nvl(sum(l.transaction_amount), 0)
+				                  from csh_transaction_headers h, csh_transaction_lines l
+				                 where h.transaction_header_id = l.transaction_header_id
+				                   and h.source_header_id = cth.transaction_header_id
+				                   and h.reversed_flag is null
+				                   and h.returned_flag = 'R') -
+				               (select nvl(sum(cwo.document_write_off_amount), 0)
+				                  from csh_write_off cwo
+				                 where cwo.csh_transaction_line_id = ctl.transaction_line_id
+				                   and cwo.source_csh_trx_line_id is null) unwrite_off_amount
+				          from csh_transaction_headers cth, 
+				               csh_transaction_lines ctl
+				         where cth.transaction_header_id = ctl.transaction_header_id) v
+				 #WHERE_CLAUSE#
+			]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="transaction_header_id" queryExpression="v.transaction_header_id = ${@transaction_header_id}"/>
+    </bm:query-fields>
+</bm:model>

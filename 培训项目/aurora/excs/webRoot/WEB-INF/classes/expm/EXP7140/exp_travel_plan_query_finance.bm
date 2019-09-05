@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+                FROM (
+                      SELECT s.travel_plan_header_id,s.travel_plan_number,s.employee_id,(
+                          SELECT employee_code
+                          FROM exp_employees es
+                          WHERE es.employee_id = s.employee_id
+                        ) employee_code,(
+                          SELECT NAME
+                          FROM exp_employees es
+                          WHERE es.employee_id = s.employee_id
+                        ) employee_name,s.currency_code,(
+                          SELECT currency_name
+                          FROM gld_currency_vl gcv
+                          WHERE gcv.currency_code = s.currency_code
+                        ) currency_name,s.exchange_rate_type,s.exchange_rate_quotation,(
+                          SELECT SUM (t.quantity)
+                          FROM exp_travel_plan_lines t
+                          WHERE t.travel_plan_header_id = s.travel_plan_header_id
+                        ) quarter_num,(
+                          SELECT SUM (t.functional_amount)
+                          FROM exp_travel_plan_lines t
+                          WHERE t.travel_plan_header_id = s.travel_plan_header_id
+                        ) quarter_num_fun,s.created_by,s.creation_date,TO_CHAR (s.creation_date, 'yyyy-mm-dd') creation_date1,s.last_updated_by,s.last_update_date,TO_CHAR (s.application_date, 'yyyy-mm-dd') requisition_date,s.travel_plan_type_id,(
+                          SELECT erpv.description
+                          FROM exp_com_travel_plan_types_vl erpv
+                          WHERE erpv.com_travel_plan_id = s.travel_plan_type_id
+                        ) type_description,(
+                          SELECT erpv.travel_plan_type_code
+                          FROM exp_com_travel_plan_types_vl erpv
+                          WHERE erpv.com_travel_plan_id = s.travel_plan_type_id
+                        ) type_code,s.description,s.status requisition_status_value,(
+                          SELECT b.code_value_name
+                          FROM sys_codes_vl a,sys_code_values_vl b
+                          WHERE a.code_id = b.code_id
+                            AND a.code = 'EXP_EXPENSE_REPORT_STATUS'
+                            AND b.code_value = s.status
+                        ) requisition_status,(
+                          SELECT NVL (SUM (a.req_release_amount), 0)
+                          FROM exp_travel_plan_release a
+                          WHERE a.exp_travel_plan_header_id = s.travel_plan_header_id
+                        ) usedamount,(
+                          SELECT NVL (SUM (a.req_release_quantity), 0)
+                          FROM exp_travel_plan_release a
+                          WHERE a.exp_travel_plan_header_id = s.travel_plan_header_id
+                        ) usedquanlity,(
+                          SELECT b.code_value_name
+                          FROM sys_code_values_vl b,sys_codes a
+                          WHERE b.code_id = a.code_id
+                            AND a.code = 'EXP_REQUISITION_CLOSE_STATUS'
+                            AND b.code_value = exp_report_util_pkg.get_exp_tp_closed_status (s.travel_plan_header_id)
+                        ) isclose
+                      FROM exp_travel_plan_headers s
+                      WHERE (
+                          s.company_id = ${/session/@company_id}
+                          OR (
+                            ${@all_company_flag} = 'Y'
+                            AND s.company_id IN (
+                              SELECT fc.company_id
+                              FROM fnd_companies fc CONNECT BY PRIOR fc.company_id = fc.parent_company_id START WITH fc.company_id = ${/session/@company_id}
+                            )
+                          )
+                        )
+                    ) #WHERE_CLAUSE#
+                ORDER BY travel_plan_header_id DESC
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/session/@company_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="requisition_status" dataType="java.lang.String" queryExpression="requisition_status_value=${@requisition_status}"/>
+        <bm:query-field name="currency_code" dataType="java.lang.String" queryExpression="currency_code=${@currency_code}"/>
+        <bm:query-field name="requisition_amount_from" dataType="java.lang.Long" queryExpression="quarter_num&gt;=${@requisition_amount_from}"/>
+        <bm:query-field name="requisition_amount_to" dataType="java.lang.Long" queryExpression="quarter_num&lt;=${@requisition_amount_to}"/>
+        <bm:query-field name="requisition_date_from" dataType="java.lang.String" queryExpression="requisition_date &gt;= ${@requisition_date_from}"/>
+        <bm:query-field name="requisition_date_to" dataType="java.lang.String" queryExpression="requisition_date &lt;= ${@requisition_date_to}"/>
+        <bm:query-field name="travel_plan_number" dataType="java.lang.String" queryExpression="travel_plan_number like ${@travel_plan_number}"/>
+        <bm:query-field name="travel_plan_type_id" dataType="java.lang.Long" queryExpression="travel_plan_type_id = ${@travel_plan_type_id}"/>
+        <bm:query-field name="employee_id" dataType="java.lang.Long" queryExpression="employee_id = ${@employee_id}"/>
+        <bm:query-field name="isclosed" dataType="java.lang.String" queryExpression="exp_report_util_pkg.get_exp_tp_closed_status(travel_plan_header_id) = ${@isclosed}"/>
+    </bm:query-fields>
+</bm:model>

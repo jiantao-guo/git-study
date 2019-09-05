@@ -1,0 +1,648 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="enabled_flag = &apos;Y&apos;" model="gld.gld_currency_vl" rootpath="cry_list"/>
+        <a:model-query model="cont.sys_date" rootPath="sysdate"/>
+        <a:model-query model="expm.get_company_currency_code" rootPath="company_currency_code"/>
+        <a:model-query model="expm.gld_get_default_period_name" rootPath="default_period_name"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="csh_payment_req_audit_reject_link_1" url="${/request/@context_path}/modules/csh/CSH5070/csh_payment_reject.screen"/>
+        <a:link id="csh_payment_req_audit_link_1" model="db.csh_payment_req_audit_pkg.audit_csh_pmt_req" modelaction="batch_update"/>
+        <a:link id="gld_get_period_name_link" model="expm.gld_get_period_name" modelaction="query"/>
+        <a:link id="get_accounts_result_link" model="csh.csh_payment_req_audit_accounts_query" modelaction="query"/>
+        <a:link id="get_exchange_rate_link_11" model="csh.get_exchange_rate" modelaction="query"/>
+        <a:link id="csh_pay_req_audit_account_create_control_link" url="${/request/@context_path}/modules/csh/CSH5070/csh_pay_req_audit_account_create_control.svc"/>
+        <a:link id="csh_pay_req_detail_history_link_1" url="${/request/@context_path}/modules/csh/public/csh_pay_req_detail_history.screen"/>
+        <a:link id="csh_payment_req_audit_log_link_1" url="${/request/@context_path}/modules/csh/CSH5070/csh_payment_req_audit_log.screen"/>
+        <a:link id="csh_payment_req_audit_accounts_link_1" url="${/request/@context_path}/modules/csh/CSH5070/csh_payment_req_audit_accounts.screen"/>
+        <a:link id="csh_payment_req_audit_account_tmp_control_link_1" url="${/request/@context_path}/modules/csh/CSH5070/csh_payment_req_audit_account_tmp_control.svc"/>
+        <a:link id="csh_pay_req_query_detail_link_2" url="${/request/@context_path}/modules/csh/public/csh_pay_req_query_detail_for_edit.screen"/>
+        <script><![CDATA[
+
+            var flag = 0;
+            
+            function loadComplete() {
+                $('audit_header_ds').create();
+                $('audit_header_ds').getAt(0).set('batch_id', $('batch_id_ds').getAt(0).get('batch_id'));
+            }
+            
+            function updateFunction(dataSet, record, name, value) {
+                if (name == 'partner_category') {
+                    record.set('partner_id', '');
+                    record.set('partner_id_display', '');
+                    if (value != null && value != '') {
+                        record.getField('partner_id_display').setLovPara('partner_category', value);
+                        record.getField('partner_id_display').setLovService('csh.csh_vender_customer_list');
+                        record.getField('partner_id_display').setReadOnly(false);
+                    } else {
+                        record.getField('partner_id_display').setLovService('');
+                        record.getField('partner_id_display').setReadOnly(true);
+                    }
+                }
+            }
+            
+            function queryFunction() {
+                $('audit_result_ds').query();
+            }
+            
+            function exchangeRateModify() {
+                //    			
+                var recordsData = $('audit_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}', null, 250, 100);
+                    return;
+                }
+            
+                for (var i = 0;i < recordsData.length;i++) {
+                    var record = recordsData[i];
+                    record['batch_id'] = $('batch_id_ds').getAt(0).get('batch_id');
+                }
+            
+                var param = $('audit_header_ds').getJsonData(false)[0];
+                param['detail'] = recordsData;
+                Aurora.request({
+                    url: /*${/request/@context_path}/modules/expm/exp_report_audit_account_tmp_control.svc*/
+                    $('csh_payment_req_audit_account_tmp_control_link_1').getUrl(),
+                    para: param,
+                    success: modifySuccess,
+                    scope: this
+                });
+            }
+            
+            function selectChange(grid, rowNum, record) {
+                $('audit_finance_ds').setQueryParameter('header_id', record.get('payment_requisition_header_id'));
+                $('audit_finance_ds').query();
+            }
+            
+            function modifySuccess() {
+                var journal_date = Aurora.formatDate($('input_date_ds').getAt(0).get('journal_date'));
+                var url = /*${/request/@context_path}/modules/expm/exp_report_accounts.screen*/
+                $('csh_payment_req_audit_accounts_link_1').getUrl() + '?batch_id=' + '${/model/batch_id/record/@batch_id}' + '&journal_date=' + journal_date;
+                //window.open(url,'','fullscreen=no,resizable=yes,width=530,height=515');
+                new Aurora.Window({
+                    id: 'csh_payment_req_audit_accounts_screen',
+                    url: url,
+                    title: '${l:PROMPT.CREATE_JE}',
+                    fullScreen: true
+                });
+            }
+            
+            function resetFunction() {
+                $('audit_header_ds').reset();
+                var record = $('audit_header_ds').getCurrentRecord();
+                record.getField('partner_id_display').setLovService('');
+                record.getField('partner_id_display').setReadOnly(true);
+                record.set('partner_id', '');
+                record.set('partner_id_display', '');
+            }
+            
+            function dateUpdate() {
+                var journal_date = $('input_date_ds').getAt(0).get('journal_date');
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/expm.gld_get_period_name/query*/
+                    $('gld_get_period_name_link').getUrl(),
+                    para: {
+                        p_date: journal_date
+                    },
+                    success: getPeriodName,
+                    scope: this
+                });
+            }
+            
+            function getPeriodName(args) {
+                var record = args.result.record;
+                var red = $('input_date_ds').getAt(0);
+                var period_name = '';
+                if (record.length) {
+                    period_name = record[0].period_name;
+                } else {
+                    period_name = record.period_name;
+                }
+                red.set('period_name', period_name);
+                if (!period_name) {
+                    Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+                }
+            }
+            
+            function tabSelectFunction(tab, index) {
+                if (index == 1) {
+                    var dataSet = $('audit_result_ds');
+                    var records = dataSet.getJsonData(true);
+                    if (records.length != 1) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT_ONE}');
+                        return;
+                    } else {
+                        var ds = $('audit_finance_ds');
+                        ds.setQueryParameter('header_id', records[0]['payment_requisition_header_id']);
+                        ds.query();
+                    }
+                }
+            }
+            
+            function reqNumRenFunction(value, record, name) {
+                var url = '<a href = "javascript:reqNumDispatch(' + record.get('payment_requisition_header_id') + ')">' + value + '</a>';
+                return url;
+            }
+            
+            function reqNumDispatch(header_id) {
+                // window.open( /*csh_pay_req_query_detail.screen*/
+                // $('csh_pay_req_query_detail_link_2').getUrl() + '?payment_requisition_header_id=' + header_id, 'csh_pay_req_query_detail_screen', 'fullscreen=no,resizable=yes,width=1000,height=500');
+                new Aurora.Window({
+                    id: 'csh_pay_req_query_detail_screen',
+                    url: $('csh_pay_req_query_detail_link_2').getUrl() + '?payment_requisition_header_id=' + header_id,
+                    fullScreen: true
+                });
+            }
+            
+            function creStaEdiFunction(record, name) {
+                if (name == 'je_creation_status') {
+                    if (record.get('je_creation_status') == 'Y') {
+                        return 'checkbox_editor_audit';
+                    } else {
+                        return '';
+                    }
+                }
+                return '';
+            }
+            
+            function financeSaveFunction() {
+                $('audit_finance_ds').submit();
+            }
+            
+            function createJournal() {
+                var recordsData = $('audit_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}', null, 250, 100);
+                    return;
+                }
+            
+                for (var i = 0;i < recordsData.length;i++) {
+                    var record = recordsData[i];
+                    record['batch_id'] = $('batch_id_ds').getAt(0).get('batch_id');
+                }
+            
+                var param = $('audit_header_ds').getJsonData(false)[0];
+                param['detail'] = recordsData;
+            
+                Aurora.request({
+                    url: /*csh_payment_req_audit_account_tmp_control.svc*/
+                    $('csh_payment_req_audit_account_tmp_control_link_1').getUrl(),
+                    para: param,
+                    success: createSuccess,
+                    scope: this
+                });
+            }
+            
+            function createSuccess() {
+                Aurora.request({
+                    url: /*${/request/@context_path}/modules/expm/exp_report_audit_account_tmp_control.svc*/
+                    $('get_accounts_result_link').getUrl(),
+                    para: {},
+                    success: checkPeriodName,
+                    scope: this
+                });
+            }
+            
+            function checkPeriodName(args) {
+                var records = args.result.record;
+                var period_name = $('input_date_ds').getAt(0).get('period_name');
+                if (period_name) {
+                    if (records.length) {
+                        for (var i = 0,
+                            l = records.length;i < l;i++) {
+                            checkChangeRateRecord(records, records[i], records.length);
+                        }
+                    } else {
+                        checkChangeRateRecord(records, records, records.length);
+                    }
+                } else {
+                    Aurora.showWarningMessage('', '${l:EXP_REPORT_ACCOUNTS.CHECK1}', null, 200, 100);
+                }
+            
+            }
+            
+            function checkChangeRateRecord(rs, record, length) {
+            
+                var f_cur_code = '${/model/company_currency_code/record/@company_currency_code}';
+                var cur_code = record.currency_code;
+                if (f_cur_code == cur_code) {
+                    flagIncrease(rs, length);
+                } else {
+                    var from_currency = f_cur_code;
+                    var to_currency = cur_code;
+                    var exchange_rate_type = record.exchange_rate_type;
+                    var exchange_date = $('input_date_ds').getAt(0).get('journal_date');
+                    var exchange_period_name = $('input_date_ds').getAt(0).get('period_name');
+                    exchange_date = Aurora.formatDate(exchange_date);
+                    Aurora.request({
+                        url: /*${/request/@context_path}/autocrud/expm.get_exchange_rate/query*/
+                        $('get_exchange_rate_link_11').getUrl(),
+                        para: {
+                            "from_currency": from_currency,
+                            "to_currency": to_currency,
+                            "exchange_rate_type": exchange_rate_type,
+                            "exchange_date": exchange_date,
+                            "exchange_period_name": exchange_period_name
+                        },
+                        success: function(args) {
+                            var pluscols = args.result.record;
+                            if (pluscols.length) {
+                                if (pluscols[0].exchange_rate) {
+                                    flagIncrease(rs, length);
+                                } else {
+                                    if (record.exchange_rate_type_code != 'MANUAL') {
+                                        flag = 0;
+                                        Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+                                    }
+                                }
+                            } else {
+                                if (pluscols.exchange_rate) {
+                                    flagIncrease(rs, length);
+                                } else {
+                                    if (record.exchange_rate_type_code != 'MANUAL') {
+                                        flag = 0;
+                                        Aurora.showWarningMessage('', to_currency + '${l:BGT_JOURNAL_ADD_SELECT.CHECK1}', null, 200, 100);
+                                    }
+                                }
+                            }
+            
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function flagIncrease(rs, args) {
+                flag++;
+                if (flag == args || (args == null && flag == 1)) {
+                    createFunction(rs);
+                }
+            }
+            
+            function createFunction(record) {
+                var auditAccountDs = $('input_date_ds');
+                var auditAccountRecord = auditAccountDs.getAt(0);
+                if (!auditAccountDs.validate()) {
+                    return;
+                }
+                var auditAccount_date = auditAccountRecord.get('journal_date');
+                var period_name = auditAccountRecord.get('period_name');
+                if (record.length == 0) {
+                    Aurora.showErrorMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}', null, 250, 100);
+                    return;
+                }
+                if (!auditAccount_date) {
+                    Aurora.showErrorMessage('${l:PROMPT}', '${l:EXP_EXPENSE_REPORT_AUDITACCOUNT.CHECK2}', null, 250, 100);
+                    return;
+                }
+                if (!period_name) {
+                    Aurora.showErrorMessage('${l:PROMPT}', '${l:EXP_EXPENSE_REPORT_AUDITACCOUNT.CHECK3}', null, 250, 100);
+                    return;
+                }
+                var param = $('input_date_ds').getJsonData(false)[0];
+                param['detail'] = record;
+                Aurora.request({
+                    url: /*csh_pay_req_audit_account_create_control.svc*/
+                    $('csh_pay_req_audit_account_create_control_link').getUrl(),
+                    para: param,
+                    success: refresh,
+                    scope: this
+                });
+            }
+            
+            function refresh() {
+                flag = 0;
+                Aurora.showMessage('${l:PROMPT}', '${l:EXP_REPORT_ACCOUNTS.PROMPT}', function() {
+                    if (queryFunction && typeof(queryFunction) == 'function') {
+                        queryFunction();
+                    }
+                });
+            }
+            
+            //子页面调用 刷新记录
+            
+            function refreshLine() {
+                $('audit_result_ds').query();
+            }
+            // function newWindowJournal(args) {
+            // new Aurora.Window({
+            // id: 'csh_payment_req_audit_accounts_screen',
+            // url: /*csh_payment_req_audit_accounts.screen*/
+            // $('csh_payment_req_audit_accounts_link_1').getUrl(),
+            // title: '${l:PROMPT.CREATE_JE}',
+            // width: 650,
+            // height: 500
+            // });
+            // }
+            
+            function lookOverLog() {
+                new Aurora.Window({
+                    id: 'csh_payment_req_audit_log_screen',
+                    url: /*csh_payment_req_audit_log.screen*/
+                    $('csh_payment_req_audit_log_link_1').getUrl(),
+                    title: '${l:LOGS_MESSAGE}',
+                    fullScreen: true,
+                    width: 650,
+                    height: 520
+                });
+            }
+            
+            function trackHistory() {
+                var records = $('audit_result_ds').getSelected();
+                if (records.length != 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT_ONE}');
+                    return;
+                }
+                var header_id = records[0].get('payment_requisition_header_id');
+                var urlPath = /*csh_pay_req_detail_history.screen*/
+                $('csh_pay_req_detail_history_link_1').getUrl() + '?csh_pay_header_id=' + header_id;
+                new Aurora.Window({
+                    id: 'pay_req_detail_history_screen',
+                    url: urlPath,
+                    title: '${l:PROMPT.HISTORY}',
+                    fullScreen: true,
+                    width: 750,
+                    height: 550
+                });
+            }
+            
+            function auditFunction() {
+                var recordsData = $('audit_result_ds').getJsonData(true);
+                if (recordsData.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}');
+                    return;
+                }
+            
+            
+                var myRecords = $('audit_result_ds').getSelected();
+                var cash_flow_code_null_flag_msg = '';
+                for (var i = 0;i < myRecords.length;i++) {
+                    var cash_flow_code_null_flag = myRecords[i].get('cash_flow_code_null_flag');
+                    if (cash_flow_code_null_flag == 'Y') {
+                        if (cash_flow_code_null_flag_msg == '') {
+                            cash_flow_code_null_flag_msg = myRecords[i].get('requisition_number');
+                        } else {
+                            cash_flow_code_null_flag_msg = cash_flow_code_null_flag_msg + '&nbsp;,&nbsp;' + myRecords[i].get('requisition_number');
+                        }
+                    }
+                }
+            
+                if (cash_flow_code_null_flag_msg != '') {
+                    cash_flow_code_null_flag_msg = '<span style="word-wrap:break-word;overflow:hidden;"><pre>借款单' + cash_flow_code_null_flag_msg + '未填写现金流量项，请返回修改！</pre></span>';
+                    Aurora.showWarningMessage('', cash_flow_code_null_flag_msg, null, 400, 200);
+                    return;
+                }
+            
+                Aurora.request({
+                    url: /*${/request/@context_path}/autocrud/csh.csh_payment_req_audit/batch_update*/
+                    $('csh_payment_req_audit_link_1').getUrl(),
+                    para: recordsData,
+                    success: function(args) {
+                        $('audit_result_ds').query();
+                        $('audit_finance_ds').setQueryParameter('header_id', null);
+                        $('audit_finance_ds').query();
+                    },
+                    scope: this
+                });
+            }
+            
+            function rejectFunction() {
+                var myRecords = $('audit_result_ds').getSelected();
+                if (myRecords.length < 1) {
+                    Aurora.showWarningMessage('', '${l:PROMPT.PLEASE_SELECT}', null, 200, 100);
+                    return;
+                }
+                new Aurora.Window({
+                    id: 'exp_payment_reject_window',
+                    url: /*${/request/@context_path}/modules/expm/exp_report_reject.screen*/
+                    $('csh_payment_req_audit_reject_link_1').getUrl(),
+                    title: '',
+                    height: 240,
+                    width: 640
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="cry_list_ds">
+                <a:datas dataSource="/model/cry_list"/>
+            </a:dataSet>
+            <a:dataSet id="pay_obj_list_ds" lookupCode="PAYMENT_OBJECT"/>
+            <a:dataSet id="batch_id_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="batch_id" defaultValue="${/session/@session_id}"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="input_date_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="journal_date" defaultValue="${/model/sysdate/record/@now}" required="true"/>
+                    <a:field name="period_name" defaultValue="${/model/default_period_name/record/@period_name}" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="dateUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="audit_header_ds">
+                <a:fields>
+                    <a:field name="p_reject"/>
+                    <a:field name="account_p"/>
+                    <a:field name="batch_id"/>
+                    <a:field name="requisition_number" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_NUMBER"/>
+                    <a:field name="employee_id"/>
+                    <a:field name="employee_id_display" autoComplete="true" autoCompleteField="name_code" lovGridHeight="350" lovHeight="500" lovService="exp.exp_company_employees_v_namecode?ORDER_FIELD=employee_code" lovWidth="500" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITOR" title="CSH_PAYMENT_REQUISITION_HDS.REQUISITOR_SELECT">
+                        <a:mapping>
+                            <a:map from="name_code" to="employee_id_display"/>
+                            <a:map from="employee_id" to="employee_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="requisition_date_from" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_DATE_FROM"/>
+                    <a:field name="requisition_date_to" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_DATE_TO"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="currency_code_display" displayField="currency_name" options="cry_list_ds" prompt="GLD_EXCHANGE_RATES.FROM_CURRENCY" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="partner_category"/>
+                    <a:field name="partner_category_display" displayField="code_value_name" options="pay_obj_list_ds" prompt="CSH_CASH_PLAN_LINES.PARTNER_CATEGORY" returnField="partner_category" valueField="code_value">
+                        <a:mapping>
+                            <a:map from="code_value" to="partner_category"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_id"/>
+                    <a:field name="partner_id_display" autoComplete="true" autoCompleteField="name" lovGridHeight="350" lovHeight="500" lovWidth="500" prompt="EXP_REPORT_LINES.PAYEE_CATEGORY" readOnly="true" title="CSH_TRANSACTION_LINES.PARTNER_SELECT">
+                        <a:mapping>
+                            <a:map from="name" to="partner_id_display"/>
+                            <a:map from="id" to="partner_id"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="updateFunction"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="audit_result_ds" autoPageSize="true" autoQuery="true" model="csh.CSH5070.csh_payment_req_audit_query" queryDataSet="audit_header_ds" selectable="true">
+                <a:fields>
+                    <a:field name="requisition_number" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_NUMBER"/>
+                    <a:field name="req_type_desc" prompt="PAY_REQ_TYPE"/>
+                    <a:field name="requisition_date" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITION_DATE"/>
+                    <a:field name="employee_name" prompt="CSH_PAYMENT_REQUISITION_HDS.REQUISITOR"/>
+                    <a:field name="category_desc" prompt="CSH_PREPAYMENT_BALANCE_QUERY.PARTNER_CATEGORY"/>
+                    <a:field name="p_partner_name" prompt="CSH_PAYMENT_REQUISITION_LNS.P_PARTNER_NAME"/>
+                    <a:field name="currency_code" prompt="CSH_PAYMENT_REQUISITION_HDS.CURRENCY_CODE"/>
+                    <a:field name="currency_name" prompt="CSH_PAYMENT_REQUISITION_HDS.CURRENCY_CODE"/>
+                    <a:field name="amount" prompt="CSH_PAYMENT_REQUISITION_HDS.AMOUNT"/>
+                    <a:field name="description" prompt="CSH_PAYMENT_REQUISITION_HDS.DESCRIPTION"/>
+                    <a:field name="je_creation_status" checkedValue="Y" prompt="PROMPT.CREATE_JE" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="status"/>
+                    <a:field name="payment_requisition_header_id"/>
+                    <a:field name="cash_flow_code_null_flag" prompt="现金流量项是否为空"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="audit_finance_ds" autoPageSize="true" autoQuery="false" fetchAll="false" model="csh.csh_pay_req_finance_list_query" submitUrl="${/request/@context_path}/autocrud/db.csh_payment_req_audit_pkg.update_csh_pnt_req_accounts/batch_update">
+                <a:fields>
+                    <a:field name="description" prompt="CSH_PAYMENT_REQ_ACCOUNTS.DESCRIPTION"/>
+                    <a:field name="period_name" prompt="BGT_CHECK_LOGS.PERIOD_NAME"/>
+                    <a:field name="company_code" prompt="EXP_DOCUMENT_PERSON_AUTH.COMPANY_CODE"/>
+                    <a:field name="company_short_name" prompt="BGT_JOURNAL_INTERFACE.COMPANY_CODE"/>
+                    <a:field name="responsibility_center_code" lovGridHeight="300" lovHeight="450" lovService="expm.exp_expense_journal_adjust_center_lov" lovWidth="500" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_CODE" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="center_code" to="responsibility_center_code"/>
+                            <a:map from="center_id" to="responsibility_center_id"/>
+                            <a:map from="center_id_display" to="responsibility_center_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="responsibility_center_name" prompt="FND_RESPONSIBILITY_CENTERS.RESPONSIBILITY_CENTER_NAME_ID"/>
+                    <a:field name="account_code" lovGridHeight="300" lovHeight="450" lovService="expm.exp_expense_journal_adjust_account_lov" lovWidth="500" prompt="GLD_ACCOUNTS.ACCOUNT_CODE" required="true" title=" ">
+                        <a:mapping>
+                            <a:map from="account_code" to="account_code"/>
+                            <a:map from="account_desc" to="account_desc"/>
+                            <a:map from="account_id" to="account_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="account_desc" prompt="CSH_WRITE_OFF_ACCOUNTS.ACCOUNT_NAME"/>
+                    <a:field name="entered_amount_dr" prompt="CSH_BANK_BALANCES.ENTERED_DATE_NET_DR"/>
+                    <a:field name="entered_amount_cr" prompt="CSH_BANK_BALANCES.ENTERED_DATE_NET_CR"/>
+                    <a:field name="functional_amount_dr" prompt="CSH_PAY_REQ.FUNCTIONAL_AMOUNT_DR"/>
+                    <a:field name="functional_amount_cr" prompt="CSH_PAY_REQ.FUNCTIONAL_AMOUNT_CR"/>
+                    <a:field name="je_line_id"/>
+                    <a:field name="responsibility_center_id"/>
+                    <a:field name="account_id"/>
+                    <a:field name="company_id"/>
+                    <a:field name="exchange_rate_quotation"/>
+                    <a:field name="exchange_rate"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton click="queryFunction" text="HAP_QUERY" width="80"/>
+                <a:toolbarButton click="resetFunction" text="HAP_RESET" width="80"/>
+                <a:toolbarButton click="createJournal" text="PROMPT.CREATE_JE" width="80"/>
+                <a:toolbarButton click="exchangeRateModify" text="EXP_EXPENSE_REPORT.EXCHANGE_RATE_MODIFY" width="80"/>
+                <a:toolbarButton click="lookOverLog" text="LOOK_OVER_LOG" width="80"/>
+                <a:toolbarButton click="trackHistory" text="PROMPT.HISTORY" width="80"/>
+                <a:toolbarButton click="auditFunction" text="PROMPT.AUDIT_FLAG" width="80"/>
+                <a:toolbarButton click="rejectFunction" text="PROMPT.REJECT" width="80"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="csh5070audit_form" resultTarget="audit_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="requisition_number" bindTarget="audit_header_ds"/>
+                    <a:lov name="employee_id_display" bindTarget="audit_header_ds"/>
+                    <a:comboBox name="currency_code_display" bindTarget="audit_header_ds"/>
+                </a:formToolBar>
+                <a:formBody column="4">
+                    <a:datePicker name="requisition_date_from" bindTarget="audit_header_ds"/>
+                    <a:datePicker name="requisition_date_to" bindTarget="audit_header_ds"/>
+                    <a:comboBox name="partner_category_display" bindTarget="audit_header_ds"/>
+                    <a:lov name="partner_id_display" bindTarget="audit_header_ds"/>
+                </a:formBody>
+            </a:queryForm>
+            <a:hBox><![CDATA[
+        ]]></a:hBox>
+            <a:form id="csh5070_payreq_csh_form" title="CSH_PAYMENT_REQUISITION_HDS.AUDIT_DATE">
+                <a:datePicker name="journal_date" bindTarget="input_date_ds" prompt="CSH_PAYMENT_REQUISITION_HDS.AUDIT_DATE" renderer="Aurora.formatDate"/>
+            </a:form>
+            <a:grid id="audit_result_grid" bindTarget="audit_result_ds" marginHeight="406" navBar="true">
+                <a:columns>
+                    <a:column name="requisition_number" align="left" renderer="reqNumRenFunction" sortable="false" width="120"/>
+                    <a:column name="req_type_desc" align="left" sortable="false" width="150"/>
+                    <a:column name="requisition_date" align="center" sortable="false" width="80"/>
+                    <a:column name="employee_name" align="left" sortable="false" width="120"/>
+                    <a:column name="category_desc" align="left" sortable="false" width="120"/>
+                    <a:column name="p_partner_name" align="left" sortable="false" width="120"/>
+                    <a:column name="currency_name" align="left" sortable="false" width="120"/>
+                    <a:column name="amount" align="right" renderer="Aurora.formatMoney" sortable="false" width="100"/>
+                    <a:column name="description" align="left" sortable="false" width="150"/>
+                    <a:column name="je_creation_status" align="left" editorFunction="" width="120"/>
+                </a:columns>
+                <a:editors>
+                    <a:checkBox id="checkbox_editor_audit"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="rowclick" handler="selectChange"/>
+                </a:events>
+            </a:grid>
+            <a:grid id="audit_finance_grid" bindTarget="audit_finance_ds" height="200" navBar="true">
+                <a:toolBar>
+                    <a:button click="financeSaveFunction" icon="${/request/@context_path}/images/save.gif" text="PROMPT.SAVE"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="description" align="left" editor="textfield_finance" width="150"/>
+                    <a:column name="period_name" align="center" width="80"/>
+                    <a:column name="company_code" align="center" width="80"/>
+                    <a:column name="company_short_name" align="left" width="120"/>
+                    <a:column name="responsibility_center_code" align="center" editor="lov_finance" width="80"/>
+                    <a:column name="responsibility_center_name" align="left" width="120"/>
+                    <a:column name="account_code" align="center" editor="lov_finance" width="80"/>
+                    <a:column name="account_desc" align="left" width="150"/>
+                    <a:column name="entered_amount_dr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="entered_amount_cr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="functional_amount_dr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="functional_amount_cr" align="right" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="account_segment1" align="center" prompt="ACCOUNT_SEGMENT1" width="80"/>
+                    <a:column name="account_segment2" align="center" prompt="ACCOUNT_SEGMENT2" width="80"/>
+                    <a:column name="account_segment3" align="center" prompt="ACCOUNT_SEGMENT3" width="80"/>
+                    <a:column name="account_segment4" align="center" prompt="ACCOUNT_SEGMENT4" width="80"/>
+                    <a:column name="account_segment5" align="center" prompt="ACCOUNT_SEGMENT5" width="80"/>
+                    <a:column name="account_segment6" align="center" prompt="ACCOUNT_SEGMENT6" width="80"/>
+                    <a:column name="account_segment7" align="center" prompt="ACCOUNT_SEGMENT7" width="80"/>
+                    <a:column name="account_segment8" align="center" prompt="ACCOUNT_SEGMENT8" width="80"/>
+                    <a:column name="account_segment9" align="center" prompt="ACCOUNT_SEGMENT9" width="80"/>
+                    <a:column name="account_segment10" align="center" prompt="ACCOUNT_SEGMENT10" width="80"/>
+                    <a:column name="account_segment11" align="center" prompt="ACCOUNT_SEGMENT11" width="80"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="textfield_finance"/>
+                    <a:lov id="lov_finance"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        	loadComplete();
+        ]]></script>
+        <script purpose="auto_resize"><![CDATA[
+            function csh5070queryInitSize() {
+                //描述宽度
+            　　    var labelWidth = 75;
+            　　    //标签宽度,5 = 3padding + 2border-spacing
+            　　    var tagWidth = 150 + 5;
+            　　    //页面宽度、高度
+            　　    var vw = $A.getViewportWidth();
+            　　    var vh = $A.getViewportHeight();
+            　　    //留白宽度
+            　　    var marginWidth = 35;
+            　　    //自适应宽度
+            　　    var autoWidth = vw - marginWidth;
+            　　    //Form内部宽度，-2border
+            　　    var formInnerWidth = autoWidth - 2;
+            　　    //所占列数
+            　　    var colSpan = 4;
+                //设置Form的宽度自适应              
+                Ext.get('csh5070_payreq_csh_form').setWidth(autoWidth+4); 
+                //设置Grid的宽度自适应
+                $('audit_result_grid').setWidth(autoWidth);
+                $('audit_finance_grid').setWidth(autoWidth);
+            }
+            //Ext.fly(window).on('resize', csh5070queryInitSize);
+            csh5070queryInitSize();
+        ]]></script>
+    </a:view>
+</a:screen>

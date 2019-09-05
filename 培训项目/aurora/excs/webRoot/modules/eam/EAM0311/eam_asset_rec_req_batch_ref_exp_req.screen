@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Spencer 3893
+    $Date: 2013-5-28 下午2:20:10  
+    $Revision: 1.0  
+    $Purpose: 资产验收申请批量关联申请
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="eam_asset_batch_ref_req_link" url="${/request/@context_path}/modules/eam/EAM0310/eam_asset_management_batch_ref_req_save.svc"/>
+        <script><![CDATA[
+            function eam0310_onDocRlsAdd(dataSet, record, index) {
+                record.set('source_document_category', 'EXP_RPT');
+                record.set('source_doc_cate_desc', '费用报销单');
+                // var source_doc_desc = record.getField('source_doc_desc');
+            
+                // source_doc_desc.setLovPara('ast_requisition_type_id', '${/parameter/@ast_requisition_type_id}');
+                // source_doc_desc.setLovPara('unit_id', '${/parameter/@unit_id}');
+            }
+            
+            function eam_batch_ref_req_back() {
+                $('eam0310_batch_ref_req_screen').close();
+            }
+            
+            function eam_batch_ref_req() {
+                var record = $('eam_batch_ref_document_release_ds').getCurrentRecord();
+                var examine_quantity = record.get('examine_quantity');
+                var used_quantity = record.get('used_quantity');
+                var select_num = '${/parameter/@select_num}';
+                // if(examine_quantity-used_quantity < select_num){
+                // Aurora.showErrorMessage('${l:PROMPT}', '审批数量应大于等于批量新增的数量!');
+                // return false;
+                // }
+                if (!$('eam_batch_ref_document_release_ds').validate()) {
+                    return false;
+                }
+            
+                var para = $('eam_batch_ref_document_release_ds').getJsonData();
+                Aurora.request({
+                    url: $('eam_asset_batch_ref_req_link').getUrl(),
+                    para: para,
+                    success: function() {
+                        eam_batch_ref_req_back();
+                    }
+                });
+            }
+            
+            function releaseAmountValidator(record, name, value) {
+                var select_num = '${/parameter/@select_num}';
+                var req_amount = record.get("req_amount");
+                var released_amount = record.get("released_amount");
+                if (req_amount - released_amount < select_num * value) {
+                    return '费用申请单批量关联资产验收' + select_num + '行,验收金额总和大于申请单的未验收金额!';
+                }
+                if(value > req_amount){
+                        return '核销金额大于行金额！请重新填写。';
+                    }
+                
+                return true;
+            }
+            
+            function quantityValidator(record, name, value) {
+                var select_num = '${/parameter/@select_num}';
+                if (value < select_num) {
+                    return '审批数量应大于等于批量新增的数量!';
+                }
+                return true;
+            }
+            
+            function onReleaseClickFunF(grid, row, name, record) {
+                if (name == 'source_doc_desc') {
+                    var lovField = record.getField("source_doc_desc");
+                    if (record.get('source_document_category') == 'EXP_RPT') {
+                        lovField.setLovService('eam.eam0310.eam0310_exp_report_query');
+                        lovField.setLovPara('ast_requisition_type_id', '${/parameter/@ast_requisition_type_id}');
+                        lovField.setLovPara('company_id', '${/parameter/@company_id}');
+                        var mapping = [{
+                            from: 'exp_report_header_id',
+                            to: 'source_document_id'
+                        }, {
+                            from: 'exp_report_line_id',
+                            to: 'source_document_line_id'
+                        }, {
+                            from: 'exp_report_number',
+                            to: 'source_doc_desc'
+                        }, {
+                            from: 'line_number',
+                            to: 'source_doc_line_desc'
+                        }, {
+                            from: 'primary_quantity',
+                            to: 'req_quantity'
+                        }, {
+                            from: 'report_amount',
+                            to: 'req_amount'
+                        }, {
+                            from: 'price',
+                            to: 'price'
+                        }, {
+                            from: 'unit_name',
+                            to: 'unit_name'
+                        }, {
+                            from: 'expense_item_name',
+                            to: 'req_project'
+                        }];
+                        lovField.setMapping(mapping);
+                    } else {
+            
+                        //资产验收时（资产取得验收申请(固定资产/无形资产)、低值易耗品验收申请、长期待摊费用验收申请、在建工程验收申请），在关联申请单时，只能选择资产财务分类对应的费用类型的申请单
+                        // --QD001  QD002  QD008  QD006
+                        var ast_requisition_type_code = '${/model/eam0310_req_header/record/@ast_requisition_type_code}';
+                        if ((ast_requisition_type_code == 'QD001') || (ast_requisition_type_code == 'QD002') || (ast_requisition_type_code == 'QD008') || (ast_requisition_type_code == 'QD006')) {
+                            lovField.setLovService('eam.eam0310.cux_eam0310_exp_requisition_query_gkj');
+                        } else {
+                            lovField.setLovService('eam.eam0310.eam0310_exp_requisition_query');
+                        }
+            
+                        var records = $('eam0310_req_lines_ds').getCurrentRecord();
+                        lovField.setLovPara('ast_requisition_type_id', '${/model/eam0310_req_header/record/@ast_requisition_type_id}');
+                        lovField.setLovPara('requisition_line_id', records.get("requisition_line_id"));
+                        lovField.setLovPara('unit_id', records.get("to_unit_id"));
+                        lovField.setLovPara('asset_id', records.get("asset_id"));
+                    }
+            
+                }
+            }
+        ]]></script>
+        <!-- 声明dataSets -->
+        <a:dataSets>
+            <!-- 申请单据关联DS -->
+            <a:dataSet id="eam_batch_ref_document_release_ds" model="eam.eam0310.eam0310_document_req_batch_releases_edit" selectable="true">
+                <a:fields>
+                    <a:field name="source_document_category"/>
+                    <a:field name="source_document_id"/>
+                    <a:field name="source_document_line_id"/>
+                    <a:field name="source_doc_cate_desc" displayField="code_value_name" options="eam_batch_ref_document_cates_ds" prompt="EAM_DOCUMENT_CATEGORY" required="true" returnField="source_document_category" valueField="code_value"/>
+                    <a:field name="source_doc_desc" lovGridHeight="260" lovHeight="400" lovService="eam.eam0310.cux_eam0310_exp_requisition_query_gkj" lovWidth="900" prompt="WFL_WORKFLOW.ORDER_NO" required="true" title="MLC_INTER_ORDERS.ORDER_CODE">
+                        <a:mapping>
+                            <a:map from="exp_requisition_number" to="source_doc_desc"/>
+                            <a:map from="line_number" to="source_doc_line_desc"/>
+                            <a:map from="exp_requisition_header_id" to="source_document_id"/>
+                            <a:map from="exp_requisition_line_id" to="source_document_line_id"/>
+                            <a:map from="primary_quantity" to="req_quantity"/>
+                            <a:map from="requisition_amount" to="req_amount"/>
+                            <a:map from="examine_quantity" to="examine_quantity"/>
+                            <a:map from="examine_amount" to="examine_amount"/>
+                            <a:map from="req_item_desc" to="req_project"/>
+                            <a:map from="release_amount" to="released_amount"/>
+                            <a:map from="release_quantity" to="used_quantity"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="released_amount"/>
+                    <a:field name="examine_amount"/>
+                    <a:field name="examine_quantity"/>
+                    <a:field name="used_quantity"/>
+                    <a:field name="source_doc_line_desc" prompt="EXP_REPORT_LINES.LINE_NUMBER"/>
+                    <a:field name="req_project" prompt="EXP_REQ_ITEMS.REQ_ITEM_CODE"/>
+                    <a:field name="req_quantity" prompt="EAM_REQUEST_QUANTITY"/>
+                    <a:field name="req_amount" prompt="EAM_REQUEST_AMOUNT"/>
+                    <a:field name="release_quantity" defaultValue="1" prompt="EXP_REQUISITION_DISTS.RELEASED_QUANTITY"/>
+                    <a:field name="release_amount" prompt="CSH_WRITE_OFF.CSH_WRITE_OFF_AMOUNT" required="true" validator="releaseAmountValidator"/>
+                    <a:field name="description" prompt="EXP_EMPLOYEE.NOTES"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="eam0310_onDocRlsAdd"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 单据分类 -->
+            <a:dataSet id="eam_batch_ref_document_cates_ds" lookupCode="EAM_REQ_SOURCE_DOCUMENT_CATE" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:hBox>
+                <a:button click="eam_batch_ref_req_back" text="HAP_BACK"/>
+            </a:hBox>
+            <!-- 单据关联 -->
+            <a:grid bindTarget="eam_batch_ref_document_release_ds" height="440" navBar="true" width="980">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="clear"/>
+                    <a:button click="eam_batch_ref_req" icon="${/request/@context_path}/images/save.gif" text="HAP_SAVE"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="source_doc_cate_desc" align="center" prompt="单据类型" width="80"/>
+                    <a:column name="source_doc_desc" align="center" editor="eam_batch_ref_rec_req_lov" prompt="单据编号" width="170"/>
+                    <a:column name="source_doc_line_desc" align="center" prompt="单据行号" width="70"/>
+                    <a:column name="unit_name" align="center" prompt="费用部门" width="70"/>
+                    <a:column name="req_project" align="center" prompt="费用项目"/>
+                    <a:column name="req_quantity" align="right" prompt="数量" width="40"/>
+                    <a:column name="price" align="right" prompt="单价" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="req_amount" align="right" prompt="行金额" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="release_amount" align="right" editor="eam_batch_ref_rec_req_money" prompt="本次核销金额" renderer="Aurora.formatMoney" width="100"/>
+                    <a:column name="description" align="center" editor="rec_req_txtField" width="150"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="eam_batch_ref_rec_req_comboBox"/>
+                    <a:lov id="eam_batch_ref_rec_req_lov"/>
+                    <a:textField id="eam_batch_ref_rec_req_txtField"/>
+                    <a:numberField id="eam_batch_ref_rec_req_quantity" allowDecimals="false" allowNegative="false"/>
+                    <a:numberField id="eam_batch_ref_rec_req_money" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="2"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="onReleaseClickFunF"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

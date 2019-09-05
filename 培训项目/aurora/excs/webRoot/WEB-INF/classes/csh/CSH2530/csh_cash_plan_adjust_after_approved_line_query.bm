@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: StephenWang4010  
+    $Date: 2012-7-27 上午10:46:36  
+    $Revision: 1.0  
+    $Purpose: 资金计划行查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select v.*, 
+            increment_amount * exchange_rate increment_functional_amount, 
+            assign_amount * exchange_rate assign_functional_amount
+            from (
+                SELECT
+                    t.cash_plan_header_id,
+                    t.cash_plan_line_id,
+                    t.line_number,
+                    f.cash_plan_item_id,
+                    f.cash_plan_item_code,
+                    f.description cash_plan_item_desc,
+                    TO_CHAR(t.date_from,'yyyy-mm-dd') date_from,
+                    TO_CHAR(t.date_to,'yyyy-mm-dd') date_to,
+                    t.currency,
+                    (select v.currency_name from gld_currency_vl v where v.currency_code=t.currency) currency_desc,
+                    t.exchange_rate_type,
+                    (select v.type_name from gld_exchangerate_types_vl v where v.type_code=t.exchange_rate_type and v.enabled_flag='Y') exchange_rate_type_desc,
+                    t.exchange_rate_quotation,
+                    (select  b.code_value_name name from sys_codes a, sys_code_values_vl b where a.code_id = b.code_id and a.code = 'EXCHANGE_RATE_QUOTATION' and b.code_value=t.exchange_rate_quotation)exchange_rate_quotation_desc,
+                    t.exchange_rate,
+                    t.orientation,
+                    (select b.code_value_name from sys_codes a, sys_code_values_vl b where a.code_id = b.code_id and a.code = 'CASH_PLAN_LINE_ORIENTATION' and b.enabled_flag = 'Y' and b.code_value=t.orientation) orientation_desc,
+                    (SELECT
+                        SUM(ld.increment_amount)
+                    FROM
+                        csh_cash_plan_line_details ld
+                    WHERE
+                        ld.cash_plan_line_id = t.cash_plan_line_id
+                    ) increment_amount,
+                    (SELECT
+                        NVL(SUM(DECODE(la.closed_flag, 'Y', la.assign_amount, 'N', la.assign_amount, la.assign_amount)), 0)
+                    FROM
+                        csh_cash_plan_line_assign la
+                    WHERE
+                        la.csh_cash_plan_line_id = t.cash_plan_line_id AND
+                        la.source_assign_id     IS NULL
+                    ) assign_amount,
+                    t.line_notes,
+                    a.company_id,
+                    a.company_code
+                    || ' - '
+                    || a.company_short_name company_code,
+                    a.company_short_name,
+                    b.operation_unit_id,
+                    b.operation_unit_code
+                    || ' - '
+                    || b.description operation_unit_code,
+                    b.description operation_unit_desc,
+                    c.responsibility_center_id,
+                    c.responsibility_center_code
+                    || ' - '
+                    || c.responsibility_center_name responsibility_center_code,
+                    c.responsibility_center_name responsibility_center_desc,
+                    d.unit_id,
+                    d.unit_code
+                    || ' - '
+                    || d.description unit_code,
+                    d.description unit_desc,
+                    DECODE(t.partner_category, 'VENDER', 1, 'CUSTOMER', 2) partner_category_id,
+                    DECODE(t.partner_category, 'VENDER', t.partner_category
+                    || ' - '
+                    || '供应商', 'CUSTOMER', t.partner_category
+                    || ' - '
+                    || '客户') partner_category_code,
+                    DECODE(t.partner_category, 'VENDER', '供应商', 'CUSTOMER', '客户') partner_category_desc,
+                    e.partner_id,
+                    e.partner_code,
+                    e.partner_desc,
+                    to_number('') project_id,
+                    '' project_code,
+                    '' project_desc
+                FROM
+                    csh_cash_plan_lines t,
+                    fnd_companies_vl a,
+                    fnd_operation_units_vl b,
+                    fnd_responsibility_centers_vl c,
+                    exp_org_unit_vl d,
+                    (SELECT
+                        m.vender_id partner_id,
+                        m.vender_code
+                        || ' - '
+                        || m.description partner_code,
+                        m.description partner_desc,
+                        'VENDER' category
+                    FROM
+                        pur_system_venders_vl m
+                    UNION
+                    SELECT
+                        n.CUSTOMER_ID partner_id,
+                        n.CUSTOMER_CODE
+                        || ' - '
+                        || n.DESCRIPTION partner_code,
+                        n.DESCRIPTION partner_desc,
+                        'CUSTOMER' category
+                    FROM
+                        ord_system_customers_vl n
+                    ) e,
+                    csh_cash_plan_items_vl f
+                WHERE
+                    t.cash_plan_header_id      = ${/parameter/@cash_plan_header_id} AND
+                    t.company_id               = a.company_id(+) AND
+                    t.operation_unit_id        = b.operation_unit_id(+) AND
+                    t.responsibility_center_id = c.responsibility_center_id(+) AND
+                    t.unit_id                  = d.unit_id(+) AND
+                    t.partner_category         = e.category(+) AND
+                    t.partner_id               = e.partner_id(+) AND
+                    t.cash_plan_item_id        = f.cash_plan_item_id
+                ORDER BY
+                    t.cash_plan_line_id) v
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+            
+              begin
+            csh_cash_plan_pkg.ins_csh_cash_plan_lines
+                        (
+                             ${@cash_plan_line_id},
+		                     ${@cash_plan_header_id},
+		                     ${@line_number},
+		                     ${@cash_plan_item_id},
+		                     to_date(${@date_from},'yyyy-mm-dd'),
+		                     to_date(${@date_to},'yyyy-mm-dd'),
+		                     ${@currency},
+		                     ${@exchange_rate_type},
+		                     ${@exchange_rate_quotation},
+		                     ${@exchange_rate},
+		                     ${@orientation},
+		                     ${@increment_amount},
+		                     ${@company_id},
+		                     ${@operation_unit_id},
+		                     ${@responsibility_center_id},
+		                     ${@unit_id},
+		                     ${@partner_category_id},
+		                     ${@partner_id},
+		                     ${@project_id},
+		                     ${@line_notes},
+		                     ${/session/@user_id}
+                  );
+        end;
+            
+          ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+            
+              begin
+            csh_cash_plan_pkg.upd_csh_cash_plan_lines(${@cash_plan_line_id},
+                                       			 ${@cash_plan_header_id},
+				                                 ${@line_number},
+				                                 ${@cash_plan_item_id},
+				                                 to_date(${@date_from},'yyyy-mm-dd'),
+				                                 to_date(${@date_to},'yyyy-mm-dd'),
+				                                 ${@currency},
+				                                 ${@exchange_rate_type},
+				                                 ${@exchange_rate_quotation},
+				                                 ${@exchange_rate},
+				                                 ${@orientation},
+                                                 ${@company_id},
+                                                 ${@operation_unit_id},
+                                                 ${@responsibility_center_id},
+                                                 ${@unit_id},
+                                                 ${@partner_category_id},
+                                                 ${@partner_id},
+                                                 ${@project_id},
+                                                 ${@line_notes},
+                                       			 ${/session/@user_id});
+        end;
+            
+          ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="cash_plan_header_id" prompt=""/>
+        <bm:field name="cash_plan_line_id" prompt=""/>
+        <bm:field name="line_number" prompt="EXP_REQUISITION_LINES.LINE_NUMBER"/>
+        <bm:field name="cash_plan_item_id" prompt=""/>
+        <bm:field name="cash_plan_item_code" prompt=""/>
+        <bm:field name="cash_plan_item_desc" prompt="CSH_CASH_PLAN_ITEMS.CASH_PLAN_ITEM_CODE"/>
+        <bm:field name="date_from" prompt="CSH_CASH_PLAN_LINES.DATE_FROM"/>
+        <bm:field name="date_to" prompt="CSH_CASH_PLAN_LINES.DATE_TO"/>
+        <bm:field name="currency" prompt="CSH_PAYABLE_BILLS.CURRENCY_CODE"/>
+        <bm:field name="currency_desc" prompt="CSH_PAYABLE_BILLS.CURRENCY_CODE"/>
+        <bm:field name="exchange_rate_type" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_TYPE"/>
+        <bm:field name="exchange_rate_type_desc" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_TYPE"/>
+        <bm:field name="exchange_rate_quotation" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_QUOTATION"/>
+        <bm:field name="exchange_rate_quotation_desc" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE_QUOTATION"/>
+        <bm:field name="exchange_rate" prompt="CSH_TRANSACTION_LINES.EXCHANGE_RATE"/>
+        <bm:field name="orientation" prompt="CSH_CASH_FLOW_ITEMS.ORIENTATION"/>
+        <bm:field name="orientation_desc" prompt="CSH_CASH_FLOW_ITEMS.ORIENTATION"/>
+        <bm:field name="increment_amount" prompt="CSH_CASH_PLAN_LINE_DETAILS.INCREMENT_AMOUNT"/>
+        <bm:field name="increment_functional_amount" prompt="CSH_CASH_PLAN_READONLY.INCREMENT_FUNCTIONAL_AMOUNT"/>
+        <bm:field name="assign_amount" prompt="CSH_CASH_PLAN_LINE_ASSIGN.ASSIGN_AMOUNT"/>
+        <bm:field name="assign_functional_amount" prompt="ASSIGN_FUNCTIONAL_AMOUNT"/>
+        <bm:field name="line_notes" prompt="EXP_EMPLOYEE.NOTES"/>
+        <bm:field name="company_id" prompt=""/>
+        <bm:field name="company_code" prompt=""/>
+        <bm:field name="company_short_name" prompt=""/>
+        <bm:field name="operation_unit_id" prompt=""/>
+        <bm:field name="operation_unit_code" prompt=""/>
+        <bm:field name="operation_unit_desc" prompt="FND_OPERATION_UNITS.OPERATION_UNIT_ID"/>
+        <bm:field name="responsibility_center_id" prompt=""/>
+        <bm:field name="responsibility_center_code" prompt=""/>
+        <bm:field name="responsibility_center_desc" prompt=""/>
+        <bm:field name="unit_id" prompt=""/>
+        <bm:field name="unit_code" prompt=""/>
+        <bm:field name="unit_desc" prompt=""/>
+        <bm:field name="partner_category_id" prompt=""/>
+        <bm:field name="partner_category_code" prompt=""/>
+        <bm:field name="partner_category_desc" prompt=""/>
+        <bm:field name="partner_id" prompt=""/>
+        <bm:field name="partner_code" prompt=""/>
+        <bm:field name="partner_desc" prompt=""/>
+        <bm:field name="project_id" prompt=""/>
+        <bm:field name="project_code" prompt=""/>
+        <bm:field name="project_desc" prompt=""/>
+    </bm:fields>
+</bm:model>
